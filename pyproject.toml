@@ -1,0 +1,14 @@
+[project]
+name = "pybigquery"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115.12",
+    "sqlglot>=26.12.1",
+]
+
+[dependency-groups]
+dev = [
+    "fastapi-code-generator>=0.5.2",
+]

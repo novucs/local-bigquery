@@ -1,0 +1,1 @@
+from pybigquery.main import app
