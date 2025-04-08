@@ -1,12 +1,12 @@
 # Local BigQuery
 
-A BigQuery emulator written in Python.
+A local BigQuery implementation written in Python.
 
-**NOTE: This is a work in progress.**
+Uses [sqlglot](https://github.com/tobymao/sqlglot) for translation, and [DuckDB](https://github.com/duckdb/duckdb) for execution.
 
 ## Usage
 
-TL;DR Grab the container, run it, and hit it with a BigQuery client.
+Grab the container, run it, and hit it with a BigQuery client.
 
 ```bash
 docker pull ghcr.io/novucs/local-bigquery:latest
