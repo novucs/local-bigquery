@@ -165,7 +165,8 @@ def create_table(project_id, dataset_id, table_id, schema: TableSchema):
         expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
         transformed_tree = expression_tree.transform(transformer)
         duckdb_sql = transformed_tree.sql("duckdb")
-        cur.execute(duckdb_sql)
+        with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql):
+            cur.execute(duckdb_sql)
 
 
 def create_job(project_id, job: Job) -> int:
