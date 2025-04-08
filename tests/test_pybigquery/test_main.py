@@ -1,6 +1,7 @@
 import threading
 import time
 
+import google
 import pytest
 import requests
 import uvicorn
@@ -35,7 +36,9 @@ def server_url():
 @pytest.fixture
 def bq(server_url):
     # disable retries
-    bigquery.DEFAULT_RETRY._timeout = 0
+    bigquery.DEFAULT_RETRY._timeout = 1
+    google.cloud.bigquery.retry.DEFAULT_RETRY._timeout = 1
+    google.cloud.bigquery.retry.DEFAULT_JOB_RETRY._timeout = 1
     bq = bigquery.Client(
         project="bigquery-public-data",
         credentials=AnonymousCredentials(),
@@ -46,7 +49,7 @@ def bq(server_url):
 
 
 def test_create_table(bq):
-    bq.delete_table("bigquery-public-data.test_dataset.test_table")
+    bq.delete_table("bigquery-public-data.test_dataset.test_table", not_found_ok=True)
     bq.create_table(
         bigquery.Table(
             "bigquery-public-data.test_dataset.test_table",
@@ -62,3 +65,11 @@ def test_query(bq):
     assert bq.query("SELECT 1 AS a").to_dataframe().to_dict(orient="records") == [
         {"a": 1}
     ]
+
+
+def test_multi_query(bq):
+    bq.delete_table("project1.dataset1.table1", not_found_ok=True)
+    bq.query("CREATE TABLE project1.dataset1.table1 AS SELECT 1 AS b")
+    assert bq.query("SELECT * FROM project1.dataset1.table1").to_dataframe().to_dict(
+        orient="records"
+    ) == [{"b": 1}]

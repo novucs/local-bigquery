@@ -3075,7 +3075,7 @@ class ExternalDataConfiguration(BaseModel):
         None,
         description="Optional. When creating an external table, the user can provide a reference file with the table schema. This is enabled for the following formats: AVRO, PARQUET, ORC.",
     )
-    schema_: Optional[TableSchema] = Field(
+    schema: Optional[TableSchema] = Field(
         None,
         alias="schema",
         description="Optional. The schema for the data. Schema is required for CSV and JSON formats if autodetect is not on. Schema is disallowed for Google Cloud Bigtable, Cloud Datastore backups, Avro, ORC and Parquet formats.",
@@ -3153,7 +3153,7 @@ class GetQueryResultsResponse(BaseModel):
         None,
         description="An object with as many results as can be contained within the maximum permitted reply size. To get any additional rows, you can call GetQueryResults and specify the jobReference returned above. Present only when the query completes successfully. The REST-based representation of this data leverages a series of JSON f,v objects for indicating fields and values.",
     )
-    schema_: Optional[TableSchema] = Field(
+    schema: Optional[TableSchema] = Field(
         None,
         alias="schema",
         description="The schema of the results. Present only when the query completes successfully.",
@@ -3374,7 +3374,7 @@ class JobConfigurationLoad(BaseModel):
         None,
         description="Optional. The user can provide a reference file with the reader schema. This file is only loaded if it is part of source URIs, but is not loaded otherwise. It is enabled for the following formats: AVRO, PARQUET, ORC.",
     )
-    schema_: Optional[TableSchema] = Field(
+    schema: Optional[TableSchema] = Field(
         None,
         alias="schema",
         description="Optional. The schema for the destination table. The schema can be omitted if the destination table already exists, or if you're loading data from Google Cloud Datastore.",
@@ -3647,7 +3647,7 @@ class QueryResponse(BaseModel):
         None,
         description="An object with as many results as can be contained within the maximum permitted reply size. To get any additional rows, you can call GetQueryResults and specify the jobReference returned above.",
     )
-    schema_: Optional[TableSchema] = Field(
+    schema: Optional[TableSchema] = Field(
         None,
         alias="schema",
         description="The schema of the results. Present only when the query completes successfully.",
@@ -3928,7 +3928,7 @@ class Table(BaseModel):
         None,
         description="Optional. Output only. Restriction config for table. If set, restrict certain accesses on the table based on the config. See [Data egress](https://cloud.google.com/bigquery/docs/analytics-hub-introduction#data_egress) for more details.",
     )
-    schema_: Optional[TableSchema] = Field(
+    schema: Optional[TableSchema] = Field(
         None,
         alias="schema",
         description="Optional. Describes the schema of this table.",
@@ -3973,7 +3973,7 @@ class Row1(BaseModel):
         None,
         description="Insertion ID for best-effort deduplication. This feature is not recommended, and users seeking stronger insertion semantics are encouraged to use other mechanisms such as the BigQuery Write API.",
     )
-    json_: Optional[JsonObject] = Field(
+    json: Optional[JsonObject] = Field(
         None, alias="json", description="Data for a single row."
     )
 
@@ -4586,7 +4586,7 @@ class JobCancelResponse(BaseModel):
 
 
 class JobConfiguration(BaseModel):
-    copy_: Optional[JobConfigurationTableCopy] = Field(
+    copy: Optional[JobConfigurationTableCopy] = Field(
         None, alias="copy", description="[Pick one] Copies a table."
     )
     dryRun: Optional[bool] = Field(
@@ -4784,7 +4784,7 @@ class JobStatistics(BaseModel):
         None,
         description="Output only. [TrustedTester] Job progress (0.0 -> 1.0) for LOAD and EXTRACT jobs.",
     )
-    copy_: Optional[JobStatistics5] = Field(
+    copy: Optional[JobStatistics5] = Field(
         None, alias="copy", description="Output only. Statistics for a copy job."
     )
     creationTime: Optional[str] = Field(
@@ -4973,7 +4973,7 @@ class JobStatistics2(BaseModel):
         None,
         description="Output only. Job resource usage breakdown by reservation. This field reported misleading information and will no longer be populated.",
     )
-    schema_: Optional[TableSchema] = Field(
+    schema: Optional[TableSchema] = Field(
         None,
         alias="schema",
         description="Output only. The schema of the results. Present only for successful dry run of non-legacy SQL queries.",

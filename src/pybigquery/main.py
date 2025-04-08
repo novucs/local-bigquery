@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import sqlite3
 import traceback
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, FastAPI, Path, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Path, Query, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from . import db
@@ -15,6 +17,7 @@ from .models import (
     BiEngineReason,
     BiEngineStatistics,
     Code,
+    Code2,
     CommonQueryParams,
     Dataset,
     Dataset1,
@@ -26,6 +29,7 @@ from .models import (
     GetServiceAccountResponse,
     Job,
     JobCancelResponse,
+    JobCreationReason,
     JobList,
     JobReference,
     JobStatistics,
@@ -55,7 +59,6 @@ from .models import (
     TableDataInsertAllRequest,
     TableDataInsertAllResponse,
     TableDataList,
-    TableFieldSchema,
     TableList,
     TableReference,
     TableRow,
@@ -65,6 +68,14 @@ from .models import (
     UndeleteDatasetRequest,
     View,
 )
+from .transform import infer_bigquery_schema
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.migrate()
+    yield
+
 
 app = FastAPI(
     contact={"name": "Google", "url": "https://google.com"},
@@ -76,17 +87,25 @@ app = FastAPI(
     termsOfService="https://developers.google.com/terms/",
     title="BigQuery API",
     version="v2",
+    lifespan=lifespan,
 )
 router = APIRouter(prefix="/bigquery/v2")
 
 
 @app.exception_handler(Exception)
 async def internal_exception_handler(request: Request, exc: Exception):
+    print("EXCEPTION: ", exc, flush=True)
+    print("TRACEBACK: ", traceback.format_exc(), flush=True)
     return JSONResponse(
         status_code=500,
         content={
             "error": str(exc),
-            "traceback": traceback.format_exc(),
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": traceback.format_exc(),
+                }
+            ],
         },
     )
 
@@ -444,7 +463,7 @@ def bigquery_tables_insert(
     params: CommonQueryParams = Depends(),
     body: Table = None,
 ) -> Table:
-    db.create_table(project_id, dataset_id, body.tableReference.tableId, body.schema_)
+    db.create_table(project_id, dataset_id, body.tableReference.tableId, body.schema)
     return body
 
 
@@ -459,7 +478,15 @@ def bigquery_tables_delete(
     table_id: str = Path(..., alias="tableId"),
     params: CommonQueryParams = Depends(),
 ) -> None:
-    db.delete_table(project_id, dataset_id, table_id)
+    try:
+        db.delete_table(project_id, dataset_id, table_id)
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Table {project_id}.{dataset_id}.{table_id} not found.",
+            )
+        raise
 
 
 @router.get(
@@ -677,13 +704,38 @@ def bigquery_jobs_insert(
     params: CommonQueryParams = Depends(),
     body: Optional[Job] = None,
 ) -> Job:
-    return Job(
+    job_id = db.create_job(project_id, body)
+    results, columns = db.query(project_id, body.configuration.query.query)
+    results_response = GetQueryResultsResponse(
+        cacheHit=False,
+        errors=[],
+        etag="etag",
+        jobComplete=True,
+        jobReference=JobReference(
+            jobId=str(job_id),
+            location="US",
+            projectId=project_id,
+        ),
+        kind="bigquery#getQueryResultsResponse",
+        numDmlAffectedRows="0",
+        pageToken=None,
+        rows=[TableRow(f=[TableCell(v=cell) for cell in row]) for row in results],
+        schema=TableSchema(
+            fields=infer_bigquery_schema(results, columns),
+            foreignTypeInfo=None,
+        ),
+        totalBytesProcessed="0",
+        totalRows=str(len(results)),
+    )
+    job = Job(
         configuration=body.configuration,
         etag="etag",
-        id="1",
-        jobCreationReason=None,
+        id=str(job_id),
+        jobCreationReason=JobCreationReason(
+            code=Code2.REQUESTED,
+        ),
         jobReference=JobReference(
-            jobId="1",
+            jobId=str(job_id),
             location="US",
             projectId=project_id,
         ),
@@ -731,6 +783,8 @@ def bigquery_jobs_insert(
         ),
         user_email=None,
     )
+    db.update_job(job_id, job, results_response)
+    return job
 
 
 @router.get("/projects/{projectId}/jobs/{jobId}", response_model=Job, tags=["jobs"])
@@ -821,34 +875,10 @@ def bigquery_jobs_get_query_results(
     timeout_ms: Optional[int] = Query(None, alias="timeoutMs"),
     params: CommonQueryParams = Depends(),
 ) -> GetQueryResultsResponse:
-    results = db.query(project_id, "SELECT 1")
-    return GetQueryResultsResponse(
-        cacheHit=False,
-        errors=[],
-        etag=None,
-        jobComplete=True,
-        jobReference=JobReference(
-            jobId=job_id,
-            location="US",
-            projectId=project_id,
-        ),
-        kind="bigquery#getQueryResultsResponse",
-        numDmlAffectedRows="0",
-        pageToken=None,
-        rows=[TableRow(f=[TableCell(v=cell) for cell in row]) for row in results],
-        schema=TableSchema(
-            fields=[
-                TableFieldSchema(
-                    name="a",
-                    type="INTEGER",
-                    mode="NULLABLE",
-                ),
-            ],
-            foreignTypeInfo=None,
-        ),
-        totalBytesProcessed="0",
-        totalRows=str(len(results)),
-    )
+    job, results = db.get_job(project_id, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return results
 
 
 @router.get(
