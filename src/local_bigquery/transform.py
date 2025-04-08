@@ -1,4 +1,3 @@
-import json
 from datetime import date, datetime
 from typing import Any, List, Optional
 
@@ -93,18 +92,11 @@ def convert_value(qpv: Optional[QueryParameterValue]) -> Any:
     return None
 
 
-def prepare_for_sqlite(value: Any) -> Any:
-    if isinstance(value, (dict, list, tuple)):
-        return json.dumps(value)
-    return value
-
-
-def query_params_to_sqlite(params: list[QueryParameter]) -> dict[str, Any]:
+def query_params_to_duckdb(params: list[QueryParameter]) -> dict[str, Any]:
     if not params:
         return {}
     result = {}
     for i, param in enumerate(params):
         key = param.name if param.name else f"param{i}"
         result[key] = convert_value(param.parameterValue)
-        result[key] = prepare_for_sqlite(result[key])
     return result

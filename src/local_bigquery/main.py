@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import sqlite3
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
+import duckdb
 from fastapi import APIRouter, Depends, FastAPI, Path, Query, Request, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -178,6 +178,7 @@ def bigquery_datasets_insert(
     params: CommonQueryParams = Depends(),
     body: Dataset = None,
 ) -> Dataset:
+    db.create_dataset(body.datasetReference.projectId, body.datasetReference.datasetId)
     return body
 
 
@@ -480,8 +481,8 @@ def bigquery_tables_delete(
 ) -> None:
     try:
         db.delete_table(project_id, dataset_id, table_id)
-    except sqlite3.OperationalError as e:
-        if "no such table" in str(e):
+    except duckdb.Error as e:
+        if "does not exist" in str(e):
             raise HTTPException(
                 status_code=404,
                 detail=f"Table {project_id}.{dataset_id}.{table_id} not found.",

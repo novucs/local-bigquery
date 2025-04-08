@@ -24,7 +24,10 @@ def server_url():
     thread.start()
     url = f"http://{host}:{port}"
     # Wait for the server to start
+    start_time = time.time()
     while True:
+        if time.time() - start_time > 5:
+            raise Exception("Server did not start in time")
         try:
             requests.get(url)
             break
@@ -63,6 +66,7 @@ def query(
 
 
 def test_create_table(bq):
+    bq.create_dataset("test_dataset")
     bq.delete_table("`bigquery-public-data`.test_dataset.test_table", not_found_ok=True)
     bq.create_table(
         bigquery.Table(
@@ -80,6 +84,7 @@ def test_query(bq):
 
 
 def test_multi_query(bq):
+    bq.create_dataset("dataset1")
     query(bq, "DROP TABLE IF EXISTS project1.dataset1.table1")
     query(bq, "CREATE TABLE project1.dataset1.table1 AS SELECT 1 AS b")
     assert query(bq, "SELECT * FROM project1.dataset1.table1") == [{"b": 1}]
@@ -106,6 +111,7 @@ def test_json(bq):
     assert query(bq, "SELECT * FROM dataset1.table2") == [
         {"data": '{"x": 1, "y": 2, "$tricky": "this has a tricky key"}'}
     ]
+    assert query(bq, "SELECT data.x FROM dataset1.table2") == [{"x": "1"}]
     assert query(
         bq, """SELECT JSON_VALUE(data, '$."$tricky"') AS tricky FROM table2"""
     ) == [{"tricky": "this has a tricky key"}]
@@ -162,6 +168,6 @@ def test_complex_args(bq):
         ),
     ) == [
         {
-            "user": '{"id": "123", "name": "John Doe", "scores": ["85", "90"]}',
+            "user": {"id": "123", "name": "John Doe", "scores": ["85", "90"]},
         }
     ]

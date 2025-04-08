@@ -1,8 +1,8 @@
 import contextlib
-import sqlite3
 from pathlib import Path
 from typing import Optional
 
+import duckdb
 import sqlglot
 
 from local_bigquery.models import (
@@ -12,14 +12,14 @@ from local_bigquery.models import (
     QueryParameter,
     TableSchema,
 )
-from local_bigquery.transform import bigquery_schema_to_sql, query_params_to_sqlite
+from local_bigquery.transform import bigquery_schema_to_sql, query_params_to_duckdb
 
-SQLITE_PATH = Path(__file__).parent.parent / "db.sqlite3"
+DB_PATH = Path(__file__).parent.parent / "bigquery.db"
 
 
 @contextlib.contextmanager
 def connection():
-    conn = sqlite3.connect(SQLITE_PATH)
+    conn = duckdb.connect(DB_PATH)
     try:
         yield conn
     finally:
@@ -27,7 +27,7 @@ def connection():
 
 
 def clear():
-    SQLITE_PATH.unlink(missing_ok=True)
+    DB_PATH.unlink(missing_ok=True)
 
 
 @contextlib.contextmanager
@@ -46,16 +46,21 @@ def migrate():
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS jobs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY,
                 project_id TEXT,
                 job JSON,
                 results JSON
             )
             """
         )
+        cur.execute(
+            """
+            CREATE SEQUENCE IF NOT EXISTS jobs_id_seq;
+            """
+        )
 
 
-def get_sqlite_table_name(
+def get_duckdb_table_name(
     table_id: str,
     dataset_id: str = None,
     project_id: str = None,
@@ -73,9 +78,11 @@ def get_sqlite_table_name(
         project_id = default_dataset.projectId
     if not project_id:
         project_id = default_dataset.projectId
-    table_name = ".".join(filter(None, [project_id, dataset_id, table_id]))
+    table_name = ".".join(filter(None, [dataset_id, table_id]))
     table_name = table_name.replace('"', "")
-    return f"'{table_name}'"
+    table_name = table_name.replace("`", "")
+    table_name = table_name.replace("-", "_")
+    return table_name
 
 
 def list_datasets(project_id):
@@ -86,9 +93,14 @@ def list_datasets(project_id):
 
 def delete_dataset(project_id, dataset_id):
     tables = list_tables(project_id, dataset_id)
-    with connection() as db:
+    with connection() as cur:
         for table in tables:
-            db.execute(f"DROP TABLE {table.table_name}")
+            cur.execute(f"DROP TABLE {table.table_name}")
+
+
+def create_dataset(project_id, dataset_id):
+    with connection() as cur:
+        cur.execute("CREATE SCHEMA IF NOT EXISTS %s" % dataset_id)
 
 
 def list_tables(project_id, dataset_id):
@@ -100,7 +112,7 @@ def list_tables(project_id, dataset_id):
                 name,
                 instr(name, '.') AS dot1,
                 instr(substr(name, instr(name, '.') + 1), '.') AS dot2
-              FROM sqlite_master
+              FROM duckdb_master
               WHERE type = 'table'
             )
             SELECT
@@ -117,7 +129,7 @@ def list_tables(project_id, dataset_id):
 
 def delete_table(project_id, dataset_id, table_id):
     with cursor() as cur:
-        table_name = get_sqlite_table_name(table_id, dataset_id, project_id)
+        table_name = get_duckdb_table_name(table_id, dataset_id, project_id)
         cur.execute(f"DROP TABLE {table_name}")
 
 
@@ -128,26 +140,27 @@ def create_table(project_id, dataset_id, table_id, schema: TableSchema):
 
         def transformer(node):
             if isinstance(node, sqlglot.exp.Table):
-                table_name = get_sqlite_table_name(str(node), dataset_id, project_id)
+                table_name = get_duckdb_table_name(str(node), dataset_id, project_id)
                 return sqlglot.exp.to_table(table_name)
             return node
 
         expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
         transformed_tree = expression_tree.transform(transformer)
-        sqlite_sql = transformed_tree.sql("sqlite")
-        cur.execute(sqlite_sql)
+        duckdb_sql = transformed_tree.sql("duckdb")
+        cur.execute(duckdb_sql)
 
 
 def create_job(project_id, job: Job) -> int:
     with cursor() as cur:
         cur.execute(
             """
-                INSERT INTO jobs (project_id, job)
-                VALUES (?, ?)
+                INSERT INTO jobs (id, project_id, job)
+                VALUES (nextval('jobs_id_seq'), ?, ?)
+                RETURNING id
             """,
             (project_id, job.model_dump_json()),
         )
-        return cur.lastrowid
+        return cur.fetchall()[0][0]
 
 
 def update_job(job_id, job: Job, results: Optional[GetQueryResultsResponse] = None):
@@ -196,7 +209,7 @@ def query(
 
         def transformer(node):
             if isinstance(node, sqlglot.exp.Table):
-                table_name = get_sqlite_table_name(
+                table_name = get_duckdb_table_name(
                     str(node),
                     project_id=project_id,
                     default_dataset=default_dataset,
@@ -206,8 +219,8 @@ def query(
 
         expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
         transformed_tree = expression_tree.transform(transformer)
-        sqlite_sql = transformed_tree.sql("sqlite")
-        cur.execute(sqlite_sql, query_params_to_sqlite(parameters))
+        duckdb_sql = transformed_tree.sql("duckdb")
+        cur.execute(duckdb_sql, query_params_to_duckdb(parameters))
         columns = []
         if cur.description:
             columns = [desc[0] for desc in cur.description]
