@@ -9,11 +9,12 @@ from google.api_core.client_options import ClientOptions
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery
 
-from local_bigquery import app
+from local_bigquery import app, db
 
 
 @pytest.fixture(scope="session")
 def server_url():
+    db.clear()
     host = "127.0.0.1"
     port = 8000
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
@@ -39,9 +40,12 @@ def bq(server_url):
     google.cloud.bigquery.retry.DEFAULT_RETRY._timeout = 1
     google.cloud.bigquery.retry.DEFAULT_JOB_RETRY._timeout = 1
     bq = bigquery.Client(
-        project="bigquery-public-data",
+        project="project1",
         credentials=AnonymousCredentials(),
         client_options=ClientOptions(api_endpoint=server_url),
+        default_query_job_config=bigquery.QueryJobConfig(
+            default_dataset="project1.dataset1",
+        ),
     )
     try:
         yield bq
@@ -49,15 +53,19 @@ def bq(server_url):
         bq.close()
 
 
-def query(bq: bigquery.Client, sql: str) -> list[dict]:
-    return [dict(row.items()) for row in bq.query(sql).result()]
+def query(
+    bq: bigquery.Client,
+    sql: str,
+    config: bigquery.QueryJobConfig = None,
+) -> list[dict]:
+    return [dict(row.items()) for row in bq.query(sql, job_config=config).result()]
 
 
 def test_create_table(bq):
-    bq.delete_table("bigquery-public-data.test_dataset.test_table", not_found_ok=True)
+    bq.delete_table("`bigquery-public-data`.test_dataset.test_table", not_found_ok=True)
     bq.create_table(
         bigquery.Table(
-            "bigquery-public-data.test_dataset.test_table",
+            "`bigquery-public-data`.test_dataset.test_table",
             schema=[
                 bigquery.SchemaField("name", "STRING"),
                 bigquery.SchemaField("age", "INTEGER"),
@@ -74,3 +82,29 @@ def test_multi_query(bq):
     query(bq, "DROP TABLE IF EXISTS project1.dataset1.table1")
     query(bq, "CREATE TABLE project1.dataset1.table1 AS SELECT 1 AS b")
     assert query(bq, "SELECT * FROM project1.dataset1.table1") == [{"b": 1}]
+
+
+def test_json(bq):
+    bq.delete_table("project1.dataset1.table2", not_found_ok=True)
+    bq.create_table(
+        bigquery.Table(
+            "project1.dataset1.table2",
+            schema=[
+                bigquery.SchemaField("data", "JSON"),
+            ],
+        )
+    )
+    query(
+        bq,
+        """
+        INSERT INTO dataset1.table2 (data)
+        VALUES
+        ('{"x": 1, "y": 2, "$tricky": "this has a tricky key"}')
+        """,
+    )
+    assert query(bq, "SELECT * FROM dataset1.table2") == [
+        {"data": '{"x": 1, "y": 2, "$tricky": "this has a tricky key"}'}
+    ]
+    assert query(
+        bq, """SELECT JSON_VALUE(data, '$."$tricky"') AS tricky FROM table2"""
+    ) == [{"tricky": "this has a tricky key"}]

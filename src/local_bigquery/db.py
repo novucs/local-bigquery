@@ -5,17 +5,28 @@ from typing import Optional
 
 import sqlglot
 
-from local_bigquery.models import GetQueryResultsResponse, Job, TableSchema
+from local_bigquery.models import (
+    DatasetReference,
+    GetQueryResultsResponse,
+    Job,
+    TableSchema,
+)
 from local_bigquery.transform import bigquery_schema_to_sql
+
+SQLITE_PATH = Path(__file__).parent.parent / "db.sqlite3"
 
 
 @contextlib.contextmanager
 def connection():
-    conn = sqlite3.connect(Path(__file__).parent.parent / "db.sqlite3")
+    conn = sqlite3.connect(SQLITE_PATH)
     try:
         yield conn
     finally:
         conn.close()
+
+
+def clear():
+    SQLITE_PATH.unlink(missing_ok=True)
 
 
 @contextlib.contextmanager
@@ -41,6 +52,29 @@ def migrate():
             )
             """
         )
+
+
+def get_sqlite_table_name(
+    table_id: str,
+    dataset_id: str = None,
+    project_id: str = None,
+    default_dataset: DatasetReference = None,
+):
+    parts = table_id.split(".")
+    if len(parts) == 2:
+        dataset_id, table_id = parts
+    if len(parts) == 3:
+        project_id, dataset_id, table_id = parts
+    if not dataset_id:
+        if not default_dataset:
+            raise ValueError("default dataset is required if omitting dataset")
+        dataset_id = default_dataset.datasetId
+        project_id = default_dataset.projectId
+    if not project_id:
+        project_id = default_dataset.projectId
+    table_name = ".".join(filter(None, [project_id, dataset_id, table_id]))
+    table_name = table_name.replace('"', "")
+    return f"'{table_name}'"
 
 
 def list_datasets(project_id):
@@ -82,25 +116,22 @@ def list_tables(project_id, dataset_id):
 
 def delete_table(project_id, dataset_id, table_id):
     with cursor() as cur:
-        cur.execute(
-            """
-            DROP TABLE '{}.{}.{}'
-            """.format(project_id, dataset_id, table_id)
-        )
+        table_name = get_sqlite_table_name(table_id, dataset_id, project_id)
+        cur.execute(f"DROP TABLE {table_name}")
 
 
 def create_table(project_id, dataset_id, table_id, schema: TableSchema):
     with cursor() as cur:
-        bq_sql = bigquery_schema_to_sql(
-            schema.fields, f"{project_id}.{dataset_id}.{table_id}"
-        )
-        expression_tree = sqlglot.parse_one(bq_sql)
+        table_name = f"{project_id}.{dataset_id}.{table_id}"
+        bq_sql = bigquery_schema_to_sql(schema.fields, table_name)
 
         def transformer(node):
             if isinstance(node, sqlglot.exp.Table):
-                return sqlglot.parse_one(f"`{node.name}`")
+                table_name = get_sqlite_table_name(str(node), dataset_id, project_id)
+                return sqlglot.exp.to_table(table_name)
             return node
 
+        expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
         transformed_tree = expression_tree.transform(transformer)
         sqlite_sql = transformed_tree.sql("sqlite")
         cur.execute(sqlite_sql)
@@ -154,18 +185,20 @@ def get_job(project_id, job_id):
         return job, results
 
 
-def query(project_id, bq_sql):
+def query(project_id, bq_sql, default_dataset: DatasetReference = None):
     with cursor() as cur:
-        expression_tree = sqlglot.parse_one(bq_sql)
 
         def transformer(node):
             if isinstance(node, sqlglot.exp.Table):
-                # Combine project_id, dataset_id, and table_name into a single string
-                # and remove backticks.
-                table_name = str(node).replace("`", "")
-                return sqlglot.parse_one(f"'{table_name}'")
+                table_name = get_sqlite_table_name(
+                    str(node),
+                    project_id=project_id,
+                    default_dataset=default_dataset,
+                )
+                return sqlglot.exp.to_table(table_name)
             return node
 
+        expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
         transformed_tree = expression_tree.transform(transformer)
         sqlite_sql = transformed_tree.sql("sqlite")
         cur.execute(sqlite_sql)

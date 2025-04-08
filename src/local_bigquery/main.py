@@ -705,7 +705,11 @@ def bigquery_jobs_insert(
     body: Optional[Job] = None,
 ) -> Job:
     job_id = db.create_job(project_id, body)
-    results, columns = db.query(project_id, body.configuration.query.query)
+    results, columns = db.query(
+        project_id,
+        body.configuration.query.query,
+        default_dataset=body.configuration.query.defaultDataset,
+    )
     results_response = GetQueryResultsResponse(
         cacheHit=False,
         errors=[],
@@ -831,30 +835,7 @@ def bigquery_jobs_query(
     params: CommonQueryParams = Depends(),
     body: QueryRequest = None,
 ) -> QueryResponse:
-    response = db.query(project_id, body.query)
-    return QueryResponse(
-        cacheHit=False,
-        creationTime=datetime.now().isoformat(),
-        dmlStats=None,
-        endTime=datetime.now().isoformat(),
-        errors=[],
-        jobComplete=True,
-        jobCreationReason=None,
-        jobReference=None,
-        kind="bigquery#queryResponse",
-        location="US",
-        numDmlAffectedRows=None,
-        pageToken=None,
-        queryId=None,
-        rows=[TableRow(f=[TableCell(v=cell) for cell in row]) for row in response],
-        schema=None,
-        sessionInfo=None,
-        startTime=datetime.now().isoformat(),
-        totalBytesBilled="0",
-        totalBytesProcessed="0",
-        totalRows=str(len(response)),
-        totalSlotMs="0",
-    )
+    raise NotImplementedError("Query job is not implemented yet.")
 
 
 @router.get(

@@ -22,8 +22,8 @@ def field_to_sql(field):
 
 
 def bigquery_schema_to_sql(schema: list, table_name: str) -> str:
-    columns = ",\n  ".join(field_to_sql(f) for f in schema)
-    return f"CREATE TABLE `{table_name}` (\n  {columns}\n);"
+    columns = ", ".join(field_to_sql(f) for f in schema)
+    return f"CREATE TABLE {table_name} ({columns});"
 
 
 def map_value_to_bq_type(value: Any) -> str:
