@@ -82,23 +82,15 @@ def debug_sql(bq_sql: str = None, duckdb_sql: str = None, params: dict = None):
         raise
 
 
-def get_duckdb_table_name(
-    table_id: str,
-    dataset_id: str = None,
-    project_id: str = None,
-    default_dataset: DatasetReference = None,
-):
+def get_duckdb_table_name(table_id: str):
     parts = table_id.strip().split(" ")[0].split(".")
+    table_name = table_id
+    if len(parts) == 1:
+        table_name = parts[0]
     if len(parts) == 2:
-        dataset_id, table_id = parts
+        table_name = f"{parts[0]}.{parts[1]}"
     if len(parts) == 3:
-        project_id, dataset_id, table_id = parts
-    if not dataset_id and default_dataset:
-        dataset_id = default_dataset.datasetId
-        project_id = default_dataset.projectId
-    if not project_id:
-        project_id = default_dataset.projectId
-    table_name = ".".join(filter(None, [dataset_id, table_id]))
+        table_name = f"{parts[1]}.{parts[2]}"
     table_name = table_name.replace('"', "")
     table_name = table_name.replace("`", "")
     table_name = table_name.replace("-", "_")
@@ -149,8 +141,7 @@ def list_tables(project_id, dataset_id):
 
 def delete_table(project_id, dataset_id, table_id):
     with cursor() as cur:
-        table_name = get_duckdb_table_name(table_id, dataset_id, project_id)
-        cur.execute(f"DROP TABLE {table_name}")
+        cur.execute(f"DROP TABLE {dataset_id}.{table_id}")
 
 
 def create_table(project_id, dataset_id, table_id, schema: TableSchema):
@@ -160,7 +151,7 @@ def create_table(project_id, dataset_id, table_id, schema: TableSchema):
 
         def transformer(node):
             if isinstance(node, sqlglot.exp.Table):
-                table_name = get_duckdb_table_name(str(node), dataset_id, project_id)
+                table_name = get_duckdb_table_name(str(node))
                 return sqlglot.exp.to_table(table_name)
             if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":
                 return None
@@ -232,11 +223,7 @@ def query(
 
         def transformer(node):
             if isinstance(node, sqlglot.exp.Table):
-                table_name = get_duckdb_table_name(
-                    str(node),
-                    project_id=project_id,
-                    default_dataset=default_dataset,
-                )
+                table_name = get_duckdb_table_name(str(node))
                 return sqlglot.exp.to_table(table_name, alias=node.alias)
             if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":
                 return None
@@ -255,7 +242,7 @@ def query(
 
 
 def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
-    table_name = get_duckdb_table_name(table_id, dataset_id, project_id)
+    table_name = f"{dataset_id}.{table_id}"
     with cursor() as cur:
         for row in rows:
             if not row.json or not row.json.root:

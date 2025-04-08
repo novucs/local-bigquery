@@ -110,7 +110,7 @@ def test_json(bq):
     ]
     assert query(bq, "SELECT data.x FROM dataset1.table2") == [{"x": "1"}]
     assert query(
-        bq, """SELECT JSON_VALUE(data, '$."$tricky"') AS tricky FROM table2"""
+        bq, """SELECT JSON_VALUE(data, '$."$tricky"') AS tricky FROM dataset1.table2"""
     ) == [{"tricky": "this has a tricky key"}]
 
 
@@ -314,3 +314,21 @@ def test_timestamps(bq):
             (1, datetime.fromisoformat("2023-01-01T00:00:00+00:00")),
             (2, datetime.fromisoformat("2023-01-02T00:00:00+00:00")),
         ]
+
+
+def test_cte_alias(bq):
+    assert query(
+        bq,
+        """
+        WITH cte AS (
+            SELECT
+                1 AS a,
+                2 AS b
+        )
+        SELECT
+            alias.a,
+            alias.b
+        FROM
+            cte AS alias
+        """,
+    ) == [{"a": 1, "b": 2}]
