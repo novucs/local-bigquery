@@ -1,7 +1,6 @@
 import threading
 import time
 
-import google
 import pytest
 import requests
 import uvicorn
@@ -40,9 +39,6 @@ def server_url():
 
 @pytest.fixture
 def bq(server_url):
-    bigquery.DEFAULT_RETRY._timeout = 1
-    google.cloud.bigquery.retry.DEFAULT_RETRY._timeout = 1
-    google.cloud.bigquery.retry.DEFAULT_JOB_RETRY._timeout = 1
     bq = bigquery.Client(
         project="project1",
         credentials=AnonymousCredentials(),

@@ -94,18 +94,36 @@ router = APIRouter(prefix="/bigquery/v2")
 
 @app.exception_handler(Exception)
 async def internal_exception_handler(request: Request, exc: Exception):
-    print("EXCEPTION: ", exc, flush=True)
-    print("TRACEBACK: ", traceback.format_exc(), flush=True)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": str(exc),
-            "details": [
-                {
-                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                    "reason": traceback.format_exc(),
+    if isinstance(exc, duckdb.Error) and "does not exist" in str(exc):
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": {
+                    "message": str(exc),
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                            "reason": traceback.format_exc(),
+                        }
+                    ],
                 }
-            ],
+            },
+        )
+    return JSONResponse(
+        # Hack to force BigQuery client to not retry, I've yet to
+        # properly dig into the retry logic of the client.
+        # 500 errors appear to be retried indefinitely.
+        status_code=400,
+        content={
+            "error": {
+                "message": f"internal error, 400 status code set to avoid retry loops: {exc}",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": traceback.format_exc(),
+                    }
+                ],
+            }
         },
     )
 
@@ -479,15 +497,7 @@ def bigquery_tables_delete(
     table_id: str = Path(..., alias="tableId"),
     params: CommonQueryParams = Depends(),
 ) -> None:
-    try:
-        db.delete_table(project_id, dataset_id, table_id)
-    except duckdb.Error as e:
-        if "does not exist" in str(e):
-            raise HTTPException(
-                status_code=404,
-                detail=f"Table {project_id}.{dataset_id}.{table_id} not found.",
-            )
-        raise
+    db.delete_table(project_id, dataset_id, table_id)
 
 
 @router.get(
