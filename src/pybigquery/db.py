@@ -155,7 +155,6 @@ def query(project_id, bq_sql):
         expression_tree = sqlglot.parse_one(bq_sql)
 
         def transformer(node):
-            print("NODE: ", node, type(node), flush=True)
             if isinstance(node, sqlglot.exp.Table):
                 # Combine project_id, dataset_id, and table_name into a single string
                 # and remove backticks.
