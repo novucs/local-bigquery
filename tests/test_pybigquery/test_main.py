@@ -62,11 +62,10 @@ def query(
 
 
 def test_create_table(bq):
-    bq.create_dataset("test_dataset")
-    bq.delete_table("`bigquery-public-data`.test_dataset.test_table", not_found_ok=True)
+    bq.create_dataset("test_dataset2")
     bq.create_table(
         bigquery.Table(
-            "`bigquery-public-data`.test_dataset.test_table",
+            "`bigquery-public-data`.test_dataset2.test_table",
             schema=[
                 bigquery.SchemaField("name", "STRING"),
                 bigquery.SchemaField("age", "INTEGER"),

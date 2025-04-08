@@ -59,6 +59,25 @@ def migrate():
         )
 
 
+@contextlib.contextmanager
+def debug_sql(bq_sql: str = None, duckdb_sql: str = None, params: dict = None):
+    try:
+        yield
+    except duckdb.ParserException as e:
+        print("DuckDB SQL error:")
+        print(e)
+        if bq_sql:
+            print("BigQuery SQL:")
+            print(bq_sql)
+        if duckdb_sql:
+            print("DuckDB SQL:")
+            print(duckdb_sql)
+        if params:
+            print("Params:")
+            print(params)
+        raise
+
+
 def get_duckdb_table_name(
     table_id: str,
     dataset_id: str = None,
@@ -219,7 +238,9 @@ def query(
         expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
         transformed_tree = expression_tree.transform(transformer)
         duckdb_sql = transformed_tree.sql("duckdb")
-        cur.execute(duckdb_sql, query_params_to_duckdb(parameters))
+        params = query_params_to_duckdb(parameters)
+        with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql, params=params):
+            cur.execute(duckdb_sql, params)
         columns = []
         if cur.description:
             columns = [desc[0] for desc in cur.description]
@@ -235,4 +256,6 @@ def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
             columns = {k for k, v in row.json.root.items()}
             columns_str = ", ".join(columns)
             sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({', '.join([f'${col}' for col in columns])})"
-            cur.execute(sql, {k: v.root for k, v in row.json.root.items()})
+            params = {k: v.root for k, v in row.json.root.items()}
+            with debug_sql(duckdb_sql=sql, params=params):
+                cur.execute(sql, params)
