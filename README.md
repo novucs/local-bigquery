@@ -2,7 +2,7 @@
 
 A local BigQuery implementation written in Python.
 
-Uses [sqlglot](https://github.com/tobymao/sqlglot) for translation, and [DuckDB](https://github.com/duckdb/duckdb) for execution.
+Uses [SQLGlot](https://github.com/tobymao/sqlglot) for translation, and [DuckDB](https://github.com/duckdb/duckdb) for execution.
 
 ## Usage
 
