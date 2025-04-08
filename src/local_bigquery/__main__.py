@@ -69,7 +69,7 @@ from .models import (
     UndeleteDatasetRequest,
     View,
 )
-from .transform import infer_bigquery_schema
+from .transform import infer_bigquery_schema, convert_nested_timestamps_to_bigquery_ints
 
 
 @asynccontextmanager
@@ -728,6 +728,12 @@ def bigquery_jobs_insert(
         default_dataset=body.configuration.query.defaultDataset,
         parameters=body.configuration.query.queryParameters,
     )
+    schema = TableSchema(
+        fields=infer_bigquery_schema(results, columns),
+        foreignTypeInfo=None,
+    )
+    results = convert_nested_timestamps_to_bigquery_ints(results, schema.fields)
+    rows = [TableRow(f=[TableCell(v=cell) for cell in row]) for row in results]
     results_response = GetQueryResultsResponse(
         cacheHit=False,
         errors=[],
@@ -741,11 +747,8 @@ def bigquery_jobs_insert(
         kind="bigquery#getQueryResultsResponse",
         numDmlAffectedRows="0",
         pageToken=None,
-        rows=[TableRow(f=[TableCell(v=cell) for cell in row]) for row in results],
-        schema=TableSchema(
-            fields=infer_bigquery_schema(results, columns),
-            foreignTypeInfo=None,
-        ),
+        rows=rows,
+        schema=schema,
         totalBytesProcessed="0",
         totalRows=str(len(results)),
     )
@@ -860,11 +863,12 @@ def bigquery_jobs_query(
         parameters=body.queryParameters,
     )
     job_id = db.create_job(project_id, Job())
-    rows = [TableRow(f=[TableCell(v=cell) for cell in row]) for row in results]
     schema = TableSchema(
         fields=infer_bigquery_schema(results, columns),
         foreignTypeInfo=None,
     )
+    results = convert_nested_timestamps_to_bigquery_ints(results, schema.fields)
+    rows = [TableRow(f=[TableCell(v=cell) for cell in row]) for row in results]
     results_response = GetQueryResultsResponse(
         cacheHit=False,
         errors=[],

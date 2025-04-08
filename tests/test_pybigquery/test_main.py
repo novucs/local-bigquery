@@ -1,5 +1,6 @@
 import threading
 import time
+from datetime import datetime
 
 import pytest
 import requests
@@ -281,3 +282,35 @@ def test_table_aliasing(bq):
             select(column("t.id")).select_from(text("dataset1.table1 AS t"))
         )
         assert result.fetchall() == [(1,), (2,)]
+
+
+def test_timestamps(bq):
+    bq.create_dataset("project1.dataset1")
+    bq.delete_table("project1.dataset1.table1", not_found_ok=True)
+    table = bigquery.Table(
+        "project1.dataset1.table1",
+        schema=[
+            bigquery.SchemaField("id", "INTEGER"),
+            bigquery.SchemaField("ts", "TIMESTAMP"),
+        ],
+    )
+    bq.create_table(table)
+    bq.insert_rows(
+        table,
+        [
+            {"id": 1, "ts": "2023-01-01T00:00:00Z"},
+            {"id": 2, "ts": "2023-01-02T00:00:00Z"},
+        ],
+    )
+    engine = create_engine(
+        "bigquery://project1/dataset1?user_supplied_client=True",
+        connect_args={"client": bq},
+    )
+    with engine.connect() as conn:
+        result = conn.execute(
+            select(column("id"), column("ts")).select_from(text("dataset1.table1"))
+        )
+        assert result.fetchall() == [
+            (1, datetime.fromisoformat("2023-01-01T00:00:00+00:00")),
+            (2, datetime.fromisoformat("2023-01-02T00:00:00+00:00")),
+        ]
