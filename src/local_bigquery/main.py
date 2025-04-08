@@ -709,6 +709,7 @@ def bigquery_jobs_insert(
         project_id,
         body.configuration.query.query,
         default_dataset=body.configuration.query.defaultDataset,
+        parameters=body.configuration.query.queryParameters,
     )
     results_response = GetQueryResultsResponse(
         cacheHit=False,

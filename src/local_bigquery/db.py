@@ -9,9 +9,10 @@ from local_bigquery.models import (
     DatasetReference,
     GetQueryResultsResponse,
     Job,
+    QueryParameter,
     TableSchema,
 )
-from local_bigquery.transform import bigquery_schema_to_sql
+from local_bigquery.transform import bigquery_schema_to_sql, query_params_to_sqlite
 
 SQLITE_PATH = Path(__file__).parent.parent / "db.sqlite3"
 
@@ -185,7 +186,12 @@ def get_job(project_id, job_id):
         return job, results
 
 
-def query(project_id, bq_sql, default_dataset: DatasetReference = None):
+def query(
+    project_id,
+    bq_sql,
+    default_dataset: DatasetReference = None,
+    parameters: Optional[list[QueryParameter]] = None,
+):
     with cursor() as cur:
 
         def transformer(node):
@@ -201,7 +207,7 @@ def query(project_id, bq_sql, default_dataset: DatasetReference = None):
         expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
         transformed_tree = expression_tree.transform(transformer)
         sqlite_sql = transformed_tree.sql("sqlite")
-        cur.execute(sqlite_sql)
+        cur.execute(sqlite_sql, query_params_to_sqlite(parameters))
         columns = []
         if cur.description:
             columns = [desc[0] for desc in cur.description]

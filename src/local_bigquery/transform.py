@@ -1,7 +1,8 @@
+import json
 from datetime import date, datetime
-from typing import Any, List
+from typing import Any, List, Optional
 
-from local_bigquery.models import TableFieldSchema
+from local_bigquery.models import QueryParameter, QueryParameterValue, TableFieldSchema
 
 
 def field_to_sql(field):
@@ -74,3 +75,36 @@ def infer_bigquery_schema(rows, columns) -> List[TableFieldSchema]:
         field_schema = TableFieldSchema(name=col, type=inferred_type, mode=mode)
         schema.append(field_schema)
     return schema
+
+
+def convert_value(qpv: Optional[QueryParameterValue]) -> Any:
+    if qpv is None:
+        return None
+    if qpv.value is not None:
+        return qpv.value
+    if qpv.arrayValues is not None:
+        return [convert_value(item) for item in qpv.arrayValues]
+    if qpv.structValues is not None:
+        return {k: convert_value(v) for k, v in qpv.structValues.items()}
+    if qpv.rangeValue is not None:
+        start = convert_value(qpv.rangeValue.start)
+        end = convert_value(qpv.rangeValue.end)
+        return (start, end)
+    return None
+
+
+def prepare_for_sqlite(value: Any) -> Any:
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value)
+    return value
+
+
+def query_params_to_sqlite(params: list[QueryParameter]) -> dict[str, Any]:
+    if not params:
+        return {}
+    result = {}
+    for i, param in enumerate(params):
+        key = param.name if param.name else f"param{i}"
+        result[key] = convert_value(param.parameterValue)
+        result[key] = prepare_for_sqlite(result[key])
+    return result

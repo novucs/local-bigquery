@@ -5176,6 +5176,17 @@ class QueryParameterValue(BaseModel):
     )
 
 
+class RangeValue(BaseModel):
+    end: Optional[QueryParameterValue] = Field(
+        None,
+        description="Optional. The end value of the range. A missing value represents an unbounded end.",
+    )
+    start: Optional[QueryParameterValue] = Field(
+        None,
+        description="Optional. The start value of the range. A missing value represents an unbounded start.",
+    )
+
+
 class QueryRequest(BaseModel):
     connectionProperties: Optional[List[ConnectionProperty]] = Field(
         None,
@@ -5268,17 +5279,6 @@ class QueryRequest(BaseModel):
     writeIncrementalResults: Optional[bool] = Field(
         None,
         description="Optional. This is only supported for SELECT query. If set, the query is allowed to write results incrementally to the temporary result table. This may incur a performance penalty. This option cannot be used with Legacy SQL. This feature is not yet available.",
-    )
-
-
-class RangeValue(BaseModel):
-    end: Optional[QueryParameterValue] = Field(
-        None,
-        description="Optional. The end value of the range. A missing value represents an unbounded end.",
-    )
-    start: Optional[QueryParameterValue] = Field(
-        None,
-        description="Optional. The start value of the range. A missing value represents an unbounded start.",
     )
 
 

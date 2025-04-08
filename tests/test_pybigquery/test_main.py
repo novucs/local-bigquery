@@ -8,6 +8,7 @@ import uvicorn
 from google.api_core.client_options import ClientOptions
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery
+from google.cloud.bigquery import QueryJobConfig
 
 from local_bigquery import app, db
 
@@ -108,3 +109,59 @@ def test_json(bq):
     assert query(
         bq, """SELECT JSON_VALUE(data, '$."$tricky"') AS tricky FROM table2"""
     ) == [{"tricky": "this has a tricky key"}]
+
+
+def test_args(bq):
+    bq.delete_table("project1.dataset1.table3", not_found_ok=True)
+    bq.create_table(
+        bigquery.Table(
+            "project1.dataset1.table3",
+            schema=[
+                bigquery.SchemaField("data", "STRING"),
+            ],
+        )
+    )
+    query(
+        bq,
+        """
+        INSERT INTO dataset1.table3 (data)
+        VALUES
+        ('one'),
+        ('two'),
+        ('three')
+        """,
+    )
+    assert query(
+        bq,
+        "SELECT * FROM dataset1.table3 WHERE data=@arg",
+        config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("arg", "STRING", "one"),
+            ],
+        ),
+    ) == [{"data": "one"}]
+
+
+def test_complex_args(bq):
+    assert query(
+        bq,
+        "SELECT @user AS user",
+        config=QueryJobConfig(
+            query_parameters=[
+                bigquery.StructQueryParameter(
+                    "user",
+                    bigquery.ScalarQueryParameter("id", "STRING", "123"),
+                    bigquery.ScalarQueryParameter("name", "STRING", "John Doe"),
+                    bigquery.ArrayQueryParameter(
+                        "scores",
+                        "STRING",
+                        ["85", "90"],
+                    ),
+                )
+            ]
+        ),
+    ) == [
+        {
+            "user": {"id": "123", "name": "John Doe", "scores": ["85", "90"]},
+        }
+    ]
