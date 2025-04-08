@@ -71,6 +71,6 @@ def test_query(bq):
 
 
 def test_multi_query(bq):
-    bq.delete_table("project1.dataset1.table1", not_found_ok=True)
-    bq.query("CREATE TABLE project1.dataset1.table1 AS SELECT 1 AS b")
+    query(bq, "DROP TABLE IF EXISTS project1.dataset1.table1")
+    query(bq, "CREATE TABLE project1.dataset1.table1 AS SELECT 1 AS b")
     assert query(bq, "SELECT * FROM project1.dataset1.table1") == [{"b": 1}]

@@ -8,8 +8,8 @@ A BigQuery emulator written in Python.
 
 TL;DR Grab the container, run it, and hit it with a BigQuery client.
 
-```
-ghcr.io/novucs/local-bigquery:latest
+```bash
+docker pull ghcr.io/novucs/local-bigquery:latest
 ```
 
 ### Docker Compose
