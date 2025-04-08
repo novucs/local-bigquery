@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any, List
 
-from pybigquery.models import TableFieldSchema
+from local_bigquery.models import TableFieldSchema
 
 
 def field_to_sql(field):

@@ -9,7 +9,7 @@ from google.api_core.client_options import ClientOptions
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery
 
-from pybigquery import app
+from local_bigquery import app
 
 
 @pytest.fixture(scope="session")

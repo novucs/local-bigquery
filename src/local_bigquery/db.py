@@ -5,8 +5,8 @@ from typing import Optional
 
 import sqlglot
 
-from pybigquery.models import GetQueryResultsResponse, Job, TableSchema
-from pybigquery.transform import bigquery_schema_to_sql
+from local_bigquery.models import GetQueryResultsResponse, Job, TableSchema
+from local_bigquery.transform import bigquery_schema_to_sql
 
 
 @contextlib.contextmanager
