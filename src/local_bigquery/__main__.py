@@ -50,6 +50,7 @@ from .models import (
     QueryResponse,
     Routine,
     RowAccessPolicy,
+    SessionInfo,
     SetIamPolicyRequest,
     StateFilterEnum,
     StorageBillingModel,
@@ -852,7 +853,124 @@ def bigquery_jobs_query(
     params: CommonQueryParams = Depends(),
     body: QueryRequest = None,
 ) -> QueryResponse:
-    raise NotImplementedError("Query job is not implemented yet.")
+    results, columns = db.query(
+        project_id,
+        body.query,
+        default_dataset=body.defaultDataset,
+        parameters=body.queryParameters,
+    )
+    job_id = db.create_job(project_id, Job())
+    rows = [TableRow(f=[TableCell(v=cell) for cell in row]) for row in results]
+    schema = TableSchema(
+        fields=infer_bigquery_schema(results, columns),
+        foreignTypeInfo=None,
+    )
+    results_response = GetQueryResultsResponse(
+        cacheHit=False,
+        errors=[],
+        etag="etag",
+        jobComplete=True,
+        jobReference=JobReference(
+            jobId=str(job_id),
+            location="US",
+            projectId=project_id,
+        ),
+        kind="bigquery#getQueryResultsResponse",
+        numDmlAffectedRows="0",
+        pageToken=None,
+        rows=rows,
+        schema=schema,
+        totalBytesProcessed="0",
+        totalRows=str(len(results)),
+    )
+    job = Job(
+        # configuration=body,
+        etag="etag",
+        id=str(job_id),
+        jobCreationReason=JobCreationReason(
+            code=Code2.REQUESTED,
+        ),
+        jobReference=JobReference(
+            jobId=str(job_id),
+            location="US",
+            projectId=project_id,
+        ),
+        kind="bigquery#job",
+        principal_subject=None,
+        selfLink="/bigquery/v2/projects/projectId/jobs/jobId",
+        statistics=JobStatistics(
+            completionRatio=1.0,
+            copy=None,
+            creationTime=str(datetime.now().timestamp()),
+            dataMaskingStatistics=None,
+            edition=None,
+            endTime=str(datetime.now().timestamp()),
+            extract=None,
+            finalExecutionDurationMs=None,
+            load=None,
+            numChildJobs=None,
+            parentJobId=None,
+            query=JobStatistics2(
+                biEngineStatistics=BiEngineStatistics(
+                    accelerationMode=AccelerationMode.BI_ENGINE_DISABLED,
+                    biEngineMode=BiEngineMode.DISABLED,
+                    biEngineReasons=[
+                        BiEngineReason(
+                            code=Code.OTHER_REASON, message="BI Engine is not emulated."
+                        )
+                    ],
+                )
+            ),
+            quotaDeferments=[],
+            reservationUsage=[],
+            reservation_id=None,
+            rowLevelSecurityStatistics=None,
+            scriptStatistics=None,
+            sessionInfo=None,
+            startTime=str(datetime.now().timestamp()),
+            totalBytesProcessed=None,
+            totalSlotMs=None,
+            transactionInfo=None,
+        ),
+        status=JobStatus(
+            errorResult=None,
+            errors=None,
+            state="DONE",
+        ),
+        user_email=None,
+    )
+    db.update_job(job_id, job, results_response)
+    return QueryResponse(
+        cacheHit=False,
+        creationTime=str(datetime.now().timestamp()),
+        dmlStats=None,
+        endTime=str(datetime.now().timestamp()),
+        errors=[],
+        jobComplete=True,
+        jobCreationReason=JobCreationReason(
+            code=Code2.REQUESTED,
+        ),
+        jobReference=JobReference(
+            jobId=str(job_id),
+            location="US",
+            projectId=project_id,
+        ),
+        kind="bigquery#queryResponse",
+        location="US",
+        numDmlAffectedRows="0",
+        pageToken=None,
+        queryId=str(job_id),
+        rows=rows,
+        schema=schema,
+        sessionInfo=SessionInfo(
+            sessionId=str(job_id),
+        ),
+        startTime=str(datetime.now().timestamp()),
+        totalBytesBilled="0",
+        totalBytesProcessed="0",
+        totalRows=str(len(results)),
+        totalSlotMs="0",
+    )
 
 
 @router.get(
