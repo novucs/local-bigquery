@@ -10,14 +10,28 @@ from local_bigquery.transform import bigquery_schema_to_sql
 
 
 @contextlib.contextmanager
-def session():
-    yield sqlite3.connect(Path(__file__).parent.parent / "db.sqlite3")
+def connection():
+    conn = sqlite3.connect(Path(__file__).parent.parent / "db.sqlite3")
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextlib.contextmanager
+def cursor():
+    with connection() as conn:
+        cur = conn.cursor()
+        try:
+            yield cur
+            conn.commit()
+        finally:
+            cur.close()
 
 
 def migrate():
-    with session() as db:
-        cursor = db.cursor()
-        cursor.execute(
+    with cursor() as cur:
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +41,6 @@ def migrate():
             )
             """
         )
-        db.commit()
 
 
 def list_datasets(project_id):
@@ -38,15 +51,14 @@ def list_datasets(project_id):
 
 def delete_dataset(project_id, dataset_id):
     tables = list_tables(project_id, dataset_id)
-    with session() as db:
+    with connection() as db:
         for table in tables:
             db.execute(f"DROP TABLE {table.table_name}")
 
 
 def list_tables(project_id, dataset_id):
-    with session() as db:
-        cursor = db.cursor()
-        cursor.execute(
+    with cursor() as cur:
+        cur.execute(
             """
             WITH parts AS (
               SELECT
@@ -65,22 +77,20 @@ def list_tables(project_id, dataset_id):
         """,
             (project_id, dataset_id),
         )
-        return cursor.fetchall()
+        return cur.fetchall()
 
 
 def delete_table(project_id, dataset_id, table_id):
-    with session() as db:
-        cursor = db.cursor()
-        cursor.execute(
+    with cursor() as cur:
+        cur.execute(
             """
             DROP TABLE '{}.{}.{}'
             """.format(project_id, dataset_id, table_id)
         )
-        db.commit()
 
 
 def create_table(project_id, dataset_id, table_id, schema: TableSchema):
-    with session() as db:
+    with cursor() as cur:
         bq_sql = bigquery_schema_to_sql(
             schema.fields, f"{project_id}.{dataset_id}.{table_id}"
         )
@@ -93,28 +103,24 @@ def create_table(project_id, dataset_id, table_id, schema: TableSchema):
 
         transformed_tree = expression_tree.transform(transformer)
         sqlite_sql = transformed_tree.sql("sqlite")
-        db.execute(sqlite_sql)
-        db.commit()
+        cur.execute(sqlite_sql)
 
 
 def create_job(project_id, job: Job) -> int:
-    with session() as db:
-        cursor = db.cursor()
-        cursor.execute(
+    with cursor() as cur:
+        cur.execute(
             """
                 INSERT INTO jobs (project_id, job)
                 VALUES (?, ?)
             """,
             (project_id, job.model_dump_json()),
         )
-        db.commit()
-        return cursor.lastrowid
+        return cur.lastrowid
 
 
 def update_job(job_id, job: Job, results: Optional[GetQueryResultsResponse] = None):
-    with session() as db:
-        cursor = db.cursor()
-        cursor.execute(
+    with cursor() as cur:
+        cur.execute(
             """
                 UPDATE jobs
                 SET job = ?, results = ?
@@ -126,13 +132,11 @@ def update_job(job_id, job: Job, results: Optional[GetQueryResultsResponse] = No
                 job_id,
             ),
         )
-        db.commit()
 
 
 def get_job(project_id, job_id):
-    with session() as db:
-        cursor = db.cursor()
-        cursor.execute(
+    with cursor() as cur:
+        cur.execute(
             """
                 SELECT job, results
                 FROM jobs
@@ -140,7 +144,7 @@ def get_job(project_id, job_id):
             """,
             (job_id, project_id),
         )
-        row = cursor.fetchone()
+        row = cur.fetchone()
         if not row:
             return None, None
         results = None
@@ -151,7 +155,7 @@ def get_job(project_id, job_id):
 
 
 def query(project_id, bq_sql):
-    with session() as db:
+    with cursor() as cur:
         expression_tree = sqlglot.parse_one(bq_sql)
 
         def transformer(node):
@@ -164,9 +168,8 @@ def query(project_id, bq_sql):
 
         transformed_tree = expression_tree.transform(transformer)
         sqlite_sql = transformed_tree.sql("sqlite")
-        cursor = db.cursor()
-        cursor.execute(sqlite_sql)
+        cur.execute(sqlite_sql)
         columns = []
-        if cursor.description:
-            columns = [desc[0] for desc in cursor.description]
-        return cursor.fetchall(), columns
+        if cur.description:
+            columns = [desc[0] for desc in cur.description]
+        return cur.fetchall(), columns

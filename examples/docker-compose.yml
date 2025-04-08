@@ -1,0 +1,5 @@
+services:
+  bigquery:
+    image: ghcr.io/novucs/local-bigquery:latest
+    ports:
+      - "8000:8000"
