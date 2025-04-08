@@ -35,7 +35,6 @@ def server_url():
 
 @pytest.fixture
 def bq(server_url):
-    # disable retries
     bigquery.DEFAULT_RETRY._timeout = 1
     google.cloud.bigquery.retry.DEFAULT_RETRY._timeout = 1
     google.cloud.bigquery.retry.DEFAULT_JOB_RETRY._timeout = 1
@@ -44,8 +43,14 @@ def bq(server_url):
         credentials=AnonymousCredentials(),
         client_options=ClientOptions(api_endpoint=server_url),
     )
-    yield bq
-    bq.close()
+    try:
+        yield bq
+    finally:
+        bq.close()
+
+
+def query(bq: bigquery.Client, sql: str) -> list[dict]:
+    return [dict(row.items()) for row in bq.query(sql).result()]
 
 
 def test_create_table(bq):
@@ -62,14 +67,10 @@ def test_create_table(bq):
 
 
 def test_query(bq):
-    assert bq.query("SELECT 1 AS a").to_dataframe().to_dict(orient="records") == [
-        {"a": 1}
-    ]
+    assert query(bq, "SELECT 1 AS a") == [{"a": 1}]
 
 
 def test_multi_query(bq):
     bq.delete_table("project1.dataset1.table1", not_found_ok=True)
     bq.query("CREATE TABLE project1.dataset1.table1 AS SELECT 1 AS b")
-    assert bq.query("SELECT * FROM project1.dataset1.table1").to_dataframe().to_dict(
-        orient="records"
-    ) == [{"b": 1}]
+    assert query(bq, "SELECT * FROM project1.dataset1.table1") == [{"b": 1}]

@@ -1,21 +1,16 @@
 [project]
 name = "local_bigquery"
 version = "0.1.0"
-description = "Add your description here"
+description = "Run BigQuery locally"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115.12",
-    "sqlalchemy>=2.0.40",
     "sqlglot>=26.12.1",
 ]
 
 [dependency-groups]
 dev = [
-    "db-dtypes>=1.4.2",
     "google-cloud-bigquery>=3.31.0",
-    "httpx>=0.28.1",
-    "pandas>=2.2.3",
-    "pre-commit>=4.2.0",
     "pytest>=8.3.5",
 ]
 
