@@ -88,15 +88,14 @@ def get_duckdb_table_name(
     project_id: str = None,
     default_dataset: DatasetReference = None,
 ):
-    parts = table_id.split(".")
+    parts = table_id.strip().split(" ")[0].split(".")
     if len(parts) == 2:
         dataset_id, table_id = parts
     if len(parts) == 3:
         project_id, dataset_id, table_id = parts
-    if not dataset_id:
-        if default_dataset:
-            dataset_id = default_dataset.datasetId
-            project_id = default_dataset.projectId
+    if not dataset_id and default_dataset:
+        dataset_id = default_dataset.datasetId
+        project_id = default_dataset.projectId
     if not project_id:
         project_id = default_dataset.projectId
     table_name = ".".join(filter(None, [dataset_id, table_id]))
@@ -238,7 +237,7 @@ def query(
                     project_id=project_id,
                     default_dataset=default_dataset,
                 )
-                return sqlglot.exp.to_table(table_name)
+                return sqlglot.exp.to_table(table_name, alias=node.alias)
             if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":
                 return None
             return node
