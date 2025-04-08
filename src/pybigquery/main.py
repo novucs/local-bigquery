@@ -9,8 +9,13 @@ from fastapi.responses import JSONResponse
 
 from . import db
 from .models import (
-    AccelerationMode, BatchDeleteRowAccessPoliciesRequest,
-    BiEngineMode, BiEngineReason, BiEngineStatistics, Code, CommonQueryParams,
+    AccelerationMode,
+    BatchDeleteRowAccessPoliciesRequest,
+    BiEngineMode,
+    BiEngineReason,
+    BiEngineStatistics,
+    Code,
+    CommonQueryParams,
     Dataset,
     Dataset1,
     DatasetList,
@@ -24,7 +29,8 @@ from .models import (
     JobList,
     JobReference,
     JobStatistics,
-    JobStatistics2, JobStatus,
+    JobStatistics2,
+    JobStatus,
     LinkState,
     LinkedDatasetMetadata,
     ListModelsResponse,
@@ -49,10 +55,12 @@ from .models import (
     TableDataInsertAllRequest,
     TableDataInsertAllResponse,
     TableDataList,
-    TableFieldSchema, TableList,
+    TableFieldSchema,
+    TableList,
     TableReference,
     TableRow,
-    TableSchema, TestIamPermissionsRequest,
+    TableSchema,
+    TestIamPermissionsRequest,
     TestIamPermissionsResponse,
     UndeleteDatasetRequest,
     View,
@@ -698,10 +706,11 @@ def bigquery_jobs_insert(
                 biEngineStatistics=BiEngineStatistics(
                     accelerationMode=AccelerationMode.BI_ENGINE_DISABLED,
                     biEngineMode=BiEngineMode.DISABLED,
-                    biEngineReasons=[BiEngineReason(
-                        code=Code.OTHER_REASON,
-                        message="BI Engine is not emulated."
-                    )],
+                    biEngineReasons=[
+                        BiEngineReason(
+                            code=Code.OTHER_REASON, message="BI Engine is not emulated."
+                        )
+                    ],
                 )
             ),
             quotaDeferments=[],
@@ -832,7 +841,7 @@ def bigquery_jobs_get_query_results(
                 TableFieldSchema(
                     name="a",
                     type="INTEGER",
-                mode="NULLABLE",
+                    mode="NULLABLE",
                 ),
             ],
             foreignTypeInfo=None,
