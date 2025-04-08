@@ -94,10 +94,9 @@ def get_duckdb_table_name(
     if len(parts) == 3:
         project_id, dataset_id, table_id = parts
     if not dataset_id:
-        if not default_dataset:
-            raise ValueError("default dataset is required if omitting dataset")
-        dataset_id = default_dataset.datasetId
-        project_id = default_dataset.projectId
+        if default_dataset:
+            dataset_id = default_dataset.datasetId
+            project_id = default_dataset.projectId
     if not project_id:
         project_id = default_dataset.projectId
     table_name = ".".join(filter(None, [dataset_id, table_id]))
