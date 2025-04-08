@@ -162,6 +162,6 @@ def test_complex_args(bq):
         ),
     ) == [
         {
-            "user": {"id": "123", "name": "John Doe", "scores": ["85", "90"]},
+            "user": '{"id": "123", "name": "John Doe", "scores": ["85", "90"]}',
         }
     ]
