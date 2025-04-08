@@ -2,11 +2,13 @@
 
 set -e
 
-SPECS_DIR="specs"
+SCRIPT_DIR=$(dirname -- "$(readlink -f -- "$BASH_SOURCE")")
+SRC_DIR="${SCRIPT_DIR}/.."
+SPECS_DIR="${SRC_DIR}/../specs"
 GOOGLE_PATH="${SPECS_DIR}/google.json"
 SWAGGER_PATH="${SPECS_DIR}/swagger.yaml"
 OPENAPI_PATH="${SPECS_DIR}/openapi.yaml"
-OUTPUT_DIR="pybigquery"
+OUTPUT_DIR="${SRC_DIR}/pybigquery"
 OUTPUT_MAIN="${OUTPUT_DIR}/main.py"
 
 curl https://bigquery.googleapis.com/discovery/v1/apis/bigquery/v2/rest -o $GOOGLE_PATH
