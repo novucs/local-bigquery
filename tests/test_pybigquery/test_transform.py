@@ -1,5 +1,5 @@
 from local_bigquery.models import QueryParameter, QueryParameterValue
-from local_bigquery.transform import query_params_to_duckdb
+from local_bigquery.transform import convert_missing_fields, query_params_to_duckdb
 
 
 def test_query_params_to_duckdb():
@@ -26,4 +26,17 @@ def test_query_params_to_duckdb():
     assert duckdb_params == {
         "param0": "scalar_value",
         "user": {"id": "123", "name": "John Doe", "scores": ["85", "90"]},
+    }
+
+
+def test_convert_missing_fields():
+    data = {"id": "1", "nested": [{"item": "item1"}, {"item": "item2"}, {}]}
+    converted_data = {k: convert_missing_fields(v) for k, v in data.items()}
+    assert converted_data == {
+        "id": "1",
+        "nested": [
+            {"item": "item1"},
+            {"item": "item2"},
+            {"item": None},
+        ],
     }

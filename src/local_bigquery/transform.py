@@ -100,3 +100,16 @@ def query_params_to_duckdb(params: list[QueryParameter]) -> dict[str, Any]:
         key = param.name if param.name else f"param{i}"
         result[key] = convert_value(param.parameterValue)
     return result
+
+
+def convert_missing_fields(data):
+    if isinstance(data, dict):
+        return {k: convert_missing_fields(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        new_list = [convert_missing_fields(item) for item in data]
+        if new_list and all(isinstance(item, dict) for item in new_list):
+            all_keys = set().union(*(item.keys() for item in new_list))
+            new_list = [{key: d.get(key, None) for key in all_keys} for d in new_list]
+        return new_list
+    else:
+        return data

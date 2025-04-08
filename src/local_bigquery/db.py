@@ -13,7 +13,11 @@ from local_bigquery.models import (
     TableSchema,
 )
 from local_bigquery.settings import settings
-from local_bigquery.transform import bigquery_schema_to_sql, query_params_to_duckdb
+from local_bigquery.transform import (
+    bigquery_schema_to_sql,
+    convert_missing_fields,
+    query_params_to_duckdb,
+)
 
 
 @contextlib.contextmanager
@@ -63,7 +67,7 @@ def migrate():
 def debug_sql(bq_sql: str = None, duckdb_sql: str = None, params: dict = None):
     try:
         yield
-    except duckdb.ParserException as e:
+    except duckdb.Error as e:
         print("DuckDB SQL error:")
         print(e)
         if bq_sql:
@@ -160,6 +164,8 @@ def create_table(project_id, dataset_id, table_id, schema: TableSchema):
             if isinstance(node, sqlglot.exp.Table):
                 table_name = get_duckdb_table_name(str(node), dataset_id, project_id)
                 return sqlglot.exp.to_table(table_name)
+            if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":
+                return None
             return node
 
         expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
@@ -234,6 +240,8 @@ def query(
                     default_dataset=default_dataset,
                 )
                 return sqlglot.exp.to_table(table_name)
+            if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":
+                return None
             return node
 
         expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
@@ -258,5 +266,6 @@ def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
             columns_str = ", ".join(columns)
             sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({', '.join([f'${col}' for col in columns])})"
             params = {k: v.root for k, v in row.json.root.items()}
+            params = convert_missing_fields(params)
             with debug_sql(duckdb_sql=sql, params=params):
                 cur.execute(sql, params)

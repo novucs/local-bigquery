@@ -193,3 +193,34 @@ def test_bulk_insert(bq):
         {"name": "Alice", "age": 30},
         {"name": "Bob", "age": 25},
     ]
+
+
+def test_create_record_table(bq):
+    bq.create_dataset("project.nested_dataset")
+    table = bigquery.Table(
+        "project.nested_dataset.nested_table",
+        schema=[
+            bigquery.SchemaField("id", "INTEGER", "REQUIRED"),
+            bigquery.SchemaField(
+                "nested",
+                "RECORD",
+                "REPEATED",
+                fields=[
+                    bigquery.SchemaField("item", "TEXT"),
+                ],
+            ),
+        ],
+    )
+    bq.create_table(table, exists_ok=True)
+    data = [
+        {
+            "id": 1,
+            "nested": [
+                {"item": "item1"},
+                {"item": "item2"},
+                {"item": None},
+            ],
+        }
+    ]
+    bq.insert_rows(table, data)
+    assert query(bq, "SELECT * FROM project.nested_dataset.nested_table") == data
