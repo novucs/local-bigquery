@@ -1,14 +1,14 @@
-from __future__ import annotations
-
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
 import duckdb
-from fastapi import APIRouter, Depends, FastAPI, Path, Query, Request, HTTPException
+import uvicorn
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse
 
+from local_bigquery.settings import settings
 from . import db
 from .models import (
     AccelerationMode,
@@ -923,3 +923,6 @@ def bigquery_tables_test_iam_permissions(
 
 
 app.include_router(router)
+
+if __name__ == "__main__":
+    uvicorn.run(app, host=settings.bigquery_host, port=settings.bigquery_port)

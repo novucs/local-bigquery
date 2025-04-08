@@ -14,11 +14,19 @@ docker pull ghcr.io/novucs/local-bigquery:latest
 
 ### Docker Compose
 ```yaml
+volumes:
+  bigquery_data: {}
 services:
   bigquery:
     image: ghcr.io/novucs/local-bigquery:latest
     ports:
-      - "8000:8000"
+      - "9050:9050"
+    environment:
+      BIGQUERY_PORT: 9050
+      BIGQUERY_HOST: 0.0.0.0
+      DATABASE_PATH: /data/bigquery.db
+    volumes:
+      - bigquery_data:/data
 ```
 
 ### BigQuery Client
@@ -32,13 +40,13 @@ from google.cloud import bigquery
 client = bigquery.Client(
     project="my-project",
     location="us-central1",
-    client_options={"api_endpoint": "http://localhost:8000"},
+    client_options={"api_endpoint": "http://localhost:9050"},
 )
 
-client.create_dataset("my_dataset")
+client.create_dataset("my_dataset", exists_ok=True)
 
 client.query("""
-CREATE TABLE my_dataset.my_table (
+CREATE TABLE IF NOT EXISTS my_dataset.my_table (
     id INT64,
     name STRING
 )

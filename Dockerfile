@@ -10,6 +10,7 @@ ADD . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:/app/src/scripts:$PATH"
-EXPOSE 8000
+ENV PYTHONPATH="/app/src"
+EXPOSE 9050
 ENTRYPOINT []
-CMD ["uv", "run", "fastapi", "run", "src/local_bigquery"]
+CMD ["uv", "run", "python", "-m", "local_bigquery"]

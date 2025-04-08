@@ -9,14 +9,14 @@ from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery
 from google.cloud.bigquery import QueryJobConfig
 
-from local_bigquery import app, db
+from local_bigquery.__main__ import app, db
 
 
 @pytest.fixture(scope="session")
 def server_url():
     db.clear()
     host = "127.0.0.1"
-    port = 8000
+    port = 9050
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)

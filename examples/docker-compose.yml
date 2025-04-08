@@ -1,5 +1,13 @@
+volumes:
+  bigquery_data: {}
 services:
   bigquery:
     image: ghcr.io/novucs/local-bigquery:latest
     ports:
-      - "8000:8000"
+      - "9050:9050"
+    environment:
+      BIGQUERY_PORT: 9050
+      BIGQUERY_HOST: 0.0.0.0
+      DATABASE_PATH: /data/bigquery.db
+    volumes:
+      - bigquery_data:/data

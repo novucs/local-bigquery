@@ -1,5 +1,4 @@
 import contextlib
-from pathlib import Path
 from typing import Optional
 
 import duckdb
@@ -13,14 +12,13 @@ from local_bigquery.models import (
     Row1,
     TableSchema,
 )
+from local_bigquery.settings import settings
 from local_bigquery.transform import bigquery_schema_to_sql, query_params_to_duckdb
-
-DB_PATH = Path(__file__).parent.parent / "bigquery.db"
 
 
 @contextlib.contextmanager
 def connection():
-    conn = duckdb.connect(DB_PATH)
+    conn = duckdb.connect(settings.database_path)
     try:
         yield conn
     finally:
@@ -28,7 +26,7 @@ def connection():
 
 
 def clear():
-    DB_PATH.unlink(missing_ok=True)
+    settings.database_path.unlink(missing_ok=True)
 
 
 @contextlib.contextmanager

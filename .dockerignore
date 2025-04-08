@@ -1,0 +1,8 @@
+.github
+.venv
+examples
+src/scripts
+src/specs
+tests
+.pre-commit-config.yaml
+*.db
