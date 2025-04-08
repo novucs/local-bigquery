@@ -25,5 +25,5 @@ def test_query_params_to_sqlite():
     sqlite_params = query_params_to_sqlite(params)
     assert sqlite_params == {
         "param0": "scalar_value",
-        "user": {"id": "123", "name": "John Doe", "scores": ["85", "90"]},
+        "user": '{"id": "123", "name": "John Doe", "scores": ["85", "90"]}',
     }
