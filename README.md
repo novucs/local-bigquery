@@ -35,6 +35,8 @@ client = bigquery.Client(
     client_options={"api_endpoint": "http://localhost:8000"},
 )
 
+client.create_dataset("my_dataset")
+
 client.query("""
 CREATE TABLE my_dataset.my_table (
     id INT64,
