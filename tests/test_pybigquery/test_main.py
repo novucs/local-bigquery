@@ -171,3 +171,30 @@ def test_complex_args(bq):
             "user": {"id": "123", "name": "John Doe", "scores": ["85", "90"]},
         }
     ]
+
+
+def test_bulk_insert(bq):
+    bq.create_dataset("`bigquery-public-data`.test_dataset", exists_ok=True)
+    bq.delete_table("`bigquery-public-data`.test_dataset.test_table", not_found_ok=True)
+    table = bq.create_table(
+        bigquery.Table(
+            "`bigquery-public-data`.test_dataset.test_table",
+            schema=[
+                bigquery.SchemaField("name", "STRING"),
+                bigquery.SchemaField("age", "INTEGER"),
+            ],
+        )
+    )
+    bq.insert_rows(
+        table,
+        [
+            {"name": "Alice", "age": 30},
+            {"name": "Bob", "age": 25},
+        ],
+    )
+    assert query(
+        bq, "SELECT * FROM `bigquery-public-data`.test_dataset.test_table"
+    ) == [
+        {"name": "Alice", "age": 30},
+        {"name": "Bob", "age": 25},
+    ]

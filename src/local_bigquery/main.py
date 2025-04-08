@@ -571,7 +571,12 @@ def bigquery_tabledata_insert_all(
     params: CommonQueryParams = Depends(),
     body: TableDataInsertAllRequest = None,
 ) -> TableDataInsertAllResponse:
-    raise NotImplementedError("Insert all table data is not implemented yet.")
+    if body.rows:
+        db.tabledata_insert_all(project_id, dataset_id, table_id, body.rows)
+    return TableDataInsertAllResponse(
+        insertErrors=[],
+        kind="bigquery#tableDataInsertAllResponse",
+    )
 
 
 @router.get(

@@ -10,6 +10,7 @@ from local_bigquery.models import (
     GetQueryResultsResponse,
     Job,
     QueryParameter,
+    Row1,
     TableSchema,
 )
 from local_bigquery.transform import bigquery_schema_to_sql, query_params_to_duckdb
@@ -225,3 +226,15 @@ def query(
         if cur.description:
             columns = [desc[0] for desc in cur.description]
         return cur.fetchall(), columns
+
+
+def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
+    table_name = get_duckdb_table_name(table_id, dataset_id, project_id)
+    with cursor() as cur:
+        for row in rows:
+            if not row.json or not row.json.root:
+                continue
+            columns = {k for k, v in row.json.root.items()}
+            columns_str = ", ".join(columns)
+            sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({', '.join([f'${col}' for col in columns])})"
+            cur.execute(sql, {k: v.root for k, v in row.json.root.items()})
