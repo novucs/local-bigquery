@@ -75,8 +75,8 @@ package main
 import (
     "context"
 
-	"cloud.google.com/go/bigquery"
-	"google.golang.org/api/option"
+    "cloud.google.com/go/bigquery"
+    "google.golang.org/api/option"
 )
 
 func main() {
