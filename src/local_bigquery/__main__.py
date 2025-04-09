@@ -722,10 +722,11 @@ def bigquery_jobs_insert(
     body: Optional[Job] = None,
 ) -> Job:
     job_id = db.create_job(project_id, body)
+    default_dataset = body.configuration.query.defaultDataset
     results, columns = db.query(
-        project_id,
+        default_dataset.projectId if default_dataset else project_id,
+        default_dataset.datasetId if default_dataset else None,
         body.configuration.query.query,
-        default_dataset=body.configuration.query.defaultDataset,
         parameters=body.configuration.query.queryParameters,
     )
     schema = TableSchema(
@@ -856,10 +857,11 @@ def bigquery_jobs_query(
     params: CommonQueryParams = Depends(),
     body: QueryRequest = None,
 ) -> QueryResponse:
+    default_dataset = body.defaultDataset
     results, columns = db.query(
-        project_id,
+        default_dataset.projectId if default_dataset else project_id,
+        default_dataset.datasetId if default_dataset else None,
         body.query,
-        default_dataset=body.defaultDataset,
         parameters=body.queryParameters,
     )
     job_id = db.create_job(project_id, Job())

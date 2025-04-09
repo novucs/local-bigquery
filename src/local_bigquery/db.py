@@ -1,11 +1,11 @@
 import contextlib
-from typing import Optional
 import shutil
+from typing import Optional
+
 import duckdb
 import sqlglot
 
 from local_bigquery.models import (
-    DatasetReference,
     GetQueryResultsResponse,
     Job,
     QueryParameter,
@@ -228,11 +228,11 @@ def get_job(project_id, job_id):
 
 def query(
     project_id,
+    dataset_id,
     bq_sql,
-    default_dataset: DatasetReference = None,
     parameters: Optional[list[QueryParameter]] = None,
 ):
-    with cursor(default_dataset.projectId, default_dataset.datasetId) as cur:
+    with cursor(project_id, dataset_id) as cur:
 
         def transformer(node):
             if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":

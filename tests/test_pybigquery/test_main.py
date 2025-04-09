@@ -45,9 +45,6 @@ def bq(server_url):
         project="project1",
         credentials=AnonymousCredentials(),
         client_options=ClientOptions(api_endpoint=server_url),
-        default_query_job_config=bigquery.QueryJobConfig(
-            default_dataset="project1.dataset1",
-        ),
     )
     try:
         yield bq
