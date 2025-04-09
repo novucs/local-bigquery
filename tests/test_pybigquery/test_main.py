@@ -12,7 +12,7 @@ from google.cloud import bigquery
 from google.cloud.bigquery import QueryJobConfig
 from sqlalchemy import column, create_engine, select, text
 
-from local_bigquery.__main__ import app, db
+from local_bigquery.main import app, db
 from local_bigquery.settings import settings
 
 

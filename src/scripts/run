@@ -1,0 +1,9 @@
+#!/bin/bash
+
+set -e
+
+SCRIPT_DIR=$(dirname -- "$(readlink -f -- "$BASH_SOURCE")")
+SRC_DIR="${SCRIPT_DIR}/.."
+
+cd "${SRC_DIR}"
+uv run fastapi run --port 9050 local_bigquery

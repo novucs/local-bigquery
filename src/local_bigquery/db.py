@@ -251,12 +251,12 @@ def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
     table_name = build_table_name(project_id, dataset_id, table_id)
     with cursor(project_id, dataset_id) as cur:
         for row in rows:
-            if not row.json or not row.json.root:
+            if not row.json_ or not row.json_.root:
                 continue
-            columns = {f'"{k}"' for k, v in row.json.root.items()}
+            columns = {f'"{k}"' for k, v in row.json_.root.items()}
             columns_str = ", ".join(columns)
             sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({', '.join([f'${col}' for col in columns])})"
-            params = {k: v.root for k, v in row.json.root.items()}
+            params = {k: v.root for k, v in row.json_.root.items()}
             params = fill_missing_fields(params)
             with debug_sql(duckdb_sql=sql, params=params):
                 cur.execute(sql, params)

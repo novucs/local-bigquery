@@ -13,4 +13,4 @@ ENV PATH="/app/.venv/bin:/app/src/scripts:$PATH"
 ENV PYTHONPATH="/app/src"
 EXPOSE 9050
 ENTRYPOINT []
-CMD ["uv", "run", "python", "-m", "local_bigquery"]
+CMD ["run"]
