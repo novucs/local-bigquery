@@ -10,7 +10,7 @@ on:
   pull_request:
 
 env:
-  IMAGE_NAME: local_bigquery
+  IMAGE_NAME: local-bigquery
 
 jobs:
   push:
