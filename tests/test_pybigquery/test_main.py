@@ -60,6 +60,22 @@ def query(
     return [dict(row.items()) for row in bq.query(sql, job_config=config).result()]
 
 
+def test_default_dataset(server_url):
+    bq = bigquery.Client(
+        project="project1",
+        credentials=AnonymousCredentials(),
+        client_options=ClientOptions(api_endpoint=server_url),
+        default_query_job_config=QueryJobConfig(
+            default_dataset=bigquery.DatasetReference("project1", "dataset1"),
+        ),
+    )
+    bq.query("create schema if not exists dataset1")
+    assert query(
+        bq,
+        "select current_catalog() as project, current_schema() as dataset",
+    ) == [{"project": "project1", "dataset": "dataset1"}]
+
+
 def test_create_table(bq):
     bq.create_dataset("bigquery-public-data.test_dataset2")
     bq.create_table(
