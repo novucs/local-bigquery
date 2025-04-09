@@ -1,6 +1,6 @@
 import contextlib
 from typing import Optional
-
+import shutil
 import duckdb
 import sqlglot
 
@@ -20,9 +20,27 @@ from local_bigquery.transform import (
 )
 
 
+def strip_quotes(value: str) -> str:
+    return value.strip("`'\"")
+
+
+def build_table_name(
+    project_id: Optional[str], dataset_id: Optional[str], table_id: str
+) -> str:
+    parts = [project_id, dataset_id, table_id]
+    parts = [strip_quotes(part) for part in parts if part if part]
+    return ".".join([f'"{part}"' for part in parts])
+
+
 @contextlib.contextmanager
-def connection():
-    conn = duckdb.connect(settings.database_path)
+def connection(project_id: Optional[str] = None):
+    project_id = strip_quotes(project_id or settings.default_project_id)
+    settings.database_path.mkdir(parents=True, exist_ok=True)
+    duckdb.connect(settings.database_path / f"{project_id}.db").close()
+    conn = duckdb.connect()
+    for db in settings.database_path.glob("*.db"):
+        conn.execute(f"ATTACH '{db}' AS \"{db.stem}\"")
+    conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{settings.default_dataset_id}"')
     try:
         yield conn
     finally:
@@ -30,13 +48,20 @@ def connection():
 
 
 def clear():
-    settings.database_path.unlink(missing_ok=True)
+    shutil.rmtree(settings.database_path, ignore_errors=True)
 
 
 @contextlib.contextmanager
-def cursor():
-    with connection() as conn:
+def cursor(project_id: Optional[str] = None, dataset_id: Optional[str] = None):
+    project_id = strip_quotes(project_id or settings.default_project_id)
+    dataset_id = strip_quotes(dataset_id or settings.default_dataset_id)
+    with connection(project_id) as conn:
         cur = conn.cursor()
+        conn.execute(f'USE "{project_id}"')
+        try:
+            cur.execute(f'USE "{project_id}"."{dataset_id}"')
+        except duckdb.CatalogException:
+            cur.execute(f'USE "{project_id}"."{settings.default_dataset_id}"')
         try:
             yield cur
             conn.commit()
@@ -45,7 +70,7 @@ def cursor():
 
 
 def migrate():
-    with cursor() as cur:
+    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS jobs (
@@ -64,7 +89,12 @@ def migrate():
 
 
 @contextlib.contextmanager
-def debug_sql(bq_sql: str = None, duckdb_sql: str = None, params: dict = None):
+def debug_sql(
+    *,
+    bq_sql: Optional[str] = None,
+    duckdb_sql: Optional[str] = None,
+    params: Optional[dict] = None,
+):
     try:
         yield
     except duckdb.Error as e:
@@ -82,21 +112,6 @@ def debug_sql(bq_sql: str = None, duckdb_sql: str = None, params: dict = None):
         raise
 
 
-def get_duckdb_table_name(table_id: str):
-    parts = table_id.strip().split(" ")[0].split(".")
-    table_name = table_id
-    if len(parts) == 1:
-        table_name = parts[0]
-    if len(parts) == 2:
-        table_name = f"{parts[0]}.{parts[1]}"
-    if len(parts) == 3:
-        table_name = f"{parts[1]}.{parts[2]}"
-    table_name = table_name.replace('"', "")
-    table_name = table_name.replace("`", "")
-    table_name = table_name.replace("-", "_")
-    return table_name
-
-
 def list_datasets(project_id):
     tables = list_tables(project_id, None)
     datasets = {table.dataset_id for table in tables}
@@ -105,18 +120,18 @@ def list_datasets(project_id):
 
 def delete_dataset(project_id, dataset_id):
     tables = list_tables(project_id, dataset_id)
-    with connection() as cur:
+    with cursor(project_id, dataset_id) as cur:
         for table in tables:
-            cur.execute(f"DROP TABLE {table.table_name}")
+            cur.execute(f'DROP TABLE "{table.table_name}"')
 
 
 def create_dataset(project_id, dataset_id):
-    with connection() as cur:
-        cur.execute("CREATE SCHEMA IF NOT EXISTS %s" % dataset_id)
+    with cursor(project_id, dataset_id) as cur:
+        cur.execute(f"CREATE SCHEMA IF NOT EXISTS {dataset_id}")
 
 
 def list_tables(project_id, dataset_id):
-    with cursor() as cur:
+    with cursor(project_id, dataset_id) as cur:
         cur.execute(
             """
             WITH parts AS (
@@ -133,31 +148,29 @@ def list_tables(project_id, dataset_id):
               substr(name, dot1 + dot2 + 1) AS table_name
             FROM parts
             WHERE project_id = ? AND dataset_id = ?
-        """,
+            """,
             (project_id, dataset_id),
         )
         return cur.fetchall()
 
 
 def delete_table(project_id, dataset_id, table_id):
-    with cursor() as cur:
-        cur.execute(f"DROP TABLE {dataset_id}.{table_id}")
+    table_name = build_table_name(project_id, dataset_id, table_id)
+    with cursor(project_id, dataset_id) as cur:
+        cur.execute(f"DROP TABLE {table_name}")
 
 
 def create_table(project_id, dataset_id, table_id, schema: TableSchema):
-    with cursor() as cur:
-        table_name = f"{project_id}.{dataset_id}.{table_id}"
+    table_name = build_table_name(project_id, dataset_id, table_id)
+    with cursor(project_id, dataset_id) as cur:
         bq_sql = bigquery_schema_to_sql(schema.fields, table_name)
 
         def transformer(node):
-            if isinstance(node, sqlglot.exp.Table):
-                table_name = get_duckdb_table_name(str(node))
-                return sqlglot.exp.to_table(table_name)
             if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":
                 return None
             return node
 
-        expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
+        expression_tree = sqlglot.parse_one(bq_sql, dialect="bigquery")
         transformed_tree = expression_tree.transform(transformer)
         duckdb_sql = transformed_tree.sql("duckdb")
         with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql):
@@ -165,7 +178,7 @@ def create_table(project_id, dataset_id, table_id, schema: TableSchema):
 
 
 def create_job(project_id, job: Job) -> int:
-    with cursor() as cur:
+    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
         cur.execute(
             """
                 INSERT INTO jobs (id, project_id, job)
@@ -178,7 +191,7 @@ def create_job(project_id, job: Job) -> int:
 
 
 def update_job(job_id, job: Job, results: Optional[GetQueryResultsResponse] = None):
-    with cursor() as cur:
+    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
         cur.execute(
             """
                 UPDATE jobs
@@ -194,7 +207,7 @@ def update_job(job_id, job: Job, results: Optional[GetQueryResultsResponse] = No
 
 
 def get_job(project_id, job_id):
-    with cursor() as cur:
+    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
         cur.execute(
             """
                 SELECT job, results
@@ -219,12 +232,9 @@ def query(
     default_dataset: DatasetReference = None,
     parameters: Optional[list[QueryParameter]] = None,
 ):
-    with cursor() as cur:
+    with cursor(default_dataset.projectId, default_dataset.datasetId) as cur:
 
         def transformer(node):
-            if isinstance(node, sqlglot.exp.Table):
-                table_name = get_duckdb_table_name(str(node))
-                return sqlglot.exp.to_table(table_name, alias=node.alias)
             if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":
                 return None
             return node
@@ -242,8 +252,8 @@ def query(
 
 
 def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
-    table_name = f"{dataset_id}.{table_id}"
-    with cursor() as cur:
+    table_name = build_table_name(project_id, dataset_id, table_id)
+    with cursor(project_id, dataset_id) as cur:
         for row in rows:
             if not row.json or not row.json.root:
                 continue

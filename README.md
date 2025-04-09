@@ -24,7 +24,7 @@ services:
     environment:
       BIGQUERY_PORT: 9050
       BIGQUERY_HOST: 0.0.0.0
-      DATABASE_PATH: /data/bigquery.db
+      DATABASE_PATH: /data/
     volumes:
       - bigquery_data:/data
 ```
