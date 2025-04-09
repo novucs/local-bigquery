@@ -56,20 +56,16 @@ from .models import (
     StorageBillingModel,
     Table,
     Table1,
-    TableCell,
     TableDataInsertAllRequest,
     TableDataInsertAllResponse,
     TableDataList,
     TableList,
     TableReference,
-    TableRow,
-    TableSchema,
     TestIamPermissionsRequest,
     TestIamPermissionsResponse,
     UndeleteDatasetRequest,
     View,
 )
-from .transform import infer_bigquery_schema, serialize_results_by_schema
 
 
 @asynccontextmanager
@@ -723,18 +719,12 @@ def bigquery_jobs_insert(
 ) -> Job:
     job_id = db.create_job(project_id, body)
     default_dataset = body.configuration.query.defaultDataset
-    results, columns = db.query(
+    rows, schema = db.query(
         default_dataset.projectId if default_dataset else project_id,
         default_dataset.datasetId if default_dataset else None,
         body.configuration.query.query,
         parameters=body.configuration.query.queryParameters,
     )
-    schema = TableSchema(
-        fields=infer_bigquery_schema(results, columns),
-        foreignTypeInfo=None,
-    )
-    results = serialize_results_by_schema(results, schema.fields)
-    rows = [TableRow(f=[TableCell(v=cell) for cell in row]) for row in results]
     results_response = GetQueryResultsResponse(
         cacheHit=False,
         errors=[],
@@ -751,7 +741,7 @@ def bigquery_jobs_insert(
         rows=rows,
         schema=schema,
         totalBytesProcessed="0",
-        totalRows=str(len(results)),
+        totalRows=str(len(rows)),
     )
     job = Job(
         configuration=body.configuration,
@@ -850,7 +840,10 @@ def bigquery_jobs_delete(
 
 
 @router.post(
-    "/projects/{projectId}/queries", response_model=QueryResponse, tags=["jobs"]
+    "/projects/{projectId}/queries",
+    response_model=QueryResponse,
+    response_model_exclude_unset=True,
+    tags=["jobs"],
 )
 def bigquery_jobs_query(
     project_id: str = Path(..., alias="projectId"),
@@ -858,19 +851,13 @@ def bigquery_jobs_query(
     body: QueryRequest = None,
 ) -> QueryResponse:
     default_dataset = body.defaultDataset
-    results, columns = db.query(
+    rows, schema = db.query(
         default_dataset.projectId if default_dataset else project_id,
         default_dataset.datasetId if default_dataset else None,
         body.query,
         parameters=body.queryParameters,
     )
     job_id = db.create_job(project_id, Job())
-    schema = TableSchema(
-        fields=infer_bigquery_schema(results, columns),
-        foreignTypeInfo=None,
-    )
-    results = serialize_results_by_schema(results, schema.fields)
-    rows = [TableRow(f=[TableCell(v=cell) for cell in row]) for row in results]
     results_response = GetQueryResultsResponse(
         cacheHit=False,
         errors=[],
@@ -887,7 +874,7 @@ def bigquery_jobs_query(
         rows=rows,
         schema=schema,
         totalBytesProcessed="0",
-        totalRows=str(len(results)),
+        totalRows=str(len(rows)),
     )
     job = Job(
         # configuration=body,
@@ -974,7 +961,7 @@ def bigquery_jobs_query(
         startTime=str(int(datetime.now().timestamp())),
         totalBytesBilled="0",
         totalBytesProcessed="0",
-        totalRows=str(len(results)),
+        totalRows=str(len(rows)),
         totalSlotMs="0",
     )
 

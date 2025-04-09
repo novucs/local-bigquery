@@ -11,12 +11,15 @@ from local_bigquery.models import (
     QueryParameter,
     Row1,
     TableSchema,
+    TableRow,
 )
 from local_bigquery.settings import settings
 from local_bigquery.transform import (
     bigquery_schema_to_sql,
-    convert_missing_fields,
-    query_params_to_duckdb,
+    fill_missing_fields,
+    bigquery_params_to_duckdb_param,
+    duckdb_values_to_bigquery_values,
+    duckdb_fields_to_bigquery_fields,
 )
 
 
@@ -223,16 +226,25 @@ def query(
     dataset_id,
     bq_sql,
     parameters: Optional[list[QueryParameter]] = None,
-):
+) -> tuple[list[TableRow], TableSchema]:
     with cursor(project_id, dataset_id) as cur:
         duckdb_sql = sqlglot.transpile(bq_sql, "bigquery", write="duckdb")[0]
-        params = query_params_to_duckdb(parameters)
+        params = bigquery_params_to_duckdb_param(parameters)
+
         with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql, params=params):
-            cur.execute(duckdb_sql, params)
-        columns = []
-        if cur.description:
-            columns = [desc[0] for desc in cur.description]
-        return cur.fetchall(), columns
+            result = cur.sql(duckdb_sql, params=params)
+
+        if result is None:
+            return [], TableSchema(fields=[], foreignTypeInfo=None)
+
+        duckdb_fields = list(zip(result.columns, result.types))
+        bigquery_fields = duckdb_fields_to_bigquery_fields(duckdb_fields)
+        bigquery_schema = TableSchema(fields=bigquery_fields, foreignTypeInfo=None)
+
+        duckdb_rows = result.fetchall()
+        bigquery_rows = duckdb_values_to_bigquery_values(duckdb_rows)
+
+        return bigquery_rows, bigquery_schema
 
 
 def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
@@ -245,6 +257,6 @@ def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
             columns_str = ", ".join(columns)
             sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({', '.join([f'${col}' for col in columns])})"
             params = {k: v.root for k, v in row.json.root.items()}
-            params = convert_missing_fields(params)
+            params = fill_missing_fields(params)
             with debug_sql(duckdb_sql=sql, params=params):
                 cur.execute(sql, params)

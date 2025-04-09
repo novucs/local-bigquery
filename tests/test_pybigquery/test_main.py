@@ -60,7 +60,7 @@ def query(
     sql: str,
     config: bigquery.QueryJobConfig = None,
 ) -> list[dict]:
-    return [dict(row.items()) for row in bq.query(sql, job_config=config).result()]
+    return [dict(row.items()) for row in bq.query_and_wait(sql, job_config=config)]
 
 
 def test_default_dataset(server_url):
@@ -122,9 +122,9 @@ def test_json(bq):
         """,
     )
     assert query(bq, "SELECT * FROM dataset1.table2") == [
-        {"data": '{"x": 1, "y": 2, "$tricky": "this has a tricky key"}'}
+        {"data": {"x": 1, "y": 2, "$tricky": "this has a tricky key"}}
     ]
-    assert query(bq, "SELECT data.x FROM dataset1.table2") == [{"x": "1"}]
+    assert query(bq, "SELECT data.x FROM dataset1.table2") == [{"x": 1}]
     assert query(
         bq, """SELECT JSON_VALUE(data, '$."$tricky"') AS tricky FROM dataset1.table2"""
     ) == [{"tricky": "this has a tricky key"}]
