@@ -42,7 +42,7 @@ def duckdb_field_to_bigquery_field(
     mode = "NULLABLE"
     fields = None
     match duckdb_type.id:
-        case "integer":
+        case "integer" | "bigint" | "smallint" | "tinyint":
             bigquery_type = "INTEGER"
         case "float" | "decimal":
             bigquery_type = "FLOAT"
