@@ -17,7 +17,7 @@ def field_to_sql(field):
 
     if mode == "REPEATED":
         return f"{name} ARRAY<{sql_type}>"
-    nullable = "" if mode == "REQUIRED" else "NULL"
+    nullable = "NOT NULL" if mode == "REQUIRED" else ""
     return f"{name} {sql_type} {nullable}".strip()
 
 

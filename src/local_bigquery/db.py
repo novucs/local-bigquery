@@ -164,15 +164,7 @@ def create_table(project_id, dataset_id, table_id, schema: TableSchema):
     table_name = build_table_name(project_id, dataset_id, table_id)
     with cursor(project_id, dataset_id) as cur:
         bq_sql = bigquery_schema_to_sql(schema.fields, table_name)
-
-        def transformer(node):
-            if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":
-                return None
-            return node
-
-        expression_tree = sqlglot.parse_one(bq_sql, dialect="bigquery")
-        transformed_tree = expression_tree.transform(transformer)
-        duckdb_sql = transformed_tree.sql("duckdb")
+        duckdb_sql = sqlglot.transpile(bq_sql, read="bigquery", write="duckdb")[0]
         with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql):
             cur.execute(duckdb_sql)
 
@@ -233,15 +225,7 @@ def query(
     parameters: Optional[list[QueryParameter]] = None,
 ):
     with cursor(project_id, dataset_id) as cur:
-
-        def transformer(node):
-            if isinstance(node, sqlglot.exp.ColumnConstraint) and str(node) == "NULL":
-                return None
-            return node
-
-        expression_tree = sqlglot.parse_one(bq_sql, "bigquery")
-        transformed_tree = expression_tree.transform(transformer)
-        duckdb_sql = transformed_tree.sql("duckdb")
+        duckdb_sql = sqlglot.transpile(bq_sql, "bigquery", write="duckdb")[0]
         params = query_params_to_duckdb(parameters)
         with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql, params=params):
             cur.execute(duckdb_sql, params)
@@ -257,7 +241,7 @@ def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
         for row in rows:
             if not row.json or not row.json.root:
                 continue
-            columns = {k for k, v in row.json.root.items()}
+            columns = {f'"{k}"' for k, v in row.json.root.items()}
             columns_str = ", ".join(columns)
             sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({', '.join([f'${col}' for col in columns])})"
             params = {k: v.root for k, v in row.json.root.items()}
