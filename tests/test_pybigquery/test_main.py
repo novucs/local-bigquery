@@ -1,3 +1,4 @@
+import pathlib
 import threading
 import time
 from datetime import datetime
@@ -12,10 +13,12 @@ from google.cloud.bigquery import QueryJobConfig
 from sqlalchemy import column, create_engine, select, text
 
 from local_bigquery.__main__ import app, db
+from local_bigquery.settings import settings
 
 
 @pytest.fixture(scope="session")
 def server_url():
+    settings.database_path = pathlib.Path("/tmp/local-bigquery")
     db.clear()
     host = "127.0.0.1"
     port = 9050

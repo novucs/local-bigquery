@@ -115,13 +115,18 @@ def convert_missing_fields(data):
         return data
 
 
-def convert_nested_timestamps_to_bigquery_ints(results, schema_fields):
+def serialize_results_by_schema(results, schema_fields):
     transformed = []
     for row in results:
         new_row = []
         for cell, field in zip(row, schema_fields):
-            if field.type and field.type.upper() == "TIMESTAMP" and cell:
-                new_row.append(int(cell.timestamp()) * 1e6)
+            if not cell:
+                new_row.append(cell)
+                continue
+            if field.type == "TIMESTAMP":
+                new_row.append(str(int(int(cell.timestamp()) * 1e6)))
+            elif field.type == "INTEGER":
+                new_row.append(str(int(cell)))
             else:
                 new_row.append(cell)
         transformed.append(new_row)

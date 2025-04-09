@@ -69,7 +69,7 @@ from .models import (
     UndeleteDatasetRequest,
     View,
 )
-from .transform import infer_bigquery_schema, convert_nested_timestamps_to_bigquery_ints
+from .transform import infer_bigquery_schema, serialize_results_by_schema
 
 
 @asynccontextmanager
@@ -449,7 +449,7 @@ def bigquery_tables_list(
         tables=[
             Table1(
                 clustering=None,
-                creationTime=str(datetime.now().timestamp()),
+                creationTime=str(int(datetime.now().timestamp())),
                 expirationTime=None,
                 friendlyName=table.table_name,
                 id=table.table_name,
@@ -733,7 +733,7 @@ def bigquery_jobs_insert(
         fields=infer_bigquery_schema(results, columns),
         foreignTypeInfo=None,
     )
-    results = convert_nested_timestamps_to_bigquery_ints(results, schema.fields)
+    results = serialize_results_by_schema(results, schema.fields)
     rows = [TableRow(f=[TableCell(v=cell) for cell in row]) for row in results]
     results_response = GetQueryResultsResponse(
         cacheHit=False,
@@ -771,10 +771,10 @@ def bigquery_jobs_insert(
         statistics=JobStatistics(
             completionRatio=1.0,
             copy=None,
-            creationTime=str(datetime.now().timestamp()),
+            creationTime=str(int(datetime.now().timestamp())),
             dataMaskingStatistics=None,
             edition=None,
-            endTime=str(datetime.now().timestamp()),
+            endTime=str(int(datetime.now().timestamp())),
             extract=None,
             finalExecutionDurationMs=None,
             load=None,
@@ -797,7 +797,7 @@ def bigquery_jobs_insert(
             rowLevelSecurityStatistics=None,
             scriptStatistics=None,
             sessionInfo=None,
-            startTime=str(datetime.now().timestamp()),
+            startTime=str(int(datetime.now().timestamp())),
             totalBytesProcessed=None,
             totalSlotMs=None,
             transactionInfo=None,
@@ -869,7 +869,7 @@ def bigquery_jobs_query(
         fields=infer_bigquery_schema(results, columns),
         foreignTypeInfo=None,
     )
-    results = convert_nested_timestamps_to_bigquery_ints(results, schema.fields)
+    results = serialize_results_by_schema(results, schema.fields)
     rows = [TableRow(f=[TableCell(v=cell) for cell in row]) for row in results]
     results_response = GetQueryResultsResponse(
         cacheHit=False,
@@ -907,10 +907,10 @@ def bigquery_jobs_query(
         statistics=JobStatistics(
             completionRatio=1.0,
             copy=None,
-            creationTime=str(datetime.now().timestamp()),
+            creationTime=str(int(datetime.now().timestamp())),
             dataMaskingStatistics=None,
             edition=None,
-            endTime=str(datetime.now().timestamp()),
+            endTime=str(int(datetime.now().timestamp())),
             extract=None,
             finalExecutionDurationMs=None,
             load=None,
@@ -933,7 +933,7 @@ def bigquery_jobs_query(
             rowLevelSecurityStatistics=None,
             scriptStatistics=None,
             sessionInfo=None,
-            startTime=str(datetime.now().timestamp()),
+            startTime=str(int(datetime.now().timestamp())),
             totalBytesProcessed=None,
             totalSlotMs=None,
             transactionInfo=None,
@@ -948,9 +948,9 @@ def bigquery_jobs_query(
     db.update_job(job_id, job, results_response)
     return QueryResponse(
         cacheHit=False,
-        creationTime=str(datetime.now().timestamp()),
+        creationTime=str(int(datetime.now().timestamp())),
         dmlStats=None,
-        endTime=str(datetime.now().timestamp()),
+        endTime=str(int(datetime.now().timestamp())),
         errors=[],
         jobComplete=True,
         jobCreationReason=JobCreationReason(
@@ -971,7 +971,7 @@ def bigquery_jobs_query(
         sessionInfo=SessionInfo(
             sessionId=str(job_id),
         ),
-        startTime=str(datetime.now().timestamp()),
+        startTime=str(int(datetime.now().timestamp())),
         totalBytesBilled="0",
         totalBytesProcessed="0",
         totalRows=str(len(results)),
