@@ -43,8 +43,8 @@ services:
       BIGQUERY_PORT: 9050
       BIGQUERY_HOST: 0.0.0.0
       DATA_DIR: /data
-      DEFAULT_PROJECT_ID: main
-      DEFAULT_DATASET_ID: main
+      DEFAULT_PROJECT_ID: local
+      DEFAULT_DATASET_ID: local
       INTERNAL_PROJECT_ID: internal
       INTERNAL_DATASET_ID: internal
     volumes:
