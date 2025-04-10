@@ -279,7 +279,10 @@ def clear():
 def reset():
     for db in settings.data_dir.glob("*.db"):
         db.unlink()
-    display("All projects deleted")
+    display("All projects, datasets, and tables have been deleted.")
+    display("A REPL restart is required to see the changes.")
+    display("Exiting the REPL...")
+    exit_()
 
 
 def exit_():
