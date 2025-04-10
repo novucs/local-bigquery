@@ -532,10 +532,10 @@ def test_wildcard_tables(bq):
     assert query(
         bq,
         """
-        create table wildcard_table1 as select 1 as id;
-        create table wildcard_table2 as select 2 as id;
-        create table wildcard_table3 as select 3 as id;
-        select * from wildcard_table* order by id;
+        create table project1.dataset1.wildcard_table1 as select 1 as id;
+        create table project1.dataset1.wildcard_table2 as select 2 as id;
+        create table project1.dataset1.wildcard_table3 as select 3 as id;
+        select * from project1.dataset1.wildcard_table* order by id;
         """,
     ) == [
         {"_TABLE_SUFFIX": "1", "id": 1},

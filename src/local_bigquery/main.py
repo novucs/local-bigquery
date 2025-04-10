@@ -1,12 +1,17 @@
+import json
+import pathlib
 import traceback
+import uuid
 from datetime import datetime
 from typing import Optional
 
 import duckdb
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Request
+import sqlglot
+from fastapi import APIRouter, Depends, FastAPI, Path, Query, Request
 from fastapi.responses import JSONResponse
 
 from . import db
+from .errors import NotFoundError
 from .models import (
     AccelerationMode,
     BatchDeleteRowAccessPoliciesRequest,
@@ -76,46 +81,133 @@ app = FastAPI(
     title="BigQuery API",
     version="v2",
 )
-router = APIRouter(prefix="/bigquery/v2")
+discovery = json.loads(
+    (pathlib.Path(__file__).parent.parent / "resources" / "discovery.json").read_text()
+)
+bigquery_router = APIRouter()
+discovery_router = APIRouter()
 
 
-@app.exception_handler(Exception)
-async def internal_exception_handler(request: Request, exc: Exception):
-    if isinstance(exc, duckdb.Error) and "does not exist" in str(exc):
-        return JSONResponse(
-            status_code=404,
-            content={
-                "error": {
-                    "message": str(exc),
-                    "details": [
-                        {
-                            "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                            "reason": traceback.format_exc(),
-                        }
-                    ],
-                }
-            },
-        )
+@app.exception_handler(NotFoundError)
+async def not_found_error_handler(request: Request, e: NotFoundError) -> JSONResponse:
     return JSONResponse(
-        # Hack to force BigQuery client to not retry, I've yet to
-        # properly dig into the retry logic of the client.
-        # 500 errors appear to be retried indefinitely.
-        status_code=400,
+        status_code=404,
         content={
             "error": {
-                "message": f"internal error, 400 status code set to avoid retry loops: {exc}",
-                "details": [
+                "errors": [
                     {
-                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                        "reason": traceback.format_exc(),
+                        "domain": "global",
+                        "reason": "notFound",
+                        "message": str(e),
                     }
                 ],
+                "code": 404,
+                "message": str(e),
             }
         },
     )
 
 
-@router.get("/projects", response_model=ProjectList, tags=["projects"])
+@app.exception_handler(sqlglot.ParseError)
+async def parse_error_handler(request: Request, e: sqlglot.ParseError) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": {
+                "errors": [
+                    {
+                        "domain": "global",
+                        "reason": "invalidQuery",
+                        "message": str(e),
+                    }
+                ],
+                "code": 400,
+                "message": str(e),
+            }
+        },
+    )
+
+
+@app.exception_handler(duckdb.Error)
+async def duckdb_error_handler(request: Request, e: duckdb.Error) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "errors": [
+                    {
+                        "domain": "global",
+                        "reason": "duckdbError",
+                        "message": str(e),
+                    }
+                ],
+                "code": 422,
+                "message": str(e),
+            }
+        },
+    )
+
+
+@app.exception_handler(NotImplementedError)
+async def not_implemented_error_handler(request: Request, e: NotImplementedError):
+    message = (
+        f"{e}\nIf you're seeing this, and want to use this feature, "
+        f"please file an issue (or raise a pull request!).\n"
+        f"See: https://github.com/novucs/local-bigquery/issues"
+    )
+    return JSONResponse(
+        status_code=418,
+        content={
+            "error": {
+                "errors": [
+                    {
+                        "domain": "global",
+                        "reason": "notImplemented",
+                        "message": message,
+                    }
+                ],
+                "code": 418,
+                "message": message,
+            },
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def internal_error_handler(request: Request, e: Exception):
+    message = (
+        f"{traceback.format_exc()}\n{e}\n"
+        "This is an unexpected internal error, treat this as a bug. "
+        "If you see this, please file an issue with the above logs.\n"
+        f"See: https://github.com/novucs/local-bigquery/issues"
+    )
+    return JSONResponse(
+        # Hack to force BigQuery client to not retry on error.
+        # BigQuery clients appear to retry after 500 errors indefinitely,
+        # wasting a lot of valuable debugging time.
+        status_code=418,
+        content={
+            "error": {
+                "errors": [
+                    {
+                        "domain": "global",
+                        "reason": "internal",
+                        "message": message,
+                    }
+                ],
+                "code": 418,
+                "message": message,
+            },
+        },
+    )
+
+
+@bigquery_router.get(
+    "/projects",
+    response_model=ProjectList,
+    response_model_exclude_unset=True,
+    tags=["projects"],
+)
 def bigquery_projects_list(
     max_results: Optional[int] = Query(10, alias="maxResults"),
     page_token: Optional[str] = Query(None, alias="pageToken"),
@@ -142,8 +234,11 @@ def bigquery_projects_list(
     )
 
 
-@router.get(
-    "/projects/{projectId}/datasets", response_model=DatasetList, tags=["datasets"]
+@bigquery_router.get(
+    "/projects/{projectId}/datasets",
+    response_model=DatasetList,
+    response_model_exclude_unset=True,
+    tags=["datasets"],
 )
 def bigquery_datasets_list(
     project_id: str = Path(..., alias="projectId"),
@@ -175,8 +270,11 @@ def bigquery_datasets_list(
     )
 
 
-@router.post(
-    "/projects/{projectId}/datasets", response_model=Dataset, tags=["datasets"]
+@bigquery_router.post(
+    "/projects/{projectId}/datasets",
+    response_model=Dataset,
+    response_model_exclude_unset=True,
+    tags=["datasets"],
 )
 def bigquery_datasets_insert(
     project_id: str = Path(..., alias="projectId"),
@@ -188,9 +286,10 @@ def bigquery_datasets_insert(
     return body
 
 
-@router.delete(
+@bigquery_router.delete(
     "/projects/{projectId}/datasets/{datasetId}",
     response_model=None,
+    response_model_exclude_unset=True,
     tags=["datasets"],
 )
 def bigquery_datasets_delete(
@@ -202,9 +301,10 @@ def bigquery_datasets_delete(
     db.delete_dataset(project_id, dataset_id)
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}",
     response_model=Dataset,
+    response_model_exclude_unset=True,
     tags=["datasets"],
 )
 def bigquery_datasets_get(
@@ -214,37 +314,30 @@ def bigquery_datasets_get(
     dataset_view: Optional[DatasetView] = Query(None, alias="datasetView"),
     params: CommonQueryParams = Depends(),
 ) -> Dataset:
+    dataset = db.get_dataset(project_id, dataset_id)
+    if dataset is None:
+        raise NotFoundError(
+            f'Dataset "{dataset_id}" not found in project "{project_id}"'
+        )
     return Dataset(
         tags=[],
         access=[],
-        creationTime=datetime.now().isoformat(),
+        creationTime=str(int(datetime.now().timestamp())),
         datasetReference=DatasetReference(
             datasetId=dataset_id,
             projectId=project_id,
         ),
-        defaultCollation=None,
-        defaultEncryptionConfiguration=None,
-        defaultPartitionExpirationMs=None,
-        defaultRoundingMode=None,
-        defaultTableExpirationMs=None,
-        description=None,
         etag="etag",
-        externalCatalogDatasetOptions=None,
-        externalDatasetReference=None,
         friendlyName=dataset_id,
         id=dataset_id,
         isCaseInsensitive=False,
         kind="bigquery#dataset",
         labels={"key": "value"},
-        lastModifiedTime=datetime.now().isoformat(),
+        lastModifiedTime=str(int(datetime.now().timestamp())),
         linkedDatasetMetadata=LinkedDatasetMetadata(
             linkState=LinkState.UNLINKED,
         ),
-        linkedDatasetSource=None,
         location="US",
-        maxTimeTravelHours=None,
-        resourceTags=None,
-        restrictions=None,
         satisfiesPzi=False,
         satisfiesPzs=False,
         selfLink="/bigquery/v2/projects/projectId/datasets/datasetId",
@@ -253,9 +346,10 @@ def bigquery_datasets_get(
     )
 
 
-@router.patch(
+@bigquery_router.patch(
     "/projects/{projectId}/datasets/{datasetId}",
     response_model=Dataset,
+    response_model_exclude_unset=True,
     tags=["datasets"],
 )
 def bigquery_datasets_patch(
@@ -268,9 +362,10 @@ def bigquery_datasets_patch(
     return body
 
 
-@router.put(
+@bigquery_router.put(
     "/projects/{projectId}/datasets/{datasetId}",
     response_model=Dataset,
+    response_model_exclude_unset=True,
     tags=["datasets"],
 )
 def bigquery_datasets_update(
@@ -283,9 +378,10 @@ def bigquery_datasets_update(
     return body
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}/models",
     response_model=ListModelsResponse,
+    response_model_exclude_unset=True,
     tags=["models"],
 )
 def bigquery_models_list(
@@ -298,9 +394,10 @@ def bigquery_models_list(
     raise NotImplementedError("List models is not implemented yet.")
 
 
-@router.delete(
+@bigquery_router.delete(
     "/projects/{projectId}/datasets/{datasetId}/models/{modelId}",
     response_model=None,
+    response_model_exclude_unset=True,
     tags=["models"],
 )
 def bigquery_models_delete(
@@ -312,9 +409,10 @@ def bigquery_models_delete(
     raise NotImplementedError("Delete model is not implemented yet.")
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}/models/{modelId}",
     response_model=Model,
+    response_model_exclude_unset=True,
     tags=["models"],
 )
 def bigquery_models_get(
@@ -326,9 +424,10 @@ def bigquery_models_get(
     raise NotImplementedError("Get model is not implemented yet.")
 
 
-@router.patch(
+@bigquery_router.patch(
     "/projects/{projectId}/datasets/{datasetId}/models/{modelId}",
     response_model=Model,
+    response_model_exclude_unset=True,
     tags=["models"],
 )
 def bigquery_models_patch(
@@ -341,9 +440,10 @@ def bigquery_models_patch(
     raise NotImplementedError("Patch model is not implemented yet.")
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}/routines",
     response_model=ListRoutinesResponse,
+    response_model_exclude_unset=True,
     tags=["routines"],
 )
 def bigquery_routines_list(
@@ -358,9 +458,10 @@ def bigquery_routines_list(
     raise NotImplementedError("List routines is not implemented yet.")
 
 
-@router.post(
+@bigquery_router.post(
     "/projects/{projectId}/datasets/{datasetId}/routines",
     response_model=Routine,
+    response_model_exclude_unset=True,
     tags=["routines"],
 )
 def bigquery_routines_insert(
@@ -372,9 +473,10 @@ def bigquery_routines_insert(
     raise NotImplementedError("Insert routine is not implemented yet.")
 
 
-@router.delete(
+@bigquery_router.delete(
     "/projects/{projectId}/datasets/{datasetId}/routines/{routineId}",
     response_model=None,
+    response_model_exclude_unset=True,
     tags=["routines"],
 )
 def bigquery_routines_delete(
@@ -386,9 +488,10 @@ def bigquery_routines_delete(
     raise NotImplementedError("Delete routine is not implemented yet.")
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}/routines/{routineId}",
     response_model=Routine,
+    response_model_exclude_unset=True,
     tags=["routines"],
 )
 def bigquery_routines_get(
@@ -401,9 +504,10 @@ def bigquery_routines_get(
     raise NotImplementedError("Get routine is not implemented yet.")
 
 
-@router.put(
+@bigquery_router.put(
     "/projects/{projectId}/datasets/{datasetId}/routines/{routineId}",
     response_model=Routine,
+    response_model_exclude_unset=True,
     tags=["routines"],
 )
 def bigquery_routines_update(
@@ -416,9 +520,10 @@ def bigquery_routines_update(
     raise NotImplementedError("Update routine is not implemented yet.")
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}/tables",
     response_model=TableList,
+    response_model_exclude_unset=True,
     tags=["tables"],
 )
 def bigquery_tables_list(
@@ -460,9 +565,10 @@ def bigquery_tables_list(
     )
 
 
-@router.post(
+@bigquery_router.post(
     "/projects/{projectId}/datasets/{datasetId}/tables",
     response_model=Table,
+    response_model_exclude_unset=True,
     tags=["tables"],
 )
 def bigquery_tables_insert(
@@ -475,9 +581,10 @@ def bigquery_tables_insert(
     return body
 
 
-@router.delete(
+@bigquery_router.delete(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}",
     response_model=None,
+    response_model_exclude_unset=True,
     tags=["tables"],
 )
 def bigquery_tables_delete(
@@ -489,9 +596,10 @@ def bigquery_tables_delete(
     db.delete_table(project_id, dataset_id, table_id)
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}",
     response_model=Table,
+    response_model_exclude_unset=True,
     tags=["tables"],
 )
 def bigquery_tables_get(
@@ -505,9 +613,10 @@ def bigquery_tables_get(
     raise NotImplementedError("Get table is not implemented yet.")
 
 
-@router.patch(
+@bigquery_router.patch(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}",
     response_model=Table,
+    response_model_exclude_unset=True,
     tags=["tables"],
 )
 def bigquery_tables_patch(
@@ -521,9 +630,10 @@ def bigquery_tables_patch(
     raise NotImplementedError("Patch table is not implemented yet.")
 
 
-@router.put(
+@bigquery_router.put(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}",
     response_model=Table,
+    response_model_exclude_unset=True,
     tags=["tables"],
 )
 def bigquery_tables_update(
@@ -537,9 +647,10 @@ def bigquery_tables_update(
     raise NotImplementedError("Update table is not implemented yet.")
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}/data",
     response_model=TableDataList,
+    response_model_exclude_unset=True,
     tags=["tabledata"],
 )
 def bigquery_tabledata_list(
@@ -558,9 +669,10 @@ def bigquery_tabledata_list(
     raise NotImplementedError("List table data is not implemented yet.")
 
 
-@router.post(
+@bigquery_router.post(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}/insertAll",
     response_model=TableDataInsertAllResponse,
+    response_model_exclude_unset=True,
     tags=["tabledata"],
 )
 def bigquery_tabledata_insert_all(
@@ -578,9 +690,10 @@ def bigquery_tabledata_insert_all(
     )
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}/rowAccessPolicies",
     response_model=ListRowAccessPoliciesResponse,
+    response_model_exclude_unset=True,
     tags=["rowAccessPolicies"],
 )
 def bigquery_row_access_policies_list(
@@ -594,9 +707,10 @@ def bigquery_row_access_policies_list(
     raise NotImplementedError("List row access policies is not implemented yet.")
 
 
-@router.post(
+@bigquery_router.post(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}/rowAccessPolicies",
     response_model=RowAccessPolicy,
+    response_model_exclude_unset=True,
     tags=["rowAccessPolicies"],
 )
 def bigquery_row_access_policies_insert(
@@ -609,9 +723,10 @@ def bigquery_row_access_policies_insert(
     raise NotImplementedError("Insert row access policy is not implemented yet.")
 
 
-@router.delete(
+@bigquery_router.delete(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}/rowAccessPolicies/{policyId}",
     response_model=None,
+    response_model_exclude_unset=True,
     tags=["rowAccessPolicies"],
 )
 def bigquery_row_access_policies_delete(
@@ -625,9 +740,10 @@ def bigquery_row_access_policies_delete(
     raise NotImplementedError("Delete row access policy is not implemented yet.")
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}/rowAccessPolicies/{policyId}",
     response_model=RowAccessPolicy,
+    response_model_exclude_unset=True,
     tags=["rowAccessPolicies"],
 )
 def bigquery_row_access_policies_get(
@@ -640,9 +756,10 @@ def bigquery_row_access_policies_get(
     raise NotImplementedError("Get row access policy is not implemented yet.")
 
 
-@router.put(
+@bigquery_router.put(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}/rowAccessPolicies/{policyId}",
     response_model=RowAccessPolicy,
+    response_model_exclude_unset=True,
     tags=["rowAccessPolicies"],
 )
 def bigquery_row_access_policies_update(
@@ -656,9 +773,10 @@ def bigquery_row_access_policies_update(
     raise NotImplementedError("Update row access policy is not implemented yet.")
 
 
-@router.post(
+@bigquery_router.post(
     "/projects/{projectId}/datasets/{datasetId}/tables/{tableId}/rowAccessPolicies:batchDelete",
     response_model=None,
+    response_model_exclude_unset=True,
     tags=["rowAccessPolicies"],
 )
 def bigquery_row_access_policies_batch_delete(
@@ -673,9 +791,10 @@ def bigquery_row_access_policies_batch_delete(
     )
 
 
-@router.post(
+@bigquery_router.post(
     "/projects/{projectId}/datasets/{datasetId}:undelete",
     response_model=Dataset,
+    response_model_exclude_unset=True,
     tags=["datasets"],
 )
 def bigquery_datasets_undelete(
@@ -687,7 +806,12 @@ def bigquery_datasets_undelete(
     raise NotImplementedError("Undelete dataset is not implemented yet.")
 
 
-@router.get("/projects/{projectId}/jobs", response_model=JobList, tags=["jobs"])
+@bigquery_router.get(
+    "/projects/{projectId}/jobs",
+    response_model=JobList,
+    response_model_exclude_unset=True,
+    tags=["jobs"],
+)
 def bigquery_jobs_list(
     project_id: str = Path(..., alias="projectId"),
     all_users: Optional[bool] = Query(None, alias="allUsers"),
@@ -703,7 +827,12 @@ def bigquery_jobs_list(
     raise NotImplementedError("List jobs is not implemented yet.")
 
 
-@router.post("/projects/{projectId}/jobs", response_model=Job, tags=["jobs"])
+@bigquery_router.post(
+    "/projects/{projectId}/jobs",
+    response_model=Job,
+    response_model_exclude_unset=True,
+    tags=["jobs"],
+)
 def bigquery_jobs_insert(
     project_id: str = Path(..., alias="projectId"),
     params: CommonQueryParams = Depends(),
@@ -719,7 +848,6 @@ def bigquery_jobs_insert(
     )
     results_response = GetQueryResultsResponse(
         cacheHit=False,
-        errors=[],
         etag="etag",
         jobComplete=True,
         jobReference=JobReference(
@@ -771,31 +899,35 @@ def bigquery_jobs_insert(
                             code=Code.OTHER_REASON, message="BI Engine is not emulated."
                         )
                     ],
-                )
+                ),
+                statementType="SELECT",
             ),
             quotaDeferments=[],
             reservationUsage=[],
             reservation_id=None,
             rowLevelSecurityStatistics=None,
             scriptStatistics=None,
-            sessionInfo=None,
+            sessionInfo=SessionInfo(
+                sessionId=str(uuid.uuid4()),
+            ),
             startTime=str(int(datetime.now().timestamp())),
             totalBytesProcessed=None,
             totalSlotMs=None,
             transactionInfo=None,
         ),
-        status=JobStatus(
-            errorResult=None,
-            errors=None,
-            state="DONE",
-        ),
+        status=JobStatus(state="DONE"),
         user_email=None,
     )
     db.update_job(job_id, job, results_response)
     return job
 
 
-@router.get("/projects/{projectId}/jobs/{jobId}", response_model=Job, tags=["jobs"])
+@bigquery_router.get(
+    "/projects/{projectId}/jobs/{jobId}",
+    response_model=Job,
+    response_model_exclude_unset=True,
+    tags=["jobs"],
+)
 def bigquery_jobs_get(
     project_id: str = Path(..., alias="projectId"),
     job_id: str = Path(..., alias="jobId"),
@@ -805,9 +937,10 @@ def bigquery_jobs_get(
     raise NotImplementedError("Get job is not implemented yet.")
 
 
-@router.post(
+@bigquery_router.post(
     "/projects/{projectId}/jobs/{jobId}/cancel",
     response_model=JobCancelResponse,
+    response_model_exclude_unset=True,
     tags=["jobs"],
 )
 def bigquery_jobs_cancel(
@@ -819,8 +952,11 @@ def bigquery_jobs_cancel(
     raise NotImplementedError("Cancel job is not implemented yet.")
 
 
-@router.delete(
-    "/projects/{projectId}/jobs/{jobId}/delete", response_model=None, tags=["jobs"]
+@bigquery_router.delete(
+    "/projects/{projectId}/jobs/{jobId}/delete",
+    response_model=None,
+    response_model_exclude_unset=True,
+    tags=["jobs"],
 )
 def bigquery_jobs_delete(
     project_id: str = Path(..., alias="projectId"),
@@ -831,7 +967,7 @@ def bigquery_jobs_delete(
     raise NotImplementedError("Delete job is not implemented yet.")
 
 
-@router.post(
+@bigquery_router.post(
     "/projects/{projectId}/queries",
     response_model=QueryResponse,
     response_model_exclude_unset=True,
@@ -852,7 +988,6 @@ def bigquery_jobs_query(
     job_id = db.create_job(project_id, Job())
     results_response = GetQueryResultsResponse(
         cacheHit=False,
-        errors=[],
         etag="etag",
         jobComplete=True,
         jobReference=JobReference(
@@ -904,24 +1039,23 @@ def bigquery_jobs_query(
                             code=Code.OTHER_REASON, message="BI Engine is not emulated."
                         )
                     ],
-                )
+                ),
+                statementType="SELECT",
             ),
             quotaDeferments=[],
             reservationUsage=[],
             reservation_id=None,
             rowLevelSecurityStatistics=None,
             scriptStatistics=None,
-            sessionInfo=None,
+            sessionInfo=SessionInfo(
+                sessionId=str(uuid.uuid4()),
+            ),
             startTime=str(int(datetime.now().timestamp())),
             totalBytesProcessed=None,
             totalSlotMs=None,
             transactionInfo=None,
         ),
-        status=JobStatus(
-            errorResult=None,
-            errors=None,
-            state="DONE",
-        ),
+        status=JobStatus(state="DONE"),
         user_email=None,
     )
     db.update_job(job_id, job, results_response)
@@ -948,7 +1082,7 @@ def bigquery_jobs_query(
         rows=rows,
         schema=schema,
         sessionInfo=SessionInfo(
-            sessionId=str(job_id),
+            sessionId=str(uuid.uuid4()),
         ),
         startTime=str(int(datetime.now().timestamp())),
         totalBytesBilled="0",
@@ -958,9 +1092,10 @@ def bigquery_jobs_query(
     )
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/queries/{jobId}",
     response_model=GetQueryResultsResponse,
+    response_model_exclude_unset=True,
     tags=["jobs"],
 )
 def bigquery_jobs_get_query_results(
@@ -978,13 +1113,14 @@ def bigquery_jobs_get_query_results(
 ) -> GetQueryResultsResponse:
     job, results = db.get_job(project_id, job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise NotFoundError(f'Job "{job_id}" not found in project "{project_id}"')
     return results
 
 
-@router.get(
+@bigquery_router.get(
     "/projects/{projectId}/serviceAccount",
     response_model=GetServiceAccountResponse,
+    response_model_exclude_unset=True,
     tags=["projects"],
 )
 def bigquery_projects_get_service_account(
@@ -994,7 +1130,12 @@ def bigquery_projects_get_service_account(
     raise NotImplementedError("Get service account is not implemented yet.")
 
 
-@router.post("/{resource}:getIamPolicy", response_model=Policy, tags=["tables"])
+@bigquery_router.post(
+    "/{resource}:getIamPolicy",
+    response_model=Policy,
+    response_model_exclude_unset=True,
+    tags=["tables"],
+)
 def bigquery_tables_get_iam_policy(
     resource: str,
     params: CommonQueryParams = Depends(),
@@ -1003,7 +1144,12 @@ def bigquery_tables_get_iam_policy(
     raise NotImplementedError("Get IAM policy is not implemented yet.")
 
 
-@router.post("/{resource}:setIamPolicy", response_model=Policy, tags=["tables"])
+@bigquery_router.post(
+    "/{resource}:setIamPolicy",
+    response_model=Policy,
+    response_model_exclude_unset=True,
+    tags=["tables"],
+)
 def bigquery_tables_set_iam_policy(
     resource: str,
     params: CommonQueryParams = Depends(),
@@ -1012,9 +1158,10 @@ def bigquery_tables_set_iam_policy(
     raise NotImplementedError("Set IAM policy is not implemented yet.")
 
 
-@router.post(
+@bigquery_router.post(
     "/{resource}:testIamPermissions",
     response_model=TestIamPermissionsResponse,
+    response_model_exclude_unset=True,
     tags=["tables"],
 )
 def bigquery_tables_test_iam_permissions(
@@ -1025,4 +1172,15 @@ def bigquery_tables_test_iam_permissions(
     raise NotImplementedError("Test IAM permissions is not implemented yet.")
 
 
-app.include_router(router)
+@app.get("/$discovery/rest")
+def discovery_rest():
+    return discovery
+
+
+@app.get("/discovery/v1/apis/bigquery/v2/rest")
+def discovery_v1_apis():
+    return discovery
+
+
+app.include_router(bigquery_router, prefix="/bigquery/v2")
+app.include_router(discovery_router)

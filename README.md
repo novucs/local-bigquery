@@ -19,7 +19,7 @@ Enter the REPL
 docker exec -it bigquery repl
 ```
 
-Reset the database
+Delete all projects, datasets, and tables
 ```bash
 docker exec -it bigquery reset
 ```
@@ -49,6 +49,11 @@ services:
       INTERNAL_DATASET_ID: internal
     volumes:
       - bigquery_data:/data
+```
+
+### BQ CLI
+```bash
+bq --api http://localhost:9050 query "SELECT 1"
 ```
 
 ### Python

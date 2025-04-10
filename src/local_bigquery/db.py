@@ -7,6 +7,7 @@ import duckdb
 import sqlglot
 from py_mini_racer import MiniRacer
 
+from local_bigquery.errors import NotFoundError
 from local_bigquery.models import (
     GetQueryResultsResponse,
     Job,
@@ -119,17 +120,15 @@ def debug_sql(
     try:
         yield
     except duckdb.Error as e:
-        print("DuckDB SQL error:")
-        print(e)
+        context = ""
         if bq_sql:
-            print("BigQuery SQL:")
-            print(bq_sql)
+            context += f"BigQuery SQL:\n{bq_sql}"
         if duckdb_sql:
-            print("DuckDB SQL:")
-            print(duckdb_sql)
+            context += f"\nDuckDB SQL:\n{duckdb_sql}"
         if params:
-            print("Params:")
-            print(params)
+            context += f"\nParams:\n{params}\n"
+        if "does not exist" in str(e) or "not found" in str(e):
+            raise NotFoundError(context + f"DuckDB SQL error:\n{e}")
         raise
 
 
@@ -148,14 +147,22 @@ def list_datasets(project_id):
     )
 
 
+def get_dataset(project_id, dataset_id):
+    return next((d for _, d in list_datasets(project_id) if d == dataset_id), None)
+
+
 def delete_dataset(project_id, dataset_id):
     with cursor(project_id, dataset_id) as cur:
-        cur.execute(f'DROP SCHEMA IF EXISTS "{project_id}"."{dataset_id}" CASCADE')
+        duckdb_sql = f'DROP SCHEMA IF EXISTS "{project_id}"."{dataset_id}" CASCADE'
+        with debug_sql(duckdb_sql=duckdb_sql):
+            cur.execute(duckdb_sql)
 
 
 def create_dataset(project_id, dataset_id):
     with cursor(project_id, dataset_id) as cur:
-        cur.execute(f"CREATE SCHEMA IF NOT EXISTS {dataset_id}")
+        duckdb_sql = f"CREATE SCHEMA IF NOT EXISTS {dataset_id}"
+        with debug_sql(duckdb_sql=duckdb_sql):
+            cur.execute(duckdb_sql)
 
 
 def list_tables(project_id, dataset_id: Optional[str] = None):
@@ -163,20 +170,23 @@ def list_tables(project_id, dataset_id: Optional[str] = None):
         result = cur.sql("SHOW ALL TABLES")
         return [
             {
-                "project_id": project_id,
+                "project_id": row_project_id,
                 "dataset_id": row_dataset_id,
                 "table_name": table_name,
                 "columns": columns,
             }
-            for project_id, row_dataset_id, table_name, columns, *_ in result.fetchall()
-            if not dataset_id or dataset_id == row_dataset_id
+            for row_project_id, row_dataset_id, table_name, columns, *_ in result.fetchall()
+            if project_id == row_project_id
+            and (not dataset_id or dataset_id == row_dataset_id)
         ]
 
 
 def delete_table(project_id, dataset_id, table_id):
     table_name = build_table_name(project_id, dataset_id, table_id)
     with cursor(project_id, dataset_id) as cur:
-        cur.execute(f"DROP TABLE {table_name}")
+        duckdb_sql = f"DROP TABLE {table_name}"
+        with debug_sql(duckdb_sql=duckdb_sql):
+            cur.execute(duckdb_sql)
 
 
 def create_table(project_id, dataset_id, table_id, schema: TableSchema):
@@ -196,7 +206,7 @@ def create_job(project_id, job: Job) -> int:
                 VALUES (nextval('jobs_id_seq'), ?, ?)
                 RETURNING id
             """,
-            (project_id, job.model_dump_json()),
+            (project_id, job.model_dump_json(exclude_unset=True, by_alias=True)),
         )
         return cur.fetchall()[0][0]
 
@@ -210,8 +220,10 @@ def update_job(job_id, job: Job, results: Optional[GetQueryResultsResponse] = No
                 WHERE id = ?
             """,
             (
-                job.model_dump_json(),
-                None if not results else results.model_dump_json(),
+                job.model_dump_json(exclude_unset=True, by_alias=True),
+                None
+                if not results
+                else results.model_dump_json(exclude_unset=True, by_alias=True),
                 job_id,
             ),
         )
@@ -232,8 +244,8 @@ def get_job(project_id, job_id):
             return None, None
         results = None
         if row[1]:
-            results = GetQueryResultsResponse.model_validate_json(row[1])
-        job = Job.model_validate_json(row[0])
+            results = GetQueryResultsResponse.model_validate_json(row[1], by_alias=True)
+        job = Job.model_validate_json(row[0], by_alias=True)
         return job, results
 
 
@@ -345,32 +357,39 @@ def bigquery_to_duckdb_sqlglot_wildcard(project_id, dataset_id, node):
         return node
     if not node.this or not node.this.this:
         return node
-    parts = node.this.this.split(".")
-    is_wildcard = strip_quotes(parts[-1]).endswith("*")
+    is_wildcard = strip_quotes(node.this.this).endswith("*")
     if not is_wildcard:
         return node
-    table_prefix = parts[-1][:-1]
-    p, d, t = [project_id, dataset_id][len(parts) - 1 :] + parts
+    wildcard = strip_quotes(node.this.this).rstrip("*")
+    if node.db:
+        dataset_id = strip_quotes(node.db)
+    if node.catalog:
+        project_id = strip_quotes(node.catalog)
     table_names = {
         t["table_name"]
-        for t in list_tables(p, d)
-        if t["table_name"].startswith(table_prefix)
+        for t in list_tables(project_id, dataset_id)
+        if t["table_name"].startswith(wildcard)
     }
     selects = [
         sqlglot.select(
             "*",
             sqlglot.alias(
                 sqlglot.exp.Literal(
-                    this=table_name[len(table_prefix) :],
+                    this=table_name[len(wildcard) :],
                     is_string=True,
                 ),
                 "_TABLE_SUFFIX",
             ),
-        ).from_(build_table_name(p, d, table_name))
+        ).from_(build_table_name(node.catalog, node.db, table_name))
         for table_name in table_names
     ]
     if len(selects) == 0:
-        raise sqlglot.ParseError(f"No tables found for {node.this.this}")
+        msg = f"No tables found for {node.this.this}"
+        if project_id:
+            msg += f" in project {project_id}"
+        if dataset_id:
+            msg += f" in dataset {dataset_id}"
+        raise sqlglot.ParseError(msg)
     if len(selects) == 1:
         return selects[0]
     unions = functools.reduce(lambda x, y: x.union(y), selects)
