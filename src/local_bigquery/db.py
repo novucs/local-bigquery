@@ -5,7 +5,7 @@ from typing import Optional
 
 import duckdb
 import sqlglot
-from pythonmonkey import pythonmonkey
+from py_mini_racer import MiniRacer
 
 from local_bigquery.models import (
     GetQueryResultsResponse,
@@ -308,9 +308,9 @@ def bind_js_udf(cur, tree):
 
     def fn(*args):
         param_names_str = ", ".join([p["name"] for p in params])
-        js_str = f"({param_names_str}) => function() {{ {tree.expression.this} }}"
-        js = pythonmonkey.eval(js_str)
-        return js(*args)()
+        ctx = MiniRacer()
+        ctx.eval(f"var f = function({param_names_str}) {{ {tree.expression.this} }}")
+        return ctx.call("f", *args)
 
     fn.__name__ = name
     fn.__signature__ = inspect.signature(fn).replace(

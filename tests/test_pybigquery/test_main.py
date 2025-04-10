@@ -14,6 +14,19 @@ from sqlalchemy import column, create_engine, select, text
 
 from local_bigquery.main import app, db
 from local_bigquery.settings import settings
+import pytz
+
+
+def patched_timezone(original):
+    def patched(tz):
+        if tz.startswith("/"):
+            tz = tz[1:]  # Remove the leading slash
+        return original(tz)  # Call the original method
+
+    return patched
+
+
+pytz.timezone = patched_timezone(pytz.timezone)
 
 
 @pytest.fixture(scope="session")
