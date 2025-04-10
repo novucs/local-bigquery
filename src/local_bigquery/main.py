@@ -121,22 +121,24 @@ def bigquery_projects_list(
     page_token: Optional[str] = Query(None, alias="pageToken"),
     params: CommonQueryParams = Depends(),
 ) -> ProjectList:
+    projects = db.list_projects()
     return ProjectList(
         etag="etag",
         kind="bigquery#projectList",
         nextPageToken=None,
         projects=[
             Project(
-                friendlyName="dev",
-                id="dev",
+                friendlyName=project_id,
+                id=project_id,
                 kind="bigquery#project",
                 numericId="1",
                 projectReference=ProjectReference(
-                    projectId="dev",
+                    projectId=project_id,
                 ),
             )
+            for project_id in projects
         ],
-        totalItems=1,
+        totalItems=len(projects),
     )
 
 
@@ -151,21 +153,20 @@ def bigquery_datasets_list(
     page_token: Optional[str] = Query(None, alias="pageToken"),
     params: CommonQueryParams = Depends(),
 ) -> DatasetList:
-    datasets = db.list_datasets(project_id)
     return DatasetList(
         datasets=[
             Dataset1(
                 datasetReference=DatasetReference(
-                    datasetId=dataset.schema_name,
-                    projectId=dataset.project_id,
+                    datasetId=dataset_id,
+                    projectId=project_id,
                 ),
-                friendlyName=dataset.schema_name,
-                id=dataset.schema_name,
+                friendlyName=dataset_id,
+                id=dataset_id,
                 kind="bigquery#dataset",
                 labels={"key": "value"},
                 location="US",
             )
-            for dataset in datasets
+            for project_id, dataset_id in db.list_datasets(project_id)
         ],
         etag="etag",
         kind="bigquery#datasetList",
@@ -428,6 +429,7 @@ def bigquery_tables_list(
     params: CommonQueryParams = Depends(),
 ) -> TableList:
     tables = db.list_tables(project_id, dataset_id)
+    table_names = {table["table_name"] for table in tables}
     return TableList(
         etag="etag",
         kind="bigquery#tableList",
@@ -437,8 +439,8 @@ def bigquery_tables_list(
                 clustering=None,
                 creationTime=str(int(datetime.now().timestamp())),
                 expirationTime=None,
-                friendlyName=table.table_name,
-                id=table.table_name,
+                friendlyName=table_name,
+                id=table_name,
                 kind="bigquery#table",
                 labels=None,
                 rangePartitioning=None,
@@ -446,13 +448,13 @@ def bigquery_tables_list(
                 tableReference=TableReference(
                     datasetId=dataset_id,
                     projectId=project_id,
-                    tableId=table.table_name,
+                    tableId=table_name,
                 ),
                 timePartitioning=None,
                 type="TABLE",
                 view=None,
             )
-            for table in tables
+            for table_name in table_names
         ],
         totalItems=len(tables),
     )

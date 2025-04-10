@@ -131,17 +131,24 @@ def debug_sql(
         raise
 
 
+def list_projects():
+    return sorted({t["project_id"] for t in list_tables(settings.default_project_id)})
+
+
 def list_datasets(project_id):
-    tables = list_tables(project_id, None)
-    datasets = {table.dataset_id for table in tables}
-    return sorted(datasets)
+    return sorted(
+        [
+            (project_id, dataset_id)
+            for dataset_id, project_id in {
+                t["dataset_id"]: t["project_id"] for t in list_tables(project_id)
+            }.items()
+        ]
+    )
 
 
 def delete_dataset(project_id, dataset_id):
-    tables = list_tables(project_id, dataset_id)
     with cursor(project_id, dataset_id) as cur:
-        for table in tables:
-            cur.execute(f'DROP TABLE "{table.table_name}"')
+        cur.execute(f'DROP SCHEMA IF EXISTS "{project_id}"."{dataset_id}" CASCADE')
 
 
 def create_dataset(project_id, dataset_id):
@@ -149,28 +156,19 @@ def create_dataset(project_id, dataset_id):
         cur.execute(f"CREATE SCHEMA IF NOT EXISTS {dataset_id}")
 
 
-def list_tables(project_id, dataset_id):
+def list_tables(project_id, dataset_id: Optional[str] = None):
     with cursor(project_id, dataset_id) as cur:
-        cur.execute(
-            """
-            WITH parts AS (
-              SELECT
-                name,
-                instr(name, '.') AS dot1,
-                instr(substr(name, instr(name, '.') + 1), '.') AS dot2
-              FROM duckdb_master
-              WHERE type = 'table'
-            )
-            SELECT
-              substr(name, 1, dot1 - 1) AS project_id,
-              substr(name, dot1 + 1, dot2 - 1) AS dataset_id,
-              substr(name, dot1 + dot2 + 1) AS table_name
-            FROM parts
-            WHERE project_id = ? AND dataset_id = ?
-            """,
-            (project_id, dataset_id),
-        )
-        return cur.fetchall()
+        result = cur.sql("SHOW ALL TABLES")
+        return [
+            {
+                "project_id": project_id,
+                "dataset_id": row_dataset_id,
+                "table_name": table_name,
+                "columns": columns,
+            }
+            for project_id, row_dataset_id, table_name, columns, *_ in result.fetchall()
+            if not dataset_id or dataset_id == row_dataset_id
+        ]
 
 
 def delete_table(project_id, dataset_id, table_id):
