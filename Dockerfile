@@ -12,5 +12,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ENV PATH="/app/.venv/bin:/app/src/scripts:$PATH"
 ENV PYTHONPATH="/app/src"
 EXPOSE 9050
-ENTRYPOINT []
 CMD ["run"]

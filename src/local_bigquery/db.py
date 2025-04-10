@@ -1,5 +1,5 @@
 import contextlib
-import shutil
+import logging
 from typing import Optional
 
 import duckdb
@@ -38,33 +38,50 @@ def build_table_name(
 @contextlib.contextmanager
 def connection(project_id: Optional[str] = None):
     project_id = strip_quotes(project_id or settings.default_project_id)
-    settings.database_path.mkdir(parents=True, exist_ok=True)
-    duckdb.connect(settings.database_path / f"{project_id}.db").close()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    dbs = {db.stem for db in settings.data_dir.glob("*.db")}
+    default_dbs = {
+        project_id,
+        settings.default_project_id,
+        settings.internal_project_id,
+    }
+    for db in default_dbs - dbs:
+        conn = duckdb.connect(settings.data_dir / f"{db}.db")
+        try:
+            if db == settings.internal_project_id:
+                migrate(conn)
+            if db == settings.default_project_id:
+                dataset = (
+                    f'"{settings.default_project_id}"."{settings.default_dataset_id}"'
+                )
+                conn.execute(f"CREATE SCHEMA IF NOT EXISTS {dataset}")
+        finally:
+            conn.close()
+    dbs |= default_dbs
     conn = duckdb.connect()
-    for db in settings.database_path.glob("*.db"):
-        conn.execute(f"ATTACH '{db}' AS \"{db.stem}\"")
-    conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{settings.default_dataset_id}"')
     try:
+        for db in dbs:
+            conn.execute(f"ATTACH '{settings.data_dir / db}.db' AS \"{db}\"")
         yield conn
     finally:
         conn.close()
 
 
-def clear():
-    shutil.rmtree(settings.database_path, ignore_errors=True)
+def reset():
+    for db in settings.data_dir.glob("*.db"):
+        db.unlink()
 
 
 @contextlib.contextmanager
 def cursor(project_id: Optional[str] = None, dataset_id: Optional[str] = None):
-    project_id = strip_quotes(project_id or settings.default_project_id)
-    dataset_id = strip_quotes(dataset_id or settings.default_dataset_id)
+    project_id = strip_quotes(project_id)
+    dataset_id = strip_quotes(dataset_id or "main")
     with connection(project_id) as conn:
         cur = conn.cursor()
-        conn.execute(f'USE "{project_id}"')
         try:
             cur.execute(f'USE "{project_id}"."{dataset_id}"')
         except duckdb.CatalogException:
-            cur.execute(f'USE "{project_id}"."{settings.default_dataset_id}"')
+            cur.execute(f'USE "{project_id}"."main"')
         try:
             yield cur
             conn.commit()
@@ -72,23 +89,22 @@ def cursor(project_id: Optional[str] = None, dataset_id: Optional[str] = None):
             cur.close()
 
 
-def migrate():
-    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS jobs (
-                id INTEGER PRIMARY KEY,
-                project_id TEXT,
-                job JSON,
-                results JSON
-            )
-            """
+def migrate(conn):
+    dataset = f'"{settings.internal_project_id}"."{settings.internal_dataset_id}"'
+    conn.execute(f"CREATE SCHEMA IF NOT EXISTS {dataset}")
+    cur = conn.cursor()
+    cur.execute(f"USE {dataset}")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS jobs (
+            id INTEGER PRIMARY KEY,
+            project_id TEXT,
+            job JSON,
+            results JSON
         )
-        cur.execute(
-            """
-            CREATE SEQUENCE IF NOT EXISTS jobs_id_seq;
-            """
-        )
+        """
+    )
+    cur.execute("CREATE SEQUENCE IF NOT EXISTS jobs_id_seq")
 
 
 @contextlib.contextmanager
@@ -101,17 +117,17 @@ def debug_sql(
     try:
         yield
     except duckdb.Error as e:
-        print("DuckDB SQL error:")
-        print(e)
+        logging.error("DuckDB SQL error:")
+        logging.error(e)
         if bq_sql:
-            print("BigQuery SQL:")
-            print(bq_sql)
+            logging.error("BigQuery SQL:")
+            logging.error(bq_sql)
         if duckdb_sql:
-            print("DuckDB SQL:")
-            print(duckdb_sql)
+            logging.error("DuckDB SQL:")
+            logging.error(duckdb_sql)
         if params:
-            print("Params:")
-            print(params)
+            logging.error("Params:")
+            logging.error(params)
         raise
 
 

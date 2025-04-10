@@ -6,8 +6,13 @@ services:
     ports:
       - "9050:9050"
     environment:
+      # Optional configuration, defaults are shown
       BIGQUERY_PORT: 9050
       BIGQUERY_HOST: 0.0.0.0
-      DATABASE_PATH: /data/
+      DATA_DIR: /data
+      DEFAULT_PROJECT_ID: main
+      DEFAULT_DATASET_ID: main
+      INTERNAL_PROJECT_ID: internal
+      INTERNAL_DATASET_ID: internal
     volumes:
       - bigquery_data:/data

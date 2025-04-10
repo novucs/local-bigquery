@@ -18,8 +18,8 @@ from local_bigquery.settings import settings
 
 @pytest.fixture(scope="session")
 def server_url():
-    settings.database_path = pathlib.Path("/tmp/local-bigquery")
-    db.clear()
+    settings.data_dir = pathlib.Path("/tmp/local-bigquery")
+    db.reset()
     host = "127.0.0.1"
     port = 9050
     config = uvicorn.Config(app, host=host, port=port, log_level="info")
@@ -30,7 +30,7 @@ def server_url():
     # Wait for the server to start
     start_time = time.time()
     while True:
-        if time.time() - start_time > 5:
+        if time.time() - start_time > 1:
             raise Exception("Server did not start in time")
         try:
             requests.get(url)

@@ -9,14 +9,24 @@ Uses [SQLGlot](https://github.com/tobymao/sqlglot) for translation, and [DuckDB]
 Grab the container, run it, and hit it with a BigQuery client.
 
 ### Docker
-Run the container
+Start the container
 ```bash
-docker run --rm -p 9050:9050 -v /tmp/local-bigquery/:/data --name local-bigquery ghcr.io/novucs/local-bigquery:latest
+docker run --init -d --rm -p 9050:9050 -v /tmp/local-bigquery/:/data --name bigquery ghcr.io/novucs/local-bigquery:latest
 ```
 
-Clear data
+Enter the REPL
 ```bash
-rm -rf /tmp/local-bigquery
+docker exec -it bigquery repl
+```
+
+Reset the database
+```bash
+docker exec -it bigquery reset
+```
+
+Stop the container
+```bash
+docker stop local-bigquery
 ```
 
 ### Docker Compose
@@ -32,7 +42,7 @@ services:
       # Optional configuration, defaults are shown
       BIGQUERY_PORT: 9050
       BIGQUERY_HOST: 0.0.0.0
-      DATABASE_PATH: /data
+      DATA_DIR: /data
       DEFAULT_PROJECT_ID: main
       DEFAULT_DATASET_ID: main
       INTERNAL_PROJECT_ID: internal

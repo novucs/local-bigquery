@@ -1,5 +1,4 @@
 import traceback
-from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
@@ -66,12 +65,6 @@ from .models import (
 )
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    db.migrate()
-    yield
-
-
 app = FastAPI(
     contact={"name": "Google", "url": "https://google.com"},
     description="A data platform for customers to create, manage, share and query data.",
@@ -82,7 +75,6 @@ app = FastAPI(
     termsOfService="https://developers.google.com/terms/",
     title="BigQuery API",
     version="v2",
-    lifespan=lifespan,
 )
 router = APIRouter(prefix="/bigquery/v2")
 
