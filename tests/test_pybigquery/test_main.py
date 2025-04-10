@@ -224,7 +224,7 @@ def test_create_record_table(bq):
                 "RECORD",
                 "REPEATED",
                 fields=[
-                    bigquery.SchemaField("item", "TEXT"),
+                    bigquery.SchemaField("item", "STRING"),
                 ],
             ),
         ],
