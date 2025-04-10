@@ -1,7 +1,7 @@
 import pathlib
 import threading
 import time
-from datetime import datetime
+import datetime
 
 import pytest
 import requests
@@ -327,8 +327,8 @@ def test_timestamps(bq):
             select(column("id"), column("ts")).select_from(text("dataset1.table1"))
         )
         assert result.fetchall() == [
-            (1, datetime.fromisoformat("2023-01-01T00:00:00+00:00")),
-            (2, datetime.fromisoformat("2023-01-02T00:00:00+00:00")),
+            (1, datetime.datetime.fromisoformat("2023-01-01T00:00:00+00:00")),
+            (2, datetime.datetime.fromisoformat("2023-01-02T00:00:00+00:00")),
         ]
 
 
@@ -348,3 +348,181 @@ def test_cte_alias(bq):
             cte AS alias
         """,
     ) == [{"a": 1, "b": 2}]
+
+
+def test_sql_udf(bq):
+    assert query(
+        bq,
+        """
+        CREATE TEMP FUNCTION AddFourAndDivide(x INT64, y INT64)
+        RETURNS FLOAT64
+        AS (
+          (x + 4) / y
+        );
+
+        SELECT
+          val, AddFourAndDivide(val, 2) AS result
+        FROM
+          UNNEST(@params) AS val;
+        """,
+        config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ArrayQueryParameter(
+                    "params",
+                    "INT64",
+                    [2, 3, 5, 8],
+                ),
+            ],
+        ),
+    ) == [
+        {"val": 2, "result": 3.0},
+        {"val": 3, "result": 3.5},
+        {"val": 5, "result": 4.5},
+        {"val": 8, "result": 6.0},
+    ]
+
+
+def test_bigquery_types(bq):
+    query = """
+    SELECT
+        @string_param AS string_param,
+        @int64_param AS int64_param,
+        @float64_param AS float64_param,
+        @numeric_param AS numeric_param,
+        @bignumeric_param AS bignumeric_param,
+        @boolean_param AS boolean_param,
+        @bytes_param AS bytes_param,
+        @date_param AS date_param,
+        @datetime_param AS datetime_param,
+        @time_param AS time_param,
+        @timestamp_param AS timestamp_param,
+        @array_string_param AS array_string_param,
+        @array_int64_param AS array_int64_param,
+        @array_float64_param AS array_float64_param,
+        @array_numeric_param AS array_numeric_param,
+        @array_bignumeric_param AS array_bignumeric_param,
+        @array_boolean_param AS array_boolean_param,
+        @array_bytes_param AS array_bytes_param,
+        @array_date_param AS array_date_param,
+        @array_datetime_param AS array_datetime_param,
+        @array_time_param AS array_time_param,
+        @array_timestamp_param AS array_timestamp_param,
+        @struct_param.field1 AS struct_field1,
+        @struct_param.field2 AS struct_field2,
+        @array_struct_param AS array_struct_param
+    FROM
+        (SELECT 1)  -- Dummy table to allow SELECT without FROM a real table
+    """
+
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("string_param", "STRING", "example string"),
+            bigquery.ScalarQueryParameter("int64_param", "INT64", 123),
+            bigquery.ScalarQueryParameter("float64_param", "FLOAT64", 3.14),
+            bigquery.ScalarQueryParameter("numeric_param", "NUMERIC", "123.45"),
+            bigquery.ScalarQueryParameter(
+                "bignumeric_param", "BIGNUMERIC", "12345678901234567890.123456789"
+            ),
+            bigquery.ScalarQueryParameter("boolean_param", "BOOL", True),
+            bigquery.ScalarQueryParameter("bytes_param", "BYTES", b"example bytes"),
+            bigquery.ScalarQueryParameter("date_param", "DATE", "2025-04-10"),
+            bigquery.ScalarQueryParameter(
+                "datetime_param", "DATETIME", "2025-04-10 11:00:00"
+            ),
+            bigquery.ScalarQueryParameter("time_param", "TIME", "11:00:00"),
+            bigquery.ScalarQueryParameter(
+                "timestamp_param", "TIMESTAMP", "2025-04-10 11:00:00+00:00"
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_string_param", "STRING", ["a", "b", "c"]
+            ),
+            bigquery.ArrayQueryParameter("array_int64_param", "INT64", [1, 2, 3]),
+            bigquery.ArrayQueryParameter(
+                "array_float64_param", "FLOAT64", [1.1, 2.2, 3.3]
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_numeric_param", "NUMERIC", ["1.1", "2.2", "3.3"]
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_bignumeric_param", "BIGNUMERIC", ["123.1", "456.2", "789.3"]
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_boolean_param", "BOOL", [True, False, True]
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_bytes_param", "BYTES", [b"byte1", b"byte2"]
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_date_param", "DATE", ["2025-04-01", "2025-04-05"]
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_datetime_param",
+                "DATETIME",
+                ["2025-04-10 10:00:00", "2025-04-10 12:00:00"],
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_time_param", "TIME", ["09:00:00", "13:00:00"]
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_timestamp_param",
+                "TIMESTAMP",
+                ["2025-04-10 10:00:00+00:00", "2025-04-10 12:00:00+00:00"],
+            ),
+            bigquery.StructQueryParameter(
+                "struct_param",
+                bigquery.ScalarQueryParameter("field1", "STRING", "struct value 1"),
+                bigquery.ScalarQueryParameter("field2", "INT64", 42),
+            ),
+            bigquery.ArrayQueryParameter(
+                "array_struct_param",
+                "RECORD",
+                [
+                    bigquery.StructQueryParameter(
+                        "array_struct_param",
+                        bigquery.ScalarQueryParameter(
+                            "field1", "STRING", "array struct value 1a"
+                        ),
+                        bigquery.ScalarQueryParameter("field2", "INT64", 100),
+                    ),
+                ],
+            ),
+        ]
+    )
+    results = bq.query_and_wait(query, job_config=job_config)
+    assert dict(list(results)[0]) == {
+        "array_bignumeric_param": [123.1, 456.2, 789.3],
+        "array_boolean_param": [True, False, True],
+        "array_bytes_param": [b"byte1", b"byte2"],
+        "array_date_param": [datetime.date(2025, 4, 1), datetime.date(2025, 4, 5)],
+        "array_datetime_param": [
+            datetime.datetime(2025, 4, 10, 9, 0, tzinfo=datetime.timezone.utc),
+            datetime.datetime(2025, 4, 10, 11, 0, tzinfo=datetime.timezone.utc),
+        ],
+        "array_float64_param": [1.1, 2.2, 3.3],
+        "array_int64_param": [1, 2, 3],
+        "array_numeric_param": [1.1, 2.2, 3.3],
+        "array_string_param": ["a", "b", "c"],
+        "array_struct_param": [{"field1": "array struct value 1a", "field2": 100}],
+        "array_time_param": [datetime.time(9, 0), datetime.time(13, 0)],
+        "array_timestamp_param": [
+            datetime.datetime(2025, 4, 10, 10, 0, tzinfo=datetime.timezone.utc),
+            datetime.datetime(2025, 4, 10, 12, 0, tzinfo=datetime.timezone.utc),
+        ],
+        "bignumeric_param": 1.2345678901234567e19,
+        "boolean_param": True,
+        "bytes_param": b"example bytes",
+        "date_param": datetime.date(2025, 4, 10),
+        "datetime_param": datetime.datetime(
+            2025, 4, 10, 10, 0, tzinfo=datetime.timezone.utc
+        ),
+        "float64_param": 3.14,
+        "int64_param": 123,
+        "numeric_param": 123.45,
+        "string_param": "example string",
+        "struct_field1": "struct value 1",
+        "struct_field2": 42,
+        "time_param": datetime.time(11, 0),
+        "timestamp_param": datetime.datetime(
+            2025, 4, 10, 11, 0, tzinfo=datetime.timezone.utc
+        ),
+    }

@@ -17,7 +17,7 @@ from local_bigquery.settings import settings
 from local_bigquery.transform import (
     bigquery_schema_to_sql,
     fill_missing_fields,
-    bigquery_params_to_duckdb_param,
+    bigquery_params_to_duckdb_params,
     duckdb_values_to_bigquery_values,
     duckdb_fields_to_bigquery_fields,
 )
@@ -241,12 +241,18 @@ def query(
     bq_sql,
     parameters: Optional[list[QueryParameter]] = None,
 ) -> tuple[list[TableRow], TableSchema]:
+    params = bigquery_params_to_duckdb_params(parameters)
     with cursor(project_id, dataset_id) as cur:
-        duckdb_sql = sqlglot.transpile(bq_sql, "bigquery", write="duckdb")[0]
-        params = bigquery_params_to_duckdb_param(parameters)
-
-        with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql, params=params):
-            result = cur.sql(duckdb_sql, params=params)
+        result = None
+        for tree in sqlglot.parse(bq_sql, "bigquery"):
+            duckdb_sql = tree.sql("duckdb")
+            used_params = {
+                node.this.this: params.get(node.this.this)
+                for node in tree.dfs()
+                if isinstance(node, sqlglot.exp.Parameter)
+            }
+            with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql, params=params):
+                result = cur.sql(duckdb_sql, params=used_params)
 
         if result is None:
             return [], TableSchema(fields=[], foreignTypeInfo=None)

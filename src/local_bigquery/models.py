@@ -5171,7 +5171,7 @@ class QueryParameterValue(BaseModel):
     structValues: Optional[Dict[str, QueryParameterValue]] = Field(
         None, description="The struct field values."
     )
-    value: Optional[str] = Field(
+    value: Optional[Any] = Field(
         None, description="Optional. The value of this value, if a simple scalar type."
     )
 

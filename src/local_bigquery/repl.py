@@ -292,12 +292,15 @@ def exit_():
 
 def execute_sql(cur, sql):
     try:
-        duckdb_sql = sqlglot.transpile(sql, "bigquery", write="duckdb")[0]
+        duckdb_sqls = sqlglot.transpile(sql, "bigquery", write="duckdb")
     except sqlglot.ParseError as e:
         display(e)
         return
     try:
-        result = cur.sql(duckdb_sql)
+        for sql in duckdb_sqls:
+            result = cur.sql(sql)
+            if result:
+                display(result)
     except duckdb.Error as e:
         display(e)
         return
@@ -306,8 +309,6 @@ def execute_sql(cur, sql):
             display("\nQuery cancelled")
             return
         raise
-    if result:
-        display(result)
 
 
 def main():
