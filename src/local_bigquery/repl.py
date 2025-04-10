@@ -248,7 +248,7 @@ class BigQueryCompleter(Completer):
                     yield Completion(item, start_position=-len(word_before_cursor))
 
 
-def prepare_completer(cur, completer):
+def refresh(cur, completer):
     for db in settings.data_dir.glob("*.db"):
         cur.execute(f"ATTACH IF NOT EXISTS '{db}' AS \"{db.stem}\"")
     result = cur.sql("SHOW ALL TABLES")
@@ -336,11 +336,12 @@ def main():
     try:
         with cursor(settings.default_project_id, settings.default_dataset_id) as cur:
             while True:
-                prepare_completer(cur, completer)
+                refresh(cur, completer)
                 try:
                     text = session.prompt("--> ").strip()
                 except KeyboardInterrupt:
                     continue
+                refresh(cur, completer)
                 commands = {
                     "exit": exit_,
                     "quit": exit_,
