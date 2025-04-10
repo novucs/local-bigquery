@@ -51,36 +51,36 @@ services:
       - bigquery_data:/data
 ```
 
-### Python BigQuery Client
+### Python
 ```bash
 pip install google-cloud-bigquery
 ```
 
-<pre lang="python">
+```python
 from google.cloud import bigquery
-client = bigquery.Client(<b>client_options={"api_endpoint": "http://localhost:9050"}</b>)
+client = bigquery.Client(client_options={"api_endpoint": "http://localhost:9050"})
 # ... your code here ...
-</pre>
+```
 
-### Python SQLAlchemy
+### SQLAlchemy
 ```bash
 pip install sqlalchemy-bigquery
 ```
 
-<pre lang="python">
+```python
 from google.cloud import bigquery
 from sqlalchemy import create_engine
-client = bigquery.Client(<b>client_options={"api_endpoint": "http://localhost:9050"}</b>)
-engine = create_engine("bigquery://project/dataset", <b>connect_args={"client": bq}</b>)
+client = bigquery.Client(client_options={"api_endpoint": "http://localhost:9050"})
+engine = create_engine("bigquery://project/dataset", connect_args={"client": client})
 # ... your code here ...
-</pre>
+```
 
 ### Go
 ```bash
 go get github.com/googleapis/google-cloud-go/bigquery
 ```
 
-<pre lang="go">
+```go
 package main
 
 import (
@@ -92,7 +92,7 @@ import (
 
 func main() {
     ctx := context.Background()
-    client, err := bigquery.NewClient(ctx, "project", <b>option.WithEndpoint("http://localhost:9050/bigquery/v2/")</b>)
+    client, err := bigquery.NewClient(ctx, "project", option.WithEndpoint("http://localhost:9050/bigquery/v2/"))
     // ... your code here ...
 }
-</pre>
+```
