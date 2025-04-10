@@ -427,7 +427,7 @@ def test_bigquery_types(bq):
             bigquery.ScalarQueryParameter("bytes_param", "BYTES", b"example bytes"),
             bigquery.ScalarQueryParameter("date_param", "DATE", "2025-04-10"),
             bigquery.ScalarQueryParameter(
-                "datetime_param", "DATETIME", "2025-04-10 11:00:00"
+                "datetime_param", "DATETIME", "2025-04-10 11:00:00+00:00"
             ),
             bigquery.ScalarQueryParameter("time_param", "TIME", "11:00:00"),
             bigquery.ScalarQueryParameter(
@@ -458,7 +458,7 @@ def test_bigquery_types(bq):
             bigquery.ArrayQueryParameter(
                 "array_datetime_param",
                 "DATETIME",
-                ["2025-04-10 10:00:00", "2025-04-10 12:00:00"],
+                ["2025-04-10 10:00:00+00:00", "2025-04-10 12:00:00+00:00"],
             ),
             bigquery.ArrayQueryParameter(
                 "array_time_param", "TIME", ["09:00:00", "13:00:00"]
@@ -495,8 +495,8 @@ def test_bigquery_types(bq):
         "array_bytes_param": [b"byte1", b"byte2"],
         "array_date_param": [datetime.date(2025, 4, 1), datetime.date(2025, 4, 5)],
         "array_datetime_param": [
-            datetime.datetime(2025, 4, 10, 9, 0, tzinfo=datetime.timezone.utc),
-            datetime.datetime(2025, 4, 10, 11, 0, tzinfo=datetime.timezone.utc),
+            datetime.datetime(2025, 4, 10, 10, 0, tzinfo=datetime.timezone.utc),
+            datetime.datetime(2025, 4, 10, 12, 0, tzinfo=datetime.timezone.utc),
         ],
         "array_float64_param": [1.1, 2.2, 3.3],
         "array_int64_param": [1, 2, 3],
@@ -513,7 +513,7 @@ def test_bigquery_types(bq):
         "bytes_param": b"example bytes",
         "date_param": datetime.date(2025, 4, 10),
         "datetime_param": datetime.datetime(
-            2025, 4, 10, 10, 0, tzinfo=datetime.timezone.utc
+            2025, 4, 10, 11, 0, tzinfo=datetime.timezone.utc
         ),
         "float64_param": 3.14,
         "int64_param": 123,

@@ -144,11 +144,9 @@ def bigquery_param_to_duckdb_param(
         return base64.b64decode(param_value.value)
     elif param_type.type == "DATE":
         return datetime.datetime.strptime(param_value.value, "%Y-%m-%d").date()
-    elif param_type.type == "DATETIME":
-        return datetime.datetime.strptime(param_value.value, "%Y-%m-%d %H:%M:%S")
     elif param_type.type == "TIME":
         return datetime.datetime.strptime(param_value.value, "%H:%M:%S").time()
-    elif param_type.type == "TIMESTAMP":
+    elif param_type.type in ("TIMESTAMP", "DATETIME"):
         # Handle timezone if present, otherwise assume UTC
         if "+" in param_value.value:
             return datetime.datetime.strptime(param_value.value, "%Y-%m-%d %H:%M:%S%z")
