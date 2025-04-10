@@ -26,7 +26,7 @@ docker exec -it bigquery reset
 
 Stop the container
 ```bash
-docker stop local-bigquery
+docker stop bigquery
 ```
 
 ### Docker Compose
