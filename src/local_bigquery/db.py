@@ -1,9 +1,11 @@
 import contextlib
 import functools
+import inspect
 from typing import Optional
 
 import duckdb
 import sqlglot
+from pythonmonkey import pythonmonkey
 
 from local_bigquery.models import (
     GetQueryResultsResponse,
@@ -245,6 +247,10 @@ def query(
     with cursor(project_id, dataset_id) as cur:
         result = None
         for tree in sqlglot.parse(bq_sql, "bigquery"):
+            if is_js_udf(tree):
+                bind_js_udf(cur, tree)
+                continue
+
             transform = bigquery_to_duckdb_sqlglot(project_id, dataset_id)
             duckdb_sql = tree.transform(transform).sql("duckdb")
             used_params = {
@@ -281,6 +287,50 @@ def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
             params = fill_missing_fields(params)
             with debug_sql(duckdb_sql=sql, params=params):
                 cur.execute(sql, params)
+
+
+def is_js_udf(tree):
+    langs = [n for n in tree.dfs() if isinstance(n, sqlglot.exp.LanguageProperty)]
+    return langs and langs[0].this.this == "js"
+
+
+def bind_js_udf(cur, tree):
+    assert is_js_udf(tree), f"Supplied tree is not a JS UDF: {tree}"
+    name = [n for n in tree.dfs() if isinstance(n, sqlglot.exp.Table)][0].this.this
+    params = [
+        {
+            "name": n.this.this,
+            "type": getattr(duckdb.typing, n.kind.sql("duckdb"), duckdb.typing.VARCHAR),
+        }
+        for n in tree.dfs()
+        if isinstance(n, sqlglot.exp.ColumnDef) and n.this
+    ]
+
+    def fn(*args):
+        param_names_str = ", ".join([p["name"] for p in params])
+        js_str = f"({param_names_str}) => function() {{ {tree.expression.this} }}"
+        js = pythonmonkey.eval(js_str)
+        return js(*args)()
+
+    fn.__name__ = name
+    fn.__signature__ = inspect.signature(fn).replace(
+        parameters=[
+            inspect.Parameter(
+                name=param["name"],
+                kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+            for param in params
+        ],
+    )
+
+    param_types = [p["type"] for p in params]
+    returns = [
+        getattr(duckdb.typing, n.this.sql("duckdb"), duckdb.typing.VARCHAR)
+        for n in tree.dfs()
+        if isinstance(n, sqlglot.exp.ReturnsProperty) and n.this
+    ]
+    return_type = next(iter(returns), None)
+    cur.create_function(name, fn, param_types, return_type)
 
 
 def bigquery_to_duckdb_sqlglot(project_id, dataset_id):

@@ -542,3 +542,30 @@ def test_wildcard_tables(bq):
         {"_TABLE_SUFFIX": "2", "id": 2},
         {"_TABLE_SUFFIX": "3", "id": 3},
     ]
+
+
+def test_javascript_udf(bq):
+    assert query(
+        bq,
+        '''
+        CREATE TEMP FUNCTION multiplyInputs(x FLOAT64, y FLOAT64)
+        RETURNS FLOAT64
+        LANGUAGE js
+        AS r"""
+          return x*y;
+        """;
+
+        WITH numbers AS
+          (SELECT 1 AS x, 5 as y
+          UNION ALL
+          SELECT 2 AS x, 10 as y
+          UNION ALL
+          SELECT 3 as x, 15 as y)
+        SELECT x, y, multiplyInputs(x, y) AS product
+        FROM numbers;
+        ''',
+    ) == [
+        {"product": 5.0, "x": 1, "y": 5},
+        {"product": 20.0, "x": 2, "y": 10},
+        {"product": 45.0, "x": 3, "y": 15},
+    ]

@@ -9,7 +9,7 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.sql import GoogleSqlLexer
 
-from local_bigquery.db import cursor, bigquery_to_duckdb_sqlglot
+from local_bigquery.db import cursor, bigquery_to_duckdb_sqlglot, is_js_udf, bind_js_udf
 from local_bigquery.settings import settings
 from prompt_toolkit.completion import Completer, Completion
 
@@ -147,12 +147,15 @@ def execute_sql(cur, sql):
         project_id, dataset_id = get_current_scope(cur)
         transform = bigquery_to_duckdb_sqlglot(project_id, dataset_id)
         trees = sqlglot.parse(sql, "bigquery")
-        duckdb_sqls = [tree.transform(transform).sql("duckdb") for tree in trees]
     except sqlglot.ParseError as e:
         display(e)
         return
     try:
-        for sql in duckdb_sqls:
+        for tree in trees:
+            if is_js_udf(tree):
+                bind_js_udf(cur, tree)
+                continue
+            sql = tree.transform(transform).sql("duckdb")
             result = cur.sql(sql)
             if result:
                 display(result)
