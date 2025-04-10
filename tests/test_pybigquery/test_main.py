@@ -526,3 +526,19 @@ def test_bigquery_types(bq):
             2025, 4, 10, 11, 0, tzinfo=datetime.timezone.utc
         ),
     }
+
+
+def test_wildcard_tables(bq):
+    assert query(
+        bq,
+        """
+        create table wildcard_table1 as select 1 as id;
+        create table wildcard_table2 as select 2 as id;
+        create table wildcard_table3 as select 3 as id;
+        select * from wildcard_table* order by id;
+        """,
+    ) == [
+        {"_TABLE_SUFFIX": "1", "id": 1},
+        {"_TABLE_SUFFIX": "2", "id": 2},
+        {"_TABLE_SUFFIX": "3", "id": 3},
+    ]

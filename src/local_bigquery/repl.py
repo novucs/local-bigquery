@@ -9,7 +9,7 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.sql import GoogleSqlLexer
 
-from local_bigquery.db import cursor
+from local_bigquery.db import cursor, bigquery_to_duckdb_sqlglot
 from local_bigquery.settings import settings
 from prompt_toolkit.completion import Completer, Completion
 
@@ -135,9 +135,19 @@ def exit_():
     sys.exit(0)
 
 
+def get_current_scope(cur):
+    results = cur.sql(
+        "SELECT current_catalog() AS project_id, current_schema() AS dataset_id"
+    ).fetchone()
+    return results
+
+
 def execute_sql(cur, sql):
     try:
-        duckdb_sqls = sqlglot.transpile(sql, "bigquery", write="duckdb")
+        project_id, dataset_id = get_current_scope(cur)
+        transform = bigquery_to_duckdb_sqlglot(project_id, dataset_id)
+        trees = sqlglot.parse(sql, "bigquery")
+        duckdb_sqls = [tree.transform(transform).sql("duckdb") for tree in trees]
     except sqlglot.ParseError as e:
         display(e)
         return

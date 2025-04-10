@@ -1,5 +1,5 @@
 import contextlib
-import logging
+import functools
 from typing import Optional
 
 import duckdb
@@ -117,17 +117,17 @@ def debug_sql(
     try:
         yield
     except duckdb.Error as e:
-        logging.error("DuckDB SQL error:")
-        logging.error(e)
+        print("DuckDB SQL error:")
+        print(e)
         if bq_sql:
-            logging.error("BigQuery SQL:")
-            logging.error(bq_sql)
+            print("BigQuery SQL:")
+            print(bq_sql)
         if duckdb_sql:
-            logging.error("DuckDB SQL:")
-            logging.error(duckdb_sql)
+            print("DuckDB SQL:")
+            print(duckdb_sql)
         if params:
-            logging.error("Params:")
-            logging.error(params)
+            print("Params:")
+            print(params)
         raise
 
 
@@ -245,7 +245,8 @@ def query(
     with cursor(project_id, dataset_id) as cur:
         result = None
         for tree in sqlglot.parse(bq_sql, "bigquery"):
-            duckdb_sql = tree.sql("duckdb")
+            transform = bigquery_to_duckdb_sqlglot(project_id, dataset_id)
+            duckdb_sql = tree.transform(transform).sql("duckdb")
             used_params = {
                 node.this.this: params.get(node.this.this)
                 for node in tree.dfs()
@@ -280,3 +281,47 @@ def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
             params = fill_missing_fields(params)
             with debug_sql(duckdb_sql=sql, params=params):
                 cur.execute(sql, params)
+
+
+def bigquery_to_duckdb_sqlglot(project_id, dataset_id):
+    def transform(node):
+        return bigquery_to_duckdb_sqlglot_wildcard(project_id, dataset_id, node)
+
+    return transform
+
+
+def bigquery_to_duckdb_sqlglot_wildcard(project_id, dataset_id, node):
+    if not isinstance(node, sqlglot.exp.Table):
+        return node
+    if not node.this or not node.this.this:
+        return node
+    parts = node.this.this.split(".")
+    is_wildcard = strip_quotes(parts[-1]).endswith("*")
+    if not is_wildcard:
+        return node
+    table_prefix = parts[-1][:-1]
+    p, d, t = [project_id, dataset_id][len(parts) - 1 :] + parts
+    table_names = {
+        t["table_name"]
+        for t in list_tables(p, d)
+        if t["table_name"].startswith(table_prefix)
+    }
+    selects = [
+        sqlglot.select(
+            "*",
+            sqlglot.alias(
+                sqlglot.exp.Literal(
+                    this=table_name[len(table_prefix) :],
+                    is_string=True,
+                ),
+                "_TABLE_SUFFIX",
+            ),
+        ).from_(build_table_name(p, d, table_name))
+        for table_name in table_names
+    ]
+    if len(selects) == 0:
+        raise sqlglot.ParseError(f"No tables found for {node.this.this}")
+    if len(selects) == 1:
+        return selects[0]
+    unions = functools.reduce(lambda x, y: x.union(y), selects)
+    return sqlglot.exp.paren(unions)
