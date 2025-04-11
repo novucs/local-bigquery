@@ -7,7 +7,7 @@ import duckdb
 import sqlglot
 from py_mini_racer import MiniRacer
 
-from local_bigquery.errors import NotFoundError
+from local_bigquery.errors import NotFoundError, AlreadyExistsError
 from local_bigquery.models import (
     GetQueryResultsResponse,
     Job,
@@ -26,8 +26,11 @@ from local_bigquery.transform import (
 )
 
 
-def strip_quotes(value: str) -> str:
-    return value.strip("`'\"")
+def strip_quotes(value: Optional[str]) -> Optional[str]:
+    value = value.strip("`'\"")
+    if not value:
+        return None
+    return value
 
 
 def build_table_name(
@@ -129,6 +132,8 @@ def debug_sql(
             context += f"\nParams:\n{params}\n"
         if "does not exist" in str(e) or "not found" in str(e):
             raise NotFoundError(context + f"DuckDB SQL error:\n{e}")
+        if "already exists" in str(e):
+            raise AlreadyExistsError(context + f"DuckDB SQL error:\n{e}")
         raise
 
 
@@ -142,17 +147,20 @@ def list_datasets(project_id):
     with cursor(project_id, settings.default_dataset_id) as cur:
         results = cur.sql(
             "SELECT schema_name FROM duckdb_schemas WHERE database_name = $project_id",
-            params={"project_id": project_id},
+            params={"project_id": strip_quotes(project_id)},
         )
         return sorted([row[0] for row in results.fetchall()])
 
 
 def get_dataset(project_id, dataset_id):
+    dataset_id = strip_quotes(dataset_id)
     return dataset_id if dataset_id in list_datasets(project_id) else None
 
 
 def delete_dataset(project_id, dataset_id):
     with cursor(project_id, dataset_id) as cur:
+        project_id = strip_quotes(project_id)
+        dataset_id = strip_quotes(dataset_id)
         duckdb_sql = f'DROP SCHEMA "{project_id}"."{dataset_id}" CASCADE'
         with debug_sql(duckdb_sql=duckdb_sql):
             cur.execute(duckdb_sql)
@@ -160,12 +168,16 @@ def delete_dataset(project_id, dataset_id):
 
 def create_dataset(project_id, dataset_id):
     with cursor(project_id, dataset_id) as cur:
+        project_id = strip_quotes(project_id)
+        dataset_id = strip_quotes(dataset_id)
         duckdb_sql = f'CREATE SCHEMA "{project_id}"."{dataset_id}"'
         with debug_sql(duckdb_sql=duckdb_sql):
             cur.execute(duckdb_sql)
 
 
 def list_tables(project_id, dataset_id: Optional[str] = None):
+    project_id = strip_quotes(project_id)
+    dataset_id = strip_quotes(dataset_id)
     with cursor(project_id, dataset_id) as cur:
         result = cur.sql("SHOW ALL TABLES")
         return sorted(

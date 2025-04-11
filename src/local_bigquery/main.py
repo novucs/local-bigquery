@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, FastAPI, Path, Query, Request
 from fastapi.responses import JSONResponse
 
 from . import db
-from .errors import NotFoundError
+from .errors import NotFoundError, AlreadyExistsError
 from .models import (
     AccelerationMode,
     BatchDeleteRowAccessPoliciesRequest,
@@ -88,64 +88,45 @@ bigquery_router = APIRouter()
 discovery_router = APIRouter()
 
 
-@app.exception_handler(NotFoundError)
-async def not_found_error_handler(request: Request, e: NotFoundError) -> JSONResponse:
+def error_response(status_code: int, message: str, reason: str) -> JSONResponse:
     return JSONResponse(
-        status_code=404,
+        status_code=status_code,
         content={
             "error": {
                 "errors": [
                     {
                         "domain": "global",
-                        "reason": "notFound",
-                        "message": str(e),
+                        "reason": reason,
+                        "message": message,
                     }
                 ],
-                "code": 404,
-                "message": str(e),
+                "code": status_code,
+                "message": message,
             }
         },
     )
+
+
+@app.exception_handler(NotFoundError)
+async def not_found_error_handler(request: Request, e: NotFoundError) -> JSONResponse:
+    return error_response(404, str(e), "notFound")
+
+
+@app.exception_handler(AlreadyExistsError)
+async def already_exists_error_handler(
+    request: Request, e: AlreadyExistsError
+) -> JSONResponse:
+    return error_response(409, str(e), "duplicate")
 
 
 @app.exception_handler(sqlglot.ParseError)
 async def parse_error_handler(request: Request, e: sqlglot.ParseError) -> JSONResponse:
-    return JSONResponse(
-        status_code=400,
-        content={
-            "error": {
-                "errors": [
-                    {
-                        "domain": "global",
-                        "reason": "invalidQuery",
-                        "message": str(e),
-                    }
-                ],
-                "code": 400,
-                "message": str(e),
-            }
-        },
-    )
+    return error_response(400, str(e), "invalidQuery")
 
 
 @app.exception_handler(duckdb.Error)
 async def duckdb_error_handler(request: Request, e: duckdb.Error) -> JSONResponse:
-    return JSONResponse(
-        status_code=422,
-        content={
-            "error": {
-                "errors": [
-                    {
-                        "domain": "global",
-                        "reason": "duckdbError",
-                        "message": str(e),
-                    }
-                ],
-                "code": 422,
-                "message": str(e),
-            }
-        },
-    )
+    return error_response(422, str(e), "duckdbError")
 
 
 @app.exception_handler(NotImplementedError)
@@ -155,22 +136,7 @@ async def not_implemented_error_handler(request: Request, e: NotImplementedError
         f"please file an issue (or raise a pull request!).\n"
         f"See: https://github.com/novucs/local-bigquery/issues"
     )
-    return JSONResponse(
-        status_code=418,
-        content={
-            "error": {
-                "errors": [
-                    {
-                        "domain": "global",
-                        "reason": "notImplemented",
-                        "message": message,
-                    }
-                ],
-                "code": 418,
-                "message": message,
-            },
-        },
-    )
+    return error_response(418, message, "notImplemented")
 
 
 @app.exception_handler(Exception)
@@ -181,25 +147,10 @@ async def internal_error_handler(request: Request, e: Exception):
         "If you see this, please file an issue with the above logs.\n"
         f"See: https://github.com/novucs/local-bigquery/issues"
     )
-    return JSONResponse(
-        # Hack to force BigQuery client to not retry on error.
-        # BigQuery clients appear to retry after 500 errors indefinitely,
-        # wasting a lot of valuable debugging time.
-        status_code=418,
-        content={
-            "error": {
-                "errors": [
-                    {
-                        "domain": "global",
-                        "reason": "internal",
-                        "message": message,
-                    }
-                ],
-                "code": 418,
-                "message": message,
-            },
-        },
-    )
+    # Hack to force BigQuery client to not retry on error.
+    # BigQuery clients appear to retry after 500 errors indefinitely,
+    # wasting a lot of valuable debugging time.
+    return error_response(418, message, "internalError")
 
 
 @bigquery_router.get(

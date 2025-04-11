@@ -97,7 +97,7 @@ def test_query(bq):
 
 
 def test_multi_query(bq):
-    bq.create_dataset("dataset1")
+    bq.create_dataset("dataset1", exists_ok=True)
     query(bq, "DROP TABLE IF EXISTS project1.dataset1.table1")
     query(bq, "CREATE TABLE project1.dataset1.table1 AS SELECT 1 AS b")
     assert query(bq, "SELECT * FROM project1.dataset1.table1") == [{"b": 1}]
@@ -245,7 +245,7 @@ def test_create_record_table(bq):
 
 
 def test_bigquery_jobs_query(bq):
-    bq.create_dataset("project1.dataset1")
+    bq.create_dataset("project1.dataset1", exists_ok=True)
     bq.delete_table("project1.dataset1.table1", not_found_ok=True)
     table = bigquery.Table(
         "project1.dataset1.table1",
@@ -273,7 +273,7 @@ def test_bigquery_jobs_query(bq):
 
 
 def test_table_aliasing(bq):
-    bq.create_dataset("project1.dataset1")
+    bq.create_dataset("project1.dataset1", exists_ok=True)
     bq.delete_table("project1.dataset1.table1", not_found_ok=True)
     table = bigquery.Table(
         "project1.dataset1.table1",
@@ -301,7 +301,7 @@ def test_table_aliasing(bq):
 
 
 def test_timestamps(bq):
-    bq.create_dataset("project1.dataset1")
+    bq.create_dataset("project1.dataset1", exists_ok=True)
     bq.delete_table("project1.dataset1.table1", not_found_ok=True)
     table = bigquery.Table(
         "project1.dataset1.table1",
