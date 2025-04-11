@@ -483,25 +483,24 @@ def bigquery_tables_list(
     params: CommonQueryParams = Depends(),
 ) -> TableList:
     tables = db.list_tables(project_id, dataset_id)
-    table_names = {table["table_name"] for table in tables}
     return TableList(
         etag="etag",
         kind="bigquery#tableList",
         tables=[
             Table1(
                 creationTime=str(int(datetime.now().timestamp())),
-                friendlyName=table_name,
-                id=table_name,
+                friendlyName=table["table_name"],
+                id=table["table_name"],
                 kind="bigquery#table",
                 requirePartitionFilter=False,
                 tableReference=TableReference(
                     datasetId=dataset_id,
                     projectId=project_id,
-                    tableId=table_name,
+                    tableId=table["table_name"],
                 ),
                 type="TABLE",
             )
-            for table_name in table_names
+            for table in db.list_tables(project_id, dataset_id)
         ],
         totalItems=len(tables),
     )
