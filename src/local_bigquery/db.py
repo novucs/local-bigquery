@@ -133,34 +133,34 @@ def debug_sql(
 
 
 def list_projects():
-    return sorted({t["project_id"] for t in list_tables(settings.default_project_id)})
+    with cursor(settings.default_project_id, settings.default_dataset_id) as cur:
+        results = cur.sql("SELECT schema_name FROM duckdb_databases")
+        return sorted([row[0] for row in results.fetchall()])
 
 
 def list_datasets(project_id):
-    return sorted(
-        [
-            (project_id, dataset_id)
-            for dataset_id, project_id in {
-                t["dataset_id"]: t["project_id"] for t in list_tables(project_id)
-            }.items()
-        ]
-    )
+    with cursor(project_id, settings.default_dataset_id) as cur:
+        results = cur.sql(
+            "SELECT schema_name FROM duckdb_schemas WHERE database_name = $project_id",
+            params={"project_id": project_id},
+        )
+        return sorted([row[0] for row in results.fetchall()])
 
 
 def get_dataset(project_id, dataset_id):
-    return next((d for _, d in list_datasets(project_id) if d == dataset_id), None)
+    return dataset_id if dataset_id in list_datasets(project_id) else None
 
 
 def delete_dataset(project_id, dataset_id):
     with cursor(project_id, dataset_id) as cur:
-        duckdb_sql = f'DROP SCHEMA IF EXISTS "{project_id}"."{dataset_id}" CASCADE'
+        duckdb_sql = f'DROP SCHEMA "{project_id}"."{dataset_id}" CASCADE'
         with debug_sql(duckdb_sql=duckdb_sql):
             cur.execute(duckdb_sql)
 
 
 def create_dataset(project_id, dataset_id):
     with cursor(project_id, dataset_id) as cur:
-        duckdb_sql = f"CREATE SCHEMA IF NOT EXISTS {dataset_id}"
+        duckdb_sql = f'CREATE SCHEMA "{project_id}"."{dataset_id}"'
         with debug_sql(duckdb_sql=duckdb_sql):
             cur.execute(duckdb_sql)
 
@@ -168,17 +168,20 @@ def create_dataset(project_id, dataset_id):
 def list_tables(project_id, dataset_id: Optional[str] = None):
     with cursor(project_id, dataset_id) as cur:
         result = cur.sql("SHOW ALL TABLES")
-        return [
-            {
-                "project_id": row_project_id,
-                "dataset_id": row_dataset_id,
-                "table_name": table_name,
-                "columns": columns,
-            }
-            for row_project_id, row_dataset_id, table_name, columns, *_ in result.fetchall()
-            if project_id == row_project_id
-            and (not dataset_id or dataset_id == row_dataset_id)
-        ]
+        return sorted(
+            [
+                {
+                    "project_id": row_project_id,
+                    "dataset_id": row_dataset_id,
+                    "table_name": table_name,
+                    "columns": columns,
+                }
+                for row_project_id, row_dataset_id, table_name, columns, *_ in result.fetchall()
+                if project_id == row_project_id
+                and (not dataset_id or dataset_id == row_dataset_id)
+            ],
+            key=lambda x: (x["project_id"], x["dataset_id"], x["table_name"]),
+        )
 
 
 def delete_table(project_id, dataset_id, table_id):

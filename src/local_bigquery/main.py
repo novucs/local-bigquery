@@ -261,12 +261,10 @@ def bigquery_datasets_list(
                 labels={"key": "value"},
                 location="US",
             )
-            for project_id, dataset_id in db.list_datasets(project_id)
+            for dataset_id in db.list_datasets(project_id)
         ],
         etag="etag",
         kind="bigquery#datasetList",
-        nextPageToken=None,
-        unreachable=[],
     )
 
 
@@ -538,26 +536,19 @@ def bigquery_tables_list(
     return TableList(
         etag="etag",
         kind="bigquery#tableList",
-        nextPageToken=None,
         tables=[
             Table1(
-                clustering=None,
                 creationTime=str(int(datetime.now().timestamp())),
-                expirationTime=None,
                 friendlyName=table_name,
                 id=table_name,
                 kind="bigquery#table",
-                labels=None,
-                rangePartitioning=None,
                 requirePartitionFilter=False,
                 tableReference=TableReference(
                     datasetId=dataset_id,
                     projectId=project_id,
                     tableId=table_name,
                 ),
-                timePartitioning=None,
                 type="TABLE",
-                view=None,
             )
             for table_name in table_names
         ],

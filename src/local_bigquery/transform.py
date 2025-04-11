@@ -72,7 +72,7 @@ def duckdb_field_to_bigquery_field(
                 fields = duckdb_fields_to_bigquery_fields(child_type.children)
             else:
                 bigquery_type = duckdb_field_to_bigquery_field(name, child_type).type
-        case "struct":
+        case "struct" | "map":
             bigquery_type = "RECORD"
             fields = [
                 duckdb_field_to_bigquery_field(child_name, child_type)
