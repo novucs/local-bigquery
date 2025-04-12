@@ -215,10 +215,10 @@ def list_datasets(project_id):
             {"project_id": project_id},
         )
         dataset_ids = sorted([row[0] for row in cur.fetchall()])
-    return [get_or_create_dataset(project_id, dataset_id) for dataset_id in dataset_ids]
+    return [get_dataset(project_id, dataset_id) for dataset_id in dataset_ids]
 
 
-def get_dataset(project_id: str, dataset_id: str) -> Optional[Dataset]:
+def get_internal_dataset(project_id: str, dataset_id: str) -> Optional[Dataset]:
     project_id = strip_quotes(project_id)
     dataset_id = strip_quotes(dataset_id)
     with internal_cursor() as cur:
@@ -231,10 +231,51 @@ def get_dataset(project_id: str, dataset_id: str) -> Optional[Dataset]:
             {"project_id": project_id, "dataset_id": dataset_id},
         )
         row = cur.fetchone()
-        if not row:
+        if row is None:
             return None
         item = row[0]
     return Dataset.model_validate_json(item, by_alias=True)
+
+
+def get_dataset(project_id: str, dataset_id: str) -> Optional[Dataset]:
+    project_id = strip_quotes(project_id)
+    dataset_id = strip_quotes(dataset_id)
+    with cursor(project_id, settings.default_dataset_id) as cur:
+        cur.execute(
+            """
+                SELECT schema_name
+                FROM duckdb_schemas
+                WHERE database_name = $project_id AND schema_name = $dataset_id
+            """,
+            {"project_id": project_id, "dataset_id": dataset_id},
+        )
+        found = cur.fetchone()
+        if not found:
+            return None
+    dataset = get_internal_dataset(project_id, dataset_id)
+    if dataset is not None:
+        return dataset
+    now = timestamp_now()
+    dataset = Dataset(
+        creationTime=now,
+        datasetReference=DatasetReference(
+            datasetId=dataset_id,
+            projectId=project_id,
+        ),
+        friendlyName=dataset_id,
+        id=dataset_id,
+        isCaseInsensitive=False,
+        lastModifiedTime=now,
+        linkedDatasetMetadata=LinkedDatasetMetadata(
+            linkState=LinkState.UNLINKED,
+        ),
+        location="US",
+        selfLink=f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}",
+        storageBillingModel=StorageBillingModel.LOGICAL,
+        type="DEFAULT",
+    )
+    create_internal_dataset(project_id, dataset_id, dataset)
+    return dataset
 
 
 def delete_dataset(project_id, dataset_id):
@@ -244,13 +285,19 @@ def delete_dataset(project_id, dataset_id):
         duckdb_sql = f'DROP SCHEMA "{project_id}"."{dataset_id}" CASCADE'
         with debug_sql(duckdb_sql=duckdb_sql):
             cur.sql(duckdb_sql)
+    with internal_cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM datasets
+            WHERE project_id = $project_id AND dataset_id = $dataset_id
+            """,
+            {"project_id": project_id, "dataset_id": dataset_id},
+        )
 
 
-def create_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
+def create_internal_dataset(project_id: str, dataset_id: str, dataset: Dataset):
     project_id = strip_quotes(project_id)
     dataset_id = strip_quotes(dataset_id)
-    if get_dataset(project_id, dataset_id):
-        raise AlreadyExistsError(f"Dataset {dataset_id} already exists")
     with internal_cursor() as cur:
         cur.execute(
             """
@@ -263,6 +310,14 @@ def create_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
                 "item": dataset.model_dump_json(exclude_unset=True, by_alias=True),
             },
         )
+
+
+def create_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
+    project_id = strip_quotes(project_id)
+    dataset_id = strip_quotes(dataset_id)
+    if get_dataset(project_id, dataset_id):
+        raise AlreadyExistsError(f"Dataset {dataset_id} already exists")
+    create_internal_dataset(project_id, dataset_id, dataset)
     with cursor(project_id, dataset_id) as cur:
         duckdb_sql = f'CREATE SCHEMA "{project_id}"."{dataset_id}"'
         with debug_sql(duckdb_sql=duckdb_sql):
@@ -288,33 +343,6 @@ def update_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
                 "item": dataset.model_dump_json(exclude_unset=True, by_alias=True),
             },
         )
-    return dataset
-
-
-def get_or_create_dataset(project_id: str, dataset_id: str):
-    dataset = get_dataset(project_id, dataset_id)
-    if dataset:
-        return dataset
-    now = timestamp_now()
-    dataset = Dataset(
-        creationTime=now,
-        datasetReference=DatasetReference(
-            datasetId=dataset_id,
-            projectId=project_id,
-        ),
-        friendlyName=dataset_id,
-        id=dataset_id,
-        isCaseInsensitive=False,
-        lastModifiedTime=now,
-        linkedDatasetMetadata=LinkedDatasetMetadata(
-            linkState=LinkState.UNLINKED,
-        ),
-        location="US",
-        selfLink=f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}",
-        storageBillingModel=StorageBillingModel.LOGICAL,
-        type="DEFAULT",
-    )
-    create_dataset(project_id, dataset_id, dataset)
     return dataset
 
 
@@ -416,6 +444,35 @@ def get_job(project_id: str, job_id: str) -> Optional[Job]:
             return None
         item = row[0]
     return Job.model_validate_json(item, by_alias=True)
+
+
+def list_jobs(project_id: str) -> list[Job]:
+    project_id = strip_quotes(project_id)
+    with internal_cursor() as cur:
+        results = cur.sql(
+            """
+                SELECT item
+                FROM jobs
+                WHERE project_id = $project_id
+            """,
+            params={"project_id": project_id},
+        )
+        return [
+            Job.model_validate_json(row[0], by_alias=True) for row in results.fetchall()
+        ]
+
+
+def delete_job(project_id: str, job_id: str):
+    project_id = strip_quotes(project_id)
+    job_id = strip_quotes(job_id)
+    with internal_cursor() as cur:
+        cur.sql(
+            """
+                DELETE FROM jobs
+                WHERE project_id = $project_id AND job_id = $job_id
+            """,
+            params={"project_id": project_id, "job_id": job_id},
+        )
 
 
 def set_query_results(

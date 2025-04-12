@@ -680,7 +680,7 @@ def bigquery_datasets_undelete(
     params: CommonQueryParams = Depends(),
     body: UndeleteDatasetRequest = None,
 ) -> Dataset:
-    raise NotImplementedError("Undelete dataset is not implemented yet.")
+    return db.create_dataset(project_id=project_id, dataset_id=dataset_id)
 
 
 @bigquery_router.get(
@@ -701,7 +701,8 @@ def bigquery_jobs_list(
     state_filter: Optional[list[StateFilterEnum]] = Query(None, alias="stateFilter"),
     params: CommonQueryParams = Depends(),
 ) -> JobList:
-    raise NotImplementedError("List jobs is not implemented yet.")
+    jobs = db.list_jobs(project_id)
+    return JobList(jobs=jobs)
 
 
 @bigquery_router.post(
@@ -781,7 +782,10 @@ def bigquery_jobs_get(
     location: Optional[str] = None,
     params: CommonQueryParams = Depends(),
 ) -> Job:
-    return db.get_job(project_id, job_id)
+    job = db.get_job(project_id, job_id)
+    if job is None:
+        raise NotFoundError(f'Job "{job_id}" not found in project "{project_id}"')
+    return job
 
 
 @bigquery_router.post(
@@ -796,7 +800,10 @@ def bigquery_jobs_cancel(
     location: Optional[str] = None,
     params: CommonQueryParams = Depends(),
 ) -> JobCancelResponse:
-    raise NotImplementedError("Cancel job is not implemented yet.")
+    job = db.get_job(project_id, job_id)
+    if job is None:
+        raise NotFoundError(f'Job "{job_id}" not found in project "{project_id}"')
+    return JobCancelResponse(job=job)
 
 
 @bigquery_router.delete(
@@ -811,7 +818,10 @@ def bigquery_jobs_delete(
     location: Optional[str] = None,
     params: CommonQueryParams = Depends(),
 ) -> None:
-    raise NotImplementedError("Delete job is not implemented yet.")
+    job = db.get_job(project_id, job_id)
+    if job is None:
+        raise NotFoundError(f'Job "{job_id}" not found in project "{project_id}"')
+    db.delete_job(project_id, job_id)
 
 
 @bigquery_router.post(
@@ -837,11 +847,11 @@ def bigquery_jobs_query(
     now = timestamp_now()
     job_reference = JobReference(jobId=job_id, location="US", projectId=project_id)
     job = Job(
-        # configuration=body,
+        configuration=body.to_job_configuration(),
         id=job_id,
         jobCreationReason=JobCreationReason(code=Code2.REQUESTED),
         jobReference=job_reference,
-        selfLink="/bigquery/v2/projects/projectId/jobs/jobId",
+        selfLink=f"/bigquery/v2/projects/{project_id}/jobs/{job_id}",
         statistics=JobStatistics(
             completionRatio=1.0,
             creationTime=now,
@@ -934,7 +944,9 @@ def bigquery_projects_get_service_account(
     project_id: str = Path(..., alias="projectId"),
     params: CommonQueryParams = Depends(),
 ) -> GetServiceAccountResponse:
-    raise NotImplementedError("Get service account is not implemented yet.")
+    return GetServiceAccountResponse(
+        email=f"service-account@{project_id}.iam.gserviceaccount.com"
+    )
 
 
 @bigquery_router.post(

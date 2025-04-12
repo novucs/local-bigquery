@@ -5291,6 +5291,30 @@ class QueryRequest(BaseModel):
         description="Optional. This is only supported for SELECT query. If set, the query is allowed to write results incrementally to the temporary result table. This may incur a performance penalty. This option cannot be used with Legacy SQL. This feature is not yet available.",
     )
 
+    def to_job_configuration(self) -> JobConfiguration:
+        return JobConfiguration(
+            dryRun=self.dryRun,
+            jobTimeoutMs=self.jobTimeoutMs,
+            jobType="QUERY",
+            labels=self.labels,
+            query=JobConfigurationQuery(
+                connectionProperties=self.connectionProperties,
+                continuous=self.continuous,
+                createSession=self.createSession,
+                defaultDataset=self.defaultDataset,
+                destinationEncryptionConfiguration=self.destinationEncryptionConfiguration,
+                maximumBytesBilled=self.maximumBytesBilled,
+                parameterMode=self.parameterMode,
+                preserveNulls=self.preserveNulls,
+                query=self.query,
+                queryParameters=self.queryParameters,
+                useLegacySql=self.useLegacySql,
+                useQueryCache=self.useQueryCache,
+                writeIncrementalResults=self.writeIncrementalResults,
+            ),
+            reservation=self.reservation,
+        )
+
 
 class Routine(BaseModel):
     arguments: Optional[List[Argument]] = Field(None, description="Optional.")
