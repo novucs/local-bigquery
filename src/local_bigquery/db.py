@@ -1,6 +1,7 @@
 import contextlib
 import functools
 import inspect
+from datetime import datetime
 from typing import Optional
 
 import duckdb
@@ -15,6 +16,13 @@ from local_bigquery.models import (
     Row1,
     TableSchema,
     TableRow,
+    Dataset,
+    DatasetReference,
+    LinkedDatasetMetadata,
+    LinkState,
+    StorageBillingModel,
+    Project,
+    ProjectReference,
 )
 from local_bigquery.settings import settings
 from local_bigquery.transform import (
@@ -27,6 +35,8 @@ from local_bigquery.transform import (
 
 
 def strip_quotes(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
     value = value.strip("`'\"")
     if not value:
         return None
@@ -95,22 +105,59 @@ def cursor(project_id: Optional[str] = None, dataset_id: Optional[str] = None):
             cur.close()
 
 
+@contextlib.contextmanager
+def internal_cursor():
+    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
+        yield cur
+
+
 def migrate(conn):
     dataset = f'"{settings.internal_project_id}"."{settings.internal_dataset_id}"'
     conn.execute(f"CREATE SCHEMA IF NOT EXISTS {dataset}")
-    cur = conn.cursor()
-    cur.execute(f"USE {dataset}")
-    cur.execute(
+    conn.execute(f"USE {dataset}")
+    conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS jobs (
-            id INTEGER PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS datasets (
             project_id TEXT,
-            job JSON,
-            results JSON
-        )
+            dataset_id TEXT,
+            item JSON,
+            PRIMARY KEY (project_id, dataset_id)
+        );
+        CREATE TABLE IF NOT EXISTS models (
+            project_id TEXT,
+            dataset_id TEXT,
+            model_id TEXT,
+            item JSON,
+            PRIMARY KEY (project_id, dataset_id, model_id)
+        );
+        CREATE TABLE IF NOT EXISTS routines (
+            project_id TEXT,
+            dataset_id TEXT,
+            routine_id TEXT,
+            item JSON,
+            PRIMARY KEY (project_id, dataset_id, routine_id)
+        );
+        CREATE TABLE IF NOT EXISTS tables (
+            project_id TEXT,
+            dataset_id TEXT,
+            table_id TEXT,
+            item JSON,
+            PRIMARY KEY (project_id, dataset_id, table_id)
+        );
+        CREATE TABLE IF NOT EXISTS jobs (
+            project_id TEXT,
+            job_id TEXT,
+            item JSON,
+            PRIMARY KEY (project_id, job_id)
+        );
+        CREATE TABLE IF NOT EXISTS query_results (
+            project_id TEXT,
+            job_id TEXT,
+            item JSON,
+            PRIMARY KEY (project_id, job_id)
+        );
         """
     )
-    cur.execute("CREATE SEQUENCE IF NOT EXISTS jobs_id_seq")
 
 
 @contextlib.contextmanager
@@ -140,39 +187,135 @@ def debug_sql(
 def list_projects():
     with cursor(settings.default_project_id, settings.default_dataset_id) as cur:
         results = cur.sql("SELECT schema_name FROM duckdb_databases")
-        return sorted([row[0] for row in results.fetchall()])
+        project_ids = sorted([row[0] for row in results.fetchall()])
+    return [
+        Project(
+            friendlyName=project_id,
+            id=project_id,
+            numericId=hash(project_id),
+            projectReference=ProjectReference(projectId=project_id),
+        )
+        for project_id in project_ids
+    ]
+
+
+def timestamp_now() -> str:
+    return str(int(datetime.now().timestamp()))
 
 
 def list_datasets(project_id):
+    project_id = strip_quotes(project_id)
     with cursor(project_id, settings.default_dataset_id) as cur:
-        results = cur.sql(
-            "SELECT schema_name FROM duckdb_schemas WHERE database_name = $project_id",
-            params={"project_id": strip_quotes(project_id)},
+        cur.execute(
+            """
+                SELECT schema_name
+                FROM duckdb_schemas
+                WHERE database_name = $project_id
+            """,
+            {"project_id": project_id},
         )
-        return sorted([row[0] for row in results.fetchall()])
+        dataset_ids = sorted([row[0] for row in cur.fetchall()])
+    return [get_or_create_dataset(project_id, dataset_id) for dataset_id in dataset_ids]
 
 
-def get_dataset(project_id, dataset_id):
+def get_dataset(project_id: str, dataset_id: str) -> Optional[Dataset]:
+    project_id = strip_quotes(project_id)
     dataset_id = strip_quotes(dataset_id)
-    return dataset_id if dataset_id in list_datasets(project_id) else None
+    with internal_cursor() as cur:
+        cur.execute(
+            """
+                SELECT item
+                FROM datasets
+                WHERE project_id = $project_id AND dataset_id = $dataset_id
+            """,
+            {"project_id": project_id, "dataset_id": dataset_id},
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        item = row[0]
+    return Dataset.model_validate_json(item, by_alias=True)
 
 
 def delete_dataset(project_id, dataset_id):
+    project_id = strip_quotes(project_id)
+    dataset_id = strip_quotes(dataset_id)
     with cursor(project_id, dataset_id) as cur:
-        project_id = strip_quotes(project_id)
-        dataset_id = strip_quotes(dataset_id)
         duckdb_sql = f'DROP SCHEMA "{project_id}"."{dataset_id}" CASCADE'
         with debug_sql(duckdb_sql=duckdb_sql):
-            cur.execute(duckdb_sql)
+            cur.sql(duckdb_sql)
 
 
-def create_dataset(project_id, dataset_id):
+def create_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
+    project_id = strip_quotes(project_id)
+    dataset_id = strip_quotes(dataset_id)
+    if get_dataset(project_id, dataset_id):
+        raise AlreadyExistsError(f"Dataset {dataset_id} already exists")
+    with internal_cursor() as cur:
+        cur.execute(
+            """
+                INSERT INTO datasets (project_id, dataset_id, item)
+                VALUES ($project_id, $dataset_id, $item)
+            """,
+            {
+                "project_id": project_id,
+                "dataset_id": dataset_id,
+                "item": dataset.model_dump_json(exclude_unset=True, by_alias=True),
+            },
+        )
     with cursor(project_id, dataset_id) as cur:
-        project_id = strip_quotes(project_id)
-        dataset_id = strip_quotes(dataset_id)
         duckdb_sql = f'CREATE SCHEMA "{project_id}"."{dataset_id}"'
         with debug_sql(duckdb_sql=duckdb_sql):
-            cur.execute(duckdb_sql)
+            cur.sql(duckdb_sql)
+    return dataset
+
+
+def update_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
+    project_id = strip_quotes(project_id)
+    dataset_id = strip_quotes(dataset_id)
+    if not get_dataset(project_id, dataset_id):
+        raise NotFoundError(f"Dataset {dataset_id} does not exist")
+    with internal_cursor() as cur:
+        cur.execute(
+            """
+                UPDATE datasets
+                SET item = $item
+                WHERE project_id = $project_id AND dataset_id = $dataset_id
+            """,
+            {
+                "project_id": project_id,
+                "dataset_id": dataset_id,
+                "item": dataset.model_dump_json(exclude_unset=True, by_alias=True),
+            },
+        )
+    return dataset
+
+
+def get_or_create_dataset(project_id: str, dataset_id: str):
+    dataset = get_dataset(project_id, dataset_id)
+    if dataset:
+        return dataset
+    now = timestamp_now()
+    dataset = Dataset(
+        creationTime=now,
+        datasetReference=DatasetReference(
+            datasetId=dataset_id,
+            projectId=project_id,
+        ),
+        friendlyName=dataset_id,
+        id=dataset_id,
+        isCaseInsensitive=False,
+        lastModifiedTime=now,
+        linkedDatasetMetadata=LinkedDatasetMetadata(
+            linkState=LinkState.UNLINKED,
+        ),
+        location="US",
+        selfLink=f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}",
+        storageBillingModel=StorageBillingModel.LOGICAL,
+        type="DEFAULT",
+    )
+    create_dataset(project_id, dataset_id, dataset)
+    return dataset
 
 
 def list_tables(project_id, dataset_id: Optional[str] = None):
@@ -201,7 +344,7 @@ def delete_table(project_id, dataset_id, table_id):
     with cursor(project_id, dataset_id) as cur:
         duckdb_sql = f"DROP TABLE {table_name}"
         with debug_sql(duckdb_sql=duckdb_sql):
-            cur.execute(duckdb_sql)
+            cur.sql(duckdb_sql)
 
 
 def create_table(project_id, dataset_id, table_id, schema: TableSchema):
@@ -210,58 +353,118 @@ def create_table(project_id, dataset_id, table_id, schema: TableSchema):
         bq_sql = bigquery_schema_to_sql(schema.fields, table_name)
         duckdb_sql = sqlglot.transpile(bq_sql, read="bigquery", write="duckdb")[0]
         with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql):
-            cur.execute(duckdb_sql)
+            cur.sql(duckdb_sql)
 
 
-def create_job(project_id, job: Job) -> int:
-    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
-        cur.execute(
+def create_job(project_id: str, job_id: str, job: Job) -> Job:
+    project_id = strip_quotes(project_id)
+    job_id = strip_quotes(job_id)
+    if get_job(project_id, job_id):
+        raise AlreadyExistsError(f"Job {job_id} already exists")
+    with internal_cursor() as cur:
+        results = cur.sql(
             """
-                INSERT INTO jobs (id, project_id, job)
-                VALUES (nextval('jobs_id_seq'), ?, ?)
-                RETURNING id
+                INSERT INTO jobs (project_id, job_id, item)
+                VALUES ($project_id, $job_id, $item)
+                RETURNING item
             """,
-            (project_id, job.model_dump_json(exclude_unset=True, by_alias=True)),
+            params={
+                "project_id": project_id,
+                "job_id": job_id,
+                "item": job.model_dump_json(exclude_unset=True, by_alias=True),
+            },
         )
-        return cur.fetchall()[0][0]
+        job_item = results.fetchone()[0]
+    return Job.model_validate_json(job_item, by_alias=True)
 
 
-def update_job(job_id, job: Job, results: Optional[GetQueryResultsResponse] = None):
-    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
-        cur.execute(
+def update_job(project_id: str, job_id: str, job: Job) -> Job:
+    project_id = strip_quotes(project_id)
+    job_id = strip_quotes(job_id)
+    with internal_cursor() as cur:
+        results = cur.sql(
             """
-                UPDATE jobs
-                SET job = ?, results = ?
-                WHERE id = ?
+            UPDATE jobs
+            SET item = $item
+            WHERE project_id = $project_id AND job_id = $job_id
+            RETURNING item
             """,
-            (
-                job.model_dump_json(exclude_unset=True, by_alias=True),
-                None
-                if not results
-                else results.model_dump_json(exclude_unset=True, by_alias=True),
-                job_id,
-            ),
+            params={
+                "project_id": project_id,
+                "job_id": job_id,
+                "item": job.model_dump_json(exclude_unset=True, by_alias=True),
+            },
         )
+        item = results.fetchone()[0]
+    return Job.model_validate_json(item, by_alias=True)
 
 
-def get_job(project_id, job_id):
-    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
-        cur.execute(
+def get_job(project_id: str, job_id: str) -> Optional[Job]:
+    project_id = strip_quotes(project_id)
+    job_id = strip_quotes(job_id)
+    with internal_cursor() as cur:
+        results = cur.sql(
             """
-                SELECT job, results
+                SELECT item
                 FROM jobs
-                WHERE id = ? AND project_id = ?
+                WHERE project_id = $project_id AND job_id = $job_id
             """,
-            (job_id, project_id),
+            params={"project_id": project_id, "job_id": job_id},
         )
-        row = cur.fetchone()
+        row = results.fetchone()
         if not row:
-            return None, None
-        results = None
-        if row[1]:
-            results = GetQueryResultsResponse.model_validate_json(row[1], by_alias=True)
-        job = Job.model_validate_json(row[0], by_alias=True)
-        return job, results
+            return None
+        item = row[0]
+    return Job.model_validate_json(item, by_alias=True)
+
+
+def set_query_results(
+    project_id: str,
+    job_id: str,
+    query_results: GetQueryResultsResponse,
+) -> GetQueryResultsResponse:
+    project_id = strip_quotes(project_id)
+    job_id = strip_quotes(job_id)
+    with internal_cursor() as cur:
+        results = cur.sql(
+            """
+                INSERT INTO query_results (project_id, job_id, item)
+                VALUES ($project_id, $job_id, $item)
+                ON CONFLICT (project_id, job_id) DO UPDATE
+                SET item = $item
+                RETURNING item
+            """,
+            params={
+                "project_id": project_id,
+                "job_id": job_id,
+                "item": query_results.model_dump_json(
+                    exclude_unset=True, by_alias=True
+                ),
+            },
+        )
+        item = results.fetchone()[0]
+    return GetQueryResultsResponse.model_validate_json(item, by_alias=True)
+
+
+def get_query_results(
+    project_id: str, job_id: str
+) -> Optional[GetQueryResultsResponse]:
+    project_id = strip_quotes(project_id)
+    job_id = strip_quotes(job_id)
+    with internal_cursor() as cur:
+        results = cur.sql(
+            """
+                SELECT item
+                FROM query_results
+                WHERE project_id = $project_id AND job_id = $job_id
+            """,
+            params={"project_id": project_id, "job_id": job_id},
+        )
+        row = results.fetchone()
+        if not row:
+            return None
+        item = row[0]
+    return GetQueryResultsResponse.model_validate_json(item, by_alias=True)
 
 
 def query(

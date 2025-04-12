@@ -4286,6 +4286,16 @@ class Dataset(BaseModel):
         description="Output only. Same as `type` in `ListFormatDataset`. The type of the dataset, one of: * DEFAULT - only accessible by owner and authorized accounts, * PUBLIC - accessible by everyone, * LINKED - linked dataset, * EXTERNAL - dataset with definition in external metadata catalog.",
     )
 
+    def to_dataset1(self):
+        return Dataset1(
+            datasetReference=self.datasetReference,
+            friendlyName=self.friendlyName,
+            id=self.id,
+            kind=self.kind,
+            labels=self.labels,
+            location=self.location,
+        )
+
 
 class EvaluationMetrics(BaseModel):
     arimaForecastingMetrics: Optional[ArimaForecastingMetrics] = Field(

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, FastAPI, Path, Query, Request
 from fastapi.responses import JSONResponse
 
 from . import db
+from .db import timestamp_now
 from .errors import NotFoundError, AlreadyExistsError
 from .models import (
     AccelerationMode,
@@ -22,9 +23,7 @@ from .models import (
     Code2,
     CommonQueryParams,
     Dataset,
-    Dataset1,
     DatasetList,
-    DatasetReference,
     DatasetView,
     GetIamPolicyRequest,
     GetQueryResultsResponse,
@@ -37,16 +36,12 @@ from .models import (
     JobStatistics,
     JobStatistics2,
     JobStatus,
-    LinkState,
-    LinkedDatasetMetadata,
     ListModelsResponse,
     ListRoutinesResponse,
     ListRowAccessPoliciesResponse,
     Model,
     Policy,
-    Project,
     ProjectList,
-    ProjectReference,
     Projection,
     QueryRequest,
     QueryResponse,
@@ -55,7 +50,6 @@ from .models import (
     SessionInfo,
     SetIamPolicyRequest,
     StateFilterEnum,
-    StorageBillingModel,
     Table,
     Table1,
     TableDataInsertAllRequest,
@@ -126,7 +120,7 @@ async def parse_error_handler(request: Request, e: sqlglot.ParseError) -> JSONRe
 
 @app.exception_handler(duckdb.Error)
 async def duckdb_error_handler(request: Request, e: duckdb.Error) -> JSONResponse:
-    return error_response(422, str(e), "duckdbError")
+    return error_response(400, str(e), "invalidQuery")
 
 
 @app.exception_handler(NotImplementedError)
@@ -136,7 +130,7 @@ async def not_implemented_error_handler(request: Request, e: NotImplementedError
         f"please file an issue (or raise a pull request!).\n"
         f"See: https://github.com/novucs/local-bigquery/issues"
     )
-    return error_response(418, message, "notImplemented")
+    return error_response(501, message, "notImplemented")
 
 
 @app.exception_handler(Exception)
@@ -147,10 +141,7 @@ async def internal_error_handler(request: Request, e: Exception):
         "If you see this, please file an issue with the above logs.\n"
         f"See: https://github.com/novucs/local-bigquery/issues"
     )
-    # Hack to force BigQuery client to not retry on error.
-    # BigQuery clients appear to retry after 500 errors indefinitely,
-    # wasting a lot of valuable debugging time.
-    return error_response(418, message, "internalError")
+    return error_response(500, message, "dontRetry")
 
 
 @bigquery_router.get(
@@ -165,24 +156,7 @@ def bigquery_projects_list(
     params: CommonQueryParams = Depends(),
 ) -> ProjectList:
     projects = db.list_projects()
-    return ProjectList(
-        etag="etag",
-        kind="bigquery#projectList",
-        nextPageToken=None,
-        projects=[
-            Project(
-                friendlyName=project_id,
-                id=project_id,
-                kind="bigquery#project",
-                numericId="1",
-                projectReference=ProjectReference(
-                    projectId=project_id,
-                ),
-            )
-            for project_id in projects
-        ],
-        totalItems=len(projects),
-    )
+    return ProjectList(projects=projects, totalItems=len(projects))
 
 
 @bigquery_router.get(
@@ -199,24 +173,7 @@ def bigquery_datasets_list(
     page_token: Optional[str] = Query(None, alias="pageToken"),
     params: CommonQueryParams = Depends(),
 ) -> DatasetList:
-    return DatasetList(
-        datasets=[
-            Dataset1(
-                datasetReference=DatasetReference(
-                    datasetId=dataset_id,
-                    projectId=project_id,
-                ),
-                friendlyName=dataset_id,
-                id=dataset_id,
-                kind="bigquery#dataset",
-                labels={"key": "value"},
-                location="US",
-            )
-            for dataset_id in db.list_datasets(project_id)
-        ],
-        etag="etag",
-        kind="bigquery#datasetList",
-    )
+    return DatasetList(datasets=[d.to_dataset1() for d in db.list_datasets(project_id)])
 
 
 @bigquery_router.post(
@@ -231,8 +188,7 @@ def bigquery_datasets_insert(
     params: CommonQueryParams = Depends(),
     body: Dataset = None,
 ) -> Dataset:
-    db.create_dataset(body.datasetReference.projectId, body.datasetReference.datasetId)
-    return body
+    return db.create_dataset(project_id, body.datasetReference.datasetId, body)
 
 
 @bigquery_router.delete(
@@ -268,31 +224,7 @@ def bigquery_datasets_get(
         raise NotFoundError(
             f'Dataset "{dataset_id}" not found in project "{project_id}"'
         )
-    return Dataset(
-        tags=[],
-        access=[],
-        creationTime=str(int(datetime.now().timestamp())),
-        datasetReference=DatasetReference(
-            datasetId=dataset_id,
-            projectId=project_id,
-        ),
-        etag="etag",
-        friendlyName=dataset_id,
-        id=dataset_id,
-        isCaseInsensitive=False,
-        kind="bigquery#dataset",
-        labels={"key": "value"},
-        lastModifiedTime=str(int(datetime.now().timestamp())),
-        linkedDatasetMetadata=LinkedDatasetMetadata(
-            linkState=LinkState.UNLINKED,
-        ),
-        location="US",
-        satisfiesPzi=False,
-        satisfiesPzs=False,
-        selfLink="/bigquery/v2/projects/projectId/datasets/datasetId",
-        storageBillingModel=StorageBillingModel.LOGICAL,
-        type="DEFAULT",
-    )
+    return dataset
 
 
 @bigquery_router.patch(
@@ -308,7 +240,14 @@ def bigquery_datasets_patch(
     params: CommonQueryParams = Depends(),
     body: Dataset = None,
 ) -> Dataset:
-    return body
+    dataset = db.get_dataset(project_id, dataset_id)
+    if dataset is None:
+        raise NotFoundError(
+            f'Dataset "{dataset_id}" not found in project "{project_id}"'
+        )
+    dataset = dataset.model_copy(update=body.model_dump(exclude_unset=True))
+    dataset = db.update_dataset(project_id, dataset_id, dataset)
+    return dataset
 
 
 @bigquery_router.put(
@@ -324,7 +263,7 @@ def bigquery_datasets_update(
     params: CommonQueryParams = Depends(),
     body: Dataset = None,
 ) -> Dataset:
-    return body
+    return db.update_dataset(project_id, dataset_id, body)
 
 
 @bigquery_router.get(
@@ -625,10 +564,7 @@ def bigquery_tabledata_insert_all(
 ) -> TableDataInsertAllResponse:
     if body.rows:
         db.tabledata_insert_all(project_id, dataset_id, table_id, body.rows)
-    return TableDataInsertAllResponse(
-        insertErrors=[],
-        kind="bigquery#tableDataInsertAllResponse",
-    )
+    return TableDataInsertAllResponse()
 
 
 @bigquery_router.get(
@@ -779,7 +715,6 @@ def bigquery_jobs_insert(
     params: CommonQueryParams = Depends(),
     body: Optional[Job] = None,
 ) -> Job:
-    job_id = db.create_job(project_id, body)
     default_dataset = body.configuration.query.defaultDataset
     rows, schema = db.query(
         default_dataset.projectId if default_dataset else project_id,
@@ -787,79 +722,50 @@ def bigquery_jobs_insert(
         body.configuration.query.query,
         parameters=body.configuration.query.queryParameters,
     )
-    results_response = GetQueryResultsResponse(
-        cacheHit=False,
-        etag="etag",
-        jobComplete=True,
-        jobReference=JobReference(
-            jobId=str(job_id),
-            location="US",
-            projectId=project_id,
-        ),
-        kind="bigquery#getQueryResultsResponse",
-        numDmlAffectedRows="0",
-        pageToken=None,
-        rows=rows,
-        schema=schema,
-        totalBytesProcessed="0",
-        totalRows=str(len(rows)),
-    )
+    job_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
+    now = timestamp_now()
+    job_reference = JobReference(jobId=job_id, location="US", projectId=project_id)
     job = Job(
         configuration=body.configuration,
-        etag="etag",
-        id=str(job_id),
-        jobCreationReason=JobCreationReason(
-            code=Code2.REQUESTED,
-        ),
-        jobReference=JobReference(
-            jobId=str(job_id),
-            location="US",
-            projectId=project_id,
-        ),
-        kind="bigquery#job",
-        principal_subject=None,
-        selfLink="/bigquery/v2/projects/projectId/jobs/jobId",
+        id=job_id,
+        jobCreationReason=JobCreationReason(code=Code2.REQUESTED),
+        jobReference=job_reference,
+        selfLink=f"/bigquery/v2/projects/{project_id}/jobs/{job_id}",
         statistics=JobStatistics(
             completionRatio=1.0,
-            copy=None,
-            creationTime=str(int(datetime.now().timestamp())),
-            dataMaskingStatistics=None,
-            edition=None,
-            endTime=str(int(datetime.now().timestamp())),
-            extract=None,
-            finalExecutionDurationMs=None,
-            load=None,
-            numChildJobs=None,
-            parentJobId=None,
+            creationTime=now,
+            endTime=now,
             query=JobStatistics2(
                 biEngineStatistics=BiEngineStatistics(
                     accelerationMode=AccelerationMode.BI_ENGINE_DISABLED,
                     biEngineMode=BiEngineMode.DISABLED,
                     biEngineReasons=[
                         BiEngineReason(
-                            code=Code.OTHER_REASON, message="BI Engine is not emulated."
+                            code=Code.OTHER_REASON,
+                            message="BI Engine is not emulated",
                         )
                     ],
                 ),
                 statementType="SELECT",
             ),
-            quotaDeferments=[],
-            reservationUsage=[],
-            reservation_id=None,
-            rowLevelSecurityStatistics=None,
-            scriptStatistics=None,
-            sessionInfo=SessionInfo(
-                sessionId=str(uuid.uuid4()),
-            ),
-            startTime=str(int(datetime.now().timestamp())),
-            totalBytesProcessed=None,
-            totalSlotMs=None,
-            transactionInfo=None,
+            sessionInfo=SessionInfo(sessionId=session_id),
+            startTime=now,
         ),
         status=JobStatus(state="DONE"),
-        user_email=None,
     )
-    db.update_job(job_id, job, results_response)
+    db.create_job(project_id, job_id, job)
+    results_response = GetQueryResultsResponse(
+        cacheHit=False,
+        jobComplete=True,
+        jobReference=job_reference,
+        numDmlAffectedRows="0",
+        rows=rows,
+        schema=schema,
+        totalBytesProcessed="0",
+        totalRows=str(len(rows)),
+    )
+    db.set_query_results(project_id, job_id, results_response)
     return job
 
 
@@ -875,7 +781,7 @@ def bigquery_jobs_get(
     location: Optional[str] = None,
     params: CommonQueryParams = Depends(),
 ) -> Job:
-    raise NotImplementedError("Get job is not implemented yet.")
+    return db.get_job(project_id, job_id)
 
 
 @bigquery_router.post(
@@ -926,106 +832,64 @@ def bigquery_jobs_query(
         body.query,
         parameters=body.queryParameters,
     )
-    job_id = db.create_job(project_id, Job())
-    results_response = GetQueryResultsResponse(
-        cacheHit=False,
-        etag="etag",
-        jobComplete=True,
-        jobReference=JobReference(
-            jobId=str(job_id),
-            location="US",
-            projectId=project_id,
-        ),
-        kind="bigquery#getQueryResultsResponse",
-        numDmlAffectedRows="0",
-        pageToken=None,
-        rows=rows,
-        schema=schema,
-        totalBytesProcessed="0",
-        totalRows=str(len(rows)),
-    )
+    job_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
+    now = timestamp_now()
+    job_reference = JobReference(jobId=job_id, location="US", projectId=project_id)
     job = Job(
         # configuration=body,
-        etag="etag",
-        id=str(job_id),
-        jobCreationReason=JobCreationReason(
-            code=Code2.REQUESTED,
-        ),
-        jobReference=JobReference(
-            jobId=str(job_id),
-            location="US",
-            projectId=project_id,
-        ),
-        kind="bigquery#job",
-        principal_subject=None,
+        id=job_id,
+        jobCreationReason=JobCreationReason(code=Code2.REQUESTED),
+        jobReference=job_reference,
         selfLink="/bigquery/v2/projects/projectId/jobs/jobId",
         statistics=JobStatistics(
             completionRatio=1.0,
-            copy=None,
-            creationTime=str(int(datetime.now().timestamp())),
-            dataMaskingStatistics=None,
-            edition=None,
-            endTime=str(int(datetime.now().timestamp())),
-            extract=None,
-            finalExecutionDurationMs=None,
-            load=None,
-            numChildJobs=None,
-            parentJobId=None,
+            creationTime=now,
+            endTime=now,
             query=JobStatistics2(
                 biEngineStatistics=BiEngineStatistics(
                     accelerationMode=AccelerationMode.BI_ENGINE_DISABLED,
                     biEngineMode=BiEngineMode.DISABLED,
                     biEngineReasons=[
                         BiEngineReason(
-                            code=Code.OTHER_REASON, message="BI Engine is not emulated."
+                            code=Code.OTHER_REASON,
+                            message="BI Engine is not emulated",
                         )
                     ],
                 ),
                 statementType="SELECT",
             ),
-            quotaDeferments=[],
-            reservationUsage=[],
-            reservation_id=None,
-            rowLevelSecurityStatistics=None,
-            scriptStatistics=None,
-            sessionInfo=SessionInfo(
-                sessionId=str(uuid.uuid4()),
-            ),
-            startTime=str(int(datetime.now().timestamp())),
-            totalBytesProcessed=None,
-            totalSlotMs=None,
-            transactionInfo=None,
+            sessionInfo=SessionInfo(sessionId=session_id),
+            startTime=now,
         ),
         status=JobStatus(state="DONE"),
-        user_email=None,
     )
-    db.update_job(job_id, job, results_response)
-    return QueryResponse(
+    db.create_job(project_id, job_id, job)
+    query_results = GetQueryResultsResponse(
         cacheHit=False,
-        creationTime=str(int(datetime.now().timestamp())),
-        dmlStats=None,
-        endTime=str(int(datetime.now().timestamp())),
-        errors=[],
         jobComplete=True,
-        jobCreationReason=JobCreationReason(
-            code=Code2.REQUESTED,
-        ),
-        jobReference=JobReference(
-            jobId=str(job_id),
-            location="US",
-            projectId=project_id,
-        ),
-        kind="bigquery#queryResponse",
-        location="US",
+        jobReference=job_reference,
         numDmlAffectedRows="0",
-        pageToken=None,
-        queryId=str(job_id),
         rows=rows,
         schema=schema,
-        sessionInfo=SessionInfo(
-            sessionId=str(uuid.uuid4()),
-        ),
-        startTime=str(int(datetime.now().timestamp())),
+        totalBytesProcessed="0",
+        totalRows=str(len(rows)),
+    )
+    db.set_query_results(project_id, job_id, query_results)
+    return QueryResponse(
+        cacheHit=False,
+        creationTime=now,
+        endTime=now,
+        jobComplete=True,
+        jobCreationReason=JobCreationReason(code=Code2.REQUESTED),
+        jobReference=job_reference,
+        location="US",
+        numDmlAffectedRows="0",
+        queryId=job_id,
+        rows=rows,
+        schema=schema,
+        sessionInfo=SessionInfo(sessionId=session_id),
+        startTime=now,
         totalBytesBilled="0",
         totalBytesProcessed="0",
         totalRows=str(len(rows)),
@@ -1052,9 +916,11 @@ def bigquery_jobs_get_query_results(
     timeout_ms: Optional[int] = Query(None, alias="timeoutMs"),
     params: CommonQueryParams = Depends(),
 ) -> GetQueryResultsResponse:
-    job, results = db.get_job(project_id, job_id)
-    if job is None:
-        raise NotFoundError(f'Job "{job_id}" not found in project "{project_id}"')
+    results = db.get_query_results(project_id, job_id)
+    if results is None:
+        raise NotFoundError(
+            f'No results for job "{job_id}" not found in project "{project_id}"'
+        )
     return results
 
 
