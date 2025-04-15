@@ -159,7 +159,7 @@ def execute_sql(cur, sql):
             result = cur.sql(sql)
             if result:
                 display(result)
-    except duckdb.Error as e:
+    except (duckdb.Error, sqlglot.ParseError) as e:
         display(e)
         return
     except RuntimeError as e:
