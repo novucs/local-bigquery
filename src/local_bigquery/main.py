@@ -1,4 +1,5 @@
 import json
+import logging
 import pathlib
 import traceback
 import uuid
@@ -8,6 +9,7 @@ from typing import Optional
 import duckdb
 import sqlglot
 from fastapi import APIRouter, Depends, FastAPI, Path, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from . import db
@@ -83,6 +85,7 @@ discovery_router = APIRouter()
 
 
 def error_response(status_code: int, message: str, reason: str) -> JSONResponse:
+    logging.error(message)
     return JSONResponse(
         status_code=status_code,
         content={
@@ -99,6 +102,11 @@ def error_response(status_code: int, message: str, reason: str) -> JSONResponse:
             }
         },
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, e: RequestValidationError):
+    return error_response(422, str(e), "invalid")
 
 
 @app.exception_handler(NotFoundError)
