@@ -522,10 +522,9 @@ class DestinationTableProperties(BaseModel):
         None,
         description="Optional. Friendly name for the destination table. If the table already exists, it should be same as the existing friendly name.",
     )
-    labels: Optional[Dict[str, str]] = Field(
+    labels: Optional[Dict[str, Any]] = Field(
         None,
         description="Optional. The labels associated with this table. You can use these to organize and group your tables. This will only be used if the destination table is newly created. If the table already exists and labels are different than the current labels are provided, the job will fail.",
-        coerce_numbers_to_str=True,
     )
 
 
@@ -2834,10 +2833,9 @@ class Dataset1(BaseModel):
         None,
         description='The resource type. This property always returns the value "bigquery#dataset"',
     )
-    labels: Optional[Dict[str, str]] = Field(
+    labels: Optional[Dict[str, Any]] = Field(
         None,
         description="The labels associated with this dataset. You can use these to organize and group your datasets.",
-        coerce_numbers_to_str=True,
     )
     location: Optional[str] = Field(
         None, description="The geographic location where the dataset resides."
@@ -3828,10 +3826,9 @@ class Table(BaseModel):
     kind: Optional[str] = Field(
         "bigquery#table", description="The type of resource ID."
     )
-    labels: Optional[Dict[str, str]] = Field(
+    labels: Optional[Dict[str, Any]] = Field(
         None,
         description="The labels associated with this table. You can use these to organize and group your tables. Label keys and values can be no longer than 63 characters, can only contain lowercase letters, numeric characters, underscores and dashes. International characters are allowed. Label values are optional. Label keys must start with a letter and each label in the list must have a different key.",
-        coerce_numbers_to_str=True,
     )
     lastModifiedTime: Optional[str] = Field(
         None,
@@ -4038,10 +4035,9 @@ class Table1(BaseModel):
     )
     id: Optional[str] = Field(None, description="An opaque ID of the table.")
     kind: Optional[str] = Field(None, description="The resource type.")
-    labels: Optional[Dict[str, str]] = Field(
+    labels: Optional[Dict[str, Any]] = Field(
         None,
         description="The labels associated with this table. You can use these to organize and group your tables.",
-        coerce_numbers_to_str=True,
     )
     rangePartitioning: Optional[RangePartitioning] = Field(
         None, description="The range partitioning for this table."
@@ -4240,10 +4236,9 @@ class Dataset(BaseModel):
     kind: Optional[str] = Field(
         "bigquery#dataset", description="Output only. The resource type."
     )
-    labels: Optional[Dict[str, str]] = Field(
+    labels: Optional[Dict[str, Any]] = Field(
         None,
         description="The labels associated with this dataset. You can use these to organize and group your datasets. You can set this property when inserting or updating a dataset. See [Creating and Updating Dataset Labels](https://cloud.google.com/bigquery/docs/creating-managing-labels#creating_and_updating_dataset_labels) for more information.",
-        coerce_numbers_to_str=True,
     )
     lastModifiedTime: Optional[str] = Field(
         None,
@@ -4619,10 +4614,9 @@ class JobConfiguration(BaseModel):
         None,
         description="Output only. The type of the job. Can be QUERY, LOAD, EXTRACT, COPY or UNKNOWN.",
     )
-    labels: Optional[Dict[str, str]] = Field(
+    labels: Optional[Dict[str, Any]] = Field(
         None,
         description="The labels associated with this job. You can use these to organize and group your jobs. Label keys and values can be no longer than 63 characters, can only contain lowercase letters, numeric characters, underscores and dashes. International characters are allowed. Label values are optional. Label keys must start with a letter and each label in the list must have a different key.",
-        coerce_numbers_to_str=True,
     )
     load: Optional[JobConfigurationLoad] = Field(
         None, description="[Pick one] Configures a load job."
@@ -5102,10 +5096,9 @@ class Model(BaseModel):
         None,
         description='Output only. Label columns that were used to train this model. The output of the model will have a "predicted_" prefix to these columns.',
     )
-    labels: Optional[Dict[str, str]] = Field(
+    labels: Optional[Dict[str, Any]] = Field(
         None,
         description="The labels associated with this model. You can use these to organize and group your models. Label keys and values can be no longer than 63 characters, can only contain lowercase letters, numeric characters, underscores and dashes. International characters are allowed. Label values are optional. Label keys must start with a letter and each label in the list must have a different key.",
-        coerce_numbers_to_str=True,
     )
     lastModifiedTime: Optional[str] = Field(
         None,
@@ -5243,10 +5236,9 @@ class QueryRequest(BaseModel):
     kind: Optional[str] = Field(
         "bigquery#queryRequest", description="The resource type of the request."
     )
-    labels: Optional[Dict[str, str]] = Field(
+    labels: Optional[Dict[str, Any]] = Field(
         None,
         description="Optional. The labels associated with this query. Labels can be used to organize and group query jobs. Label keys and values can be no longer than 63 characters, can only contain lowercase letters, numeric characters, underscores and dashes. International characters are allowed. Label keys must start with a letter and each label in the list must have a different key.",
-        coerce_numbers_to_str=True,
     )
     location: Optional[str] = Field(
         None,
