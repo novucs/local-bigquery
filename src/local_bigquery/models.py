@@ -525,6 +525,7 @@ class DestinationTableProperties(BaseModel):
     labels: Optional[Dict[str, str]] = Field(
         None,
         description="Optional. The labels associated with this table. You can use these to organize and group your tables. This will only be used if the destination table is newly created. If the table already exists and labels are different than the current labels are provided, the job will fail.",
+        coerce_numbers_to_str=True,
     )
 
 
@@ -2836,6 +2837,7 @@ class Dataset1(BaseModel):
     labels: Optional[Dict[str, str]] = Field(
         None,
         description="The labels associated with this dataset. You can use these to organize and group your datasets.",
+        coerce_numbers_to_str=True,
     )
     location: Optional[str] = Field(
         None, description="The geographic location where the dataset resides."
@@ -3829,6 +3831,7 @@ class Table(BaseModel):
     labels: Optional[Dict[str, str]] = Field(
         None,
         description="The labels associated with this table. You can use these to organize and group your tables. Label keys and values can be no longer than 63 characters, can only contain lowercase letters, numeric characters, underscores and dashes. International characters are allowed. Label values are optional. Label keys must start with a letter and each label in the list must have a different key.",
+        coerce_numbers_to_str=True,
     )
     lastModifiedTime: Optional[str] = Field(
         None,
@@ -4038,6 +4041,7 @@ class Table1(BaseModel):
     labels: Optional[Dict[str, str]] = Field(
         None,
         description="The labels associated with this table. You can use these to organize and group your tables.",
+        coerce_numbers_to_str=True,
     )
     rangePartitioning: Optional[RangePartitioning] = Field(
         None, description="The range partitioning for this table."
@@ -4239,6 +4243,7 @@ class Dataset(BaseModel):
     labels: Optional[Dict[str, str]] = Field(
         None,
         description="The labels associated with this dataset. You can use these to organize and group your datasets. You can set this property when inserting or updating a dataset. See [Creating and Updating Dataset Labels](https://cloud.google.com/bigquery/docs/creating-managing-labels#creating_and_updating_dataset_labels) for more information.",
+        coerce_numbers_to_str=True,
     )
     lastModifiedTime: Optional[str] = Field(
         None,
@@ -4617,6 +4622,7 @@ class JobConfiguration(BaseModel):
     labels: Optional[Dict[str, str]] = Field(
         None,
         description="The labels associated with this job. You can use these to organize and group your jobs. Label keys and values can be no longer than 63 characters, can only contain lowercase letters, numeric characters, underscores and dashes. International characters are allowed. Label values are optional. Label keys must start with a letter and each label in the list must have a different key.",
+        coerce_numbers_to_str=True,
     )
     load: Optional[JobConfigurationLoad] = Field(
         None, description="[Pick one] Configures a load job."
@@ -5099,6 +5105,7 @@ class Model(BaseModel):
     labels: Optional[Dict[str, str]] = Field(
         None,
         description="The labels associated with this model. You can use these to organize and group your models. Label keys and values can be no longer than 63 characters, can only contain lowercase letters, numeric characters, underscores and dashes. International characters are allowed. Label values are optional. Label keys must start with a letter and each label in the list must have a different key.",
+        coerce_numbers_to_str=True,
     )
     lastModifiedTime: Optional[str] = Field(
         None,
@@ -5239,6 +5246,7 @@ class QueryRequest(BaseModel):
     labels: Optional[Dict[str, str]] = Field(
         None,
         description="Optional. The labels associated with this query. Labels can be used to organize and group query jobs. Label keys and values can be no longer than 63 characters, can only contain lowercase letters, numeric characters, underscores and dashes. International characters are allowed. Label keys must start with a letter and each label in the list must have a different key.",
+        coerce_numbers_to_str=True,
     )
     location: Optional[str] = Field(
         None,
