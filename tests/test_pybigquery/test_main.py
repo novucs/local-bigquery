@@ -382,6 +382,43 @@ def test_sql_udf(bq):
     ]
 
 
+def test_persistent_sql_udf(bq):
+    query(
+        bq,
+        """
+        CREATE FUNCTION AddFourAndDivide(x INT64, y INT64)
+        RETURNS FLOAT64
+        AS (
+          (x + 4) / y
+        );
+        """,
+    )
+
+    assert query(
+        bq,
+        """
+        SELECT
+          val, AddFourAndDivide(val, 2) AS result
+        FROM
+          UNNEST(@params) AS val;
+        """,
+        config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ArrayQueryParameter(
+                    "params",
+                    "INT64",
+                    [2, 3, 5, 8],
+                ),
+            ],
+        ),
+    ) == [
+        {"val": 2, "result": 3.0},
+        {"val": 3, "result": 3.5},
+        {"val": 5, "result": 4.5},
+        {"val": 8, "result": 6.0},
+    ]
+
+
 def test_bigquery_types(bq):
     query = """
     SELECT
