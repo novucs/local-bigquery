@@ -2,6 +2,7 @@ import contextlib
 import functools
 import inspect
 from datetime import datetime
+from functools import lru_cache
 from typing import Optional
 
 import duckdb
@@ -51,58 +52,71 @@ def build_table_name(
     return ".".join([f'"{part}"' for part in parts])
 
 
-@contextlib.contextmanager
-def connection(project_id: Optional[str] = None):
-    project_id = strip_quotes(project_id or settings.default_project_id)
+def attach_project(conn, project):
+    metadata = settings.data_dir / f"{project}.ducklake"
+    data_path = settings.data_dir / f"{project}"
+    conn.execute(
+        f"ATTACH IF NOT EXISTS 'ducklake:sqlite:{metadata}' AS \"{project}\" (DATA_PATH '{data_path}')"
+    )
+
+
+@lru_cache(maxsize=None)
+def get_default_connection():
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    dbs = {db.stem for db in settings.data_dir.glob("*.db")}
-    default_dbs = {
-        project_id,
+    found_projects = {project.stem for project in settings.data_dir.glob("*.ducklake")}
+    projects = found_projects | {
         settings.default_project_id,
         settings.internal_project_id,
     }
-    for db in default_dbs - dbs:
-        conn = duckdb.connect(settings.data_dir / f"{db}.db")
-        try:
-            if db == settings.internal_project_id:
+    conn = duckdb.connect()
+    conn.execute("INSTALL ducklake;")
+    conn.execute("INSTALL sqlite;")
+    for project in projects:
+        attach_project(conn, project)
+        if project not in found_projects:
+            if project == settings.internal_project_id:
                 migrate(conn)
-            if db == settings.default_project_id:
+            if project == settings.default_project_id:
                 dataset = (
                     f'"{settings.default_project_id}"."{settings.default_dataset_id}"'
                 )
                 conn.execute(f"CREATE SCHEMA IF NOT EXISTS {dataset}")
-        finally:
-            conn.close()
-    dbs |= default_dbs
-    conn = duckdb.connect()
-    try:
-        for db in dbs:
-            conn.execute(f"ATTACH '{settings.data_dir / db}.db' AS \"{db}\"")
-        yield conn
-    finally:
-        conn.close()
+    return conn
+
+
+@lru_cache(maxsize=None)
+def get_default_connection_with_project(project_id: Optional[str] = None):
+    conn = get_default_connection()
+    attach_project(conn, project_id)
+    return conn
 
 
 def reset():
-    for db in settings.data_dir.glob("*.db"):
-        db.unlink()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    for item in settings.data_dir.iterdir():
+        if item.is_file() or item.is_symlink():
+            item.unlink()
+        elif item.is_dir():
+            for sub_item in item.iterdir():
+                sub_item.unlink()
+            item.rmdir()
 
 
 @contextlib.contextmanager
 def cursor(project_id: Optional[str] = None, dataset_id: Optional[str] = None):
     project_id = strip_quotes(project_id)
     dataset_id = strip_quotes(dataset_id or "main")
-    with connection(project_id) as conn:
-        cur = conn.cursor()
-        try:
-            cur.execute(f'USE "{project_id}"."{dataset_id}"')
-        except duckdb.CatalogException:
-            cur.execute(f'USE "{project_id}"."main"')
-        try:
-            yield cur
-            conn.commit()
-        finally:
-            cur.close()
+    conn = get_default_connection_with_project(project_id)
+    cur = conn.cursor()
+    try:
+        cur.execute(f'USE "{project_id}"."{dataset_id}"')
+    except duckdb.CatalogException:
+        cur.execute(f'USE "{project_id}"."main"')
+    try:
+        yield cur
+        cur.commit()
+    finally:
+        cur.close()
 
 
 @contextlib.contextmanager
@@ -120,41 +134,35 @@ def migrate(conn):
         CREATE TABLE IF NOT EXISTS datasets (
             project_id TEXT,
             dataset_id TEXT,
-            item JSON,
-            PRIMARY KEY (project_id, dataset_id)
+            item JSON
         );
         CREATE TABLE IF NOT EXISTS models (
             project_id TEXT,
             dataset_id TEXT,
             model_id TEXT,
-            item JSON,
-            PRIMARY KEY (project_id, dataset_id, model_id)
+            item JSON
         );
         CREATE TABLE IF NOT EXISTS routines (
             project_id TEXT,
             dataset_id TEXT,
             routine_id TEXT,
-            item JSON,
-            PRIMARY KEY (project_id, dataset_id, routine_id)
+            item JSON
         );
         CREATE TABLE IF NOT EXISTS tables (
             project_id TEXT,
             dataset_id TEXT,
             table_id TEXT,
-            item JSON,
-            PRIMARY KEY (project_id, dataset_id, table_id)
+            item JSON
         );
         CREATE TABLE IF NOT EXISTS jobs (
             project_id TEXT,
             job_id TEXT,
-            item JSON,
-            PRIMARY KEY (project_id, job_id)
+            item JSON
         );
         CREATE TABLE IF NOT EXISTS query_results (
             project_id TEXT,
             job_id TEXT,
-            item JSON,
-            PRIMARY KEY (project_id, job_id)
+            item JSON
         );
         """
     )
@@ -346,25 +354,12 @@ def update_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
     return dataset
 
 
-def list_tables(project_id, dataset_id: Optional[str] = None):
+def list_tables(project_id, dataset_id: Optional[str] = None) -> list[str]:
     project_id = strip_quotes(project_id)
     dataset_id = strip_quotes(dataset_id)
     with cursor(project_id, dataset_id) as cur:
-        result = cur.sql("SHOW ALL TABLES")
-        return sorted(
-            [
-                {
-                    "project_id": row_project_id,
-                    "dataset_id": row_dataset_id,
-                    "table_name": table_name,
-                    "columns": columns,
-                }
-                for row_project_id, row_dataset_id, table_name, columns, *_ in result.fetchall()
-                if project_id == row_project_id
-                and (not dataset_id or dataset_id == row_dataset_id)
-            ],
-            key=lambda x: (x["project_id"], x["dataset_id"], x["table_name"]),
-        )
+        result = cur.sql("SHOW TABLES")
+        return [table_name for table_name, *_ in result.fetchall()]
 
 
 def delete_table(project_id, dataset_id, table_id):
@@ -390,11 +385,10 @@ def create_job(project_id: str, job_id: str, job: Job) -> Job:
     if get_job(project_id, job_id):
         raise AlreadyExistsError(f"Job {job_id} already exists")
     with internal_cursor() as cur:
-        results = cur.sql(
+        cur.sql(
             """
                 INSERT INTO jobs (project_id, job_id, item)
                 VALUES ($project_id, $job_id, $item)
-                RETURNING item
             """,
             params={
                 "project_id": project_id,
@@ -402,20 +396,18 @@ def create_job(project_id: str, job_id: str, job: Job) -> Job:
                 "item": job.model_dump_json(exclude_unset=True, by_alias=True),
             },
         )
-        job_item = results.fetchone()[0]
-    return Job.model_validate_json(job_item, by_alias=True)
+    return job
 
 
 def update_job(project_id: str, job_id: str, job: Job) -> Job:
     project_id = strip_quotes(project_id)
     job_id = strip_quotes(job_id)
     with internal_cursor() as cur:
-        results = cur.sql(
+        cur.sql(
             """
             UPDATE jobs
             SET item = $item
             WHERE project_id = $project_id AND job_id = $job_id
-            RETURNING item
             """,
             params={
                 "project_id": project_id,
@@ -423,8 +415,7 @@ def update_job(project_id: str, job_id: str, job: Job) -> Job:
                 "item": job.model_dump_json(exclude_unset=True, by_alias=True),
             },
         )
-        item = results.fetchone()[0]
-    return Job.model_validate_json(item, by_alias=True)
+    return job
 
 
 def get_job(project_id: str, job_id: str) -> Optional[Job]:
@@ -483,24 +474,36 @@ def set_query_results(
     project_id = strip_quotes(project_id)
     job_id = strip_quotes(job_id)
     with internal_cursor() as cur:
-        results = cur.sql(
-            """
-                INSERT INTO query_results (project_id, job_id, item)
-                VALUES ($project_id, $job_id, $item)
-                ON CONFLICT (project_id, job_id) DO UPDATE
-                SET item = $item
-                RETURNING item
-            """,
-            params={
-                "project_id": project_id,
-                "job_id": job_id,
-                "item": query_results.model_dump_json(
-                    exclude_unset=True, by_alias=True
-                ),
-            },
-        )
-        item = results.fetchone()[0]
-    return GetQueryResultsResponse.model_validate_json(item, by_alias=True)
+        if get_query_results(project_id, job_id):
+            cur.sql(
+                """
+                    UPDATE query_results
+                    SET item = $item
+                    WHERE project_id = $project_id AND job_id = $job_id
+                """,
+                params={
+                    "project_id": project_id,
+                    "job_id": job_id,
+                    "item": query_results.model_dump_json(
+                        exclude_unset=True, by_alias=True
+                    ),
+                },
+            )
+        else:
+            cur.sql(
+                """
+                    INSERT INTO query_results (project_id, job_id, item)
+                    VALUES ($project_id, $job_id, $item)
+                """,
+                params={
+                    "project_id": project_id,
+                    "job_id": job_id,
+                    "item": query_results.model_dump_json(
+                        exclude_unset=True, by_alias=True
+                    ),
+                },
+            )
+    return query_results
 
 
 def get_query_results(
@@ -534,6 +537,8 @@ def query(
     with cursor(project_id, dataset_id) as cur:
         result = None
         for tree in sqlglot.parse(bq_sql, "bigquery"):
+            if not tree:
+                continue
             if is_js_udf(tree):
                 bind_js_udf(cur, tree)
                 continue
@@ -641,9 +646,9 @@ def bigquery_to_duckdb_sqlglot_wildcard(project_id, dataset_id, node):
     if node.catalog:
         project_id = strip_quotes(node.catalog)
     table_names = {
-        t["table_name"]
-        for t in list_tables(project_id, dataset_id)
-        if t["table_name"].startswith(wildcard)
+        table_name
+        for table_name in list_tables(project_id, dataset_id)
+        if table_name.startswith(wildcard)
     }
     selects = [
         sqlglot.select(
