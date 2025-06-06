@@ -9,6 +9,7 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.sql import GoogleSqlLexer
 
+from local_bigquery import db
 from local_bigquery.db import cursor, bigquery_to_duckdb_sqlglot, is_js_udf, bind_js_udf
 from local_bigquery.settings import settings
 from prompt_toolkit.completion import Completer, Completion
@@ -94,9 +95,36 @@ class BigQueryCompleter(Completer):
 
 
 def refresh(cur, completer):
-    for db in settings.data_dir.glob("*.db"):
-        cur.execute(f"ATTACH IF NOT EXISTS '{db}' AS \"{db.stem}\"")
-    result = cur.sql("SHOW ALL TABLES")
+    found_projects = {project.stem for project in settings.data_dir.glob("*.ducklake")}
+    for project in found_projects:
+        db.attach_project(cur, project)
+    # `SHOW ALL TABLES` currently unsupported by DuckLake.
+    result = cur.sql(
+        """
+        SELECT
+            c.database_name AS project,
+            c.schema_name AS dataset,
+            c.table_name AS table,
+            ARRAY_AGG(c.column_name) AS columns
+        FROM
+            duckdb_databases() d
+            JOIN duckdb_schemas() s
+                ON d.database_name = s.database_name
+            JOIN duckdb_tables() t
+                 ON s.database_name = t.database_name
+                     AND s.schema_name = t.schema_name
+            JOIN duckdb_columns() c
+                 ON t.database_name = c.database_name
+                     AND t.schema_name = c.schema_name
+                     AND t.table_name = c.table_name
+        WHERE
+            d.type='ducklake'
+        GROUP BY
+            c.database_name,
+            c.schema_name,
+            c.table_name
+        """
+    )
     for row in result.fetchall():
         project, dataset, table, columns, *_ = row
         for column in columns:
@@ -122,8 +150,7 @@ def clear():
 
 
 def reset():
-    for db in settings.data_dir.glob("*.db"):
-        db.unlink()
+    db.reset()
     display("All projects, datasets, and tables have been deleted.")
     display("A REPL restart is required to see the changes.")
     display("Exiting the REPL...")
@@ -152,6 +179,8 @@ def execute_sql(cur, sql):
         return
     try:
         for tree in trees:
+            if not tree:
+                continue
             if is_js_udf(tree):
                 bind_js_udf(cur, tree)
                 continue

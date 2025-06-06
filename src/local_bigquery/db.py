@@ -2,6 +2,7 @@ import contextlib
 import functools
 import inspect
 from datetime import datetime
+from functools import lru_cache
 from typing import Optional
 
 import duckdb
@@ -51,36 +52,43 @@ def build_table_name(
     return ".".join([f'"{part}"' for part in parts])
 
 
-@contextlib.contextmanager
-def connection(project_id: Optional[str] = None):
-    project_id = strip_quotes(project_id or settings.default_project_id)
+def attach_project(conn, project):
+    metadata = settings.data_dir / f"{project}.ducklake"
+    data_path = settings.data_dir / f"{project}"
+    conn.execute(
+        f"ATTACH IF NOT EXISTS 'ducklake:sqlite:{metadata}' AS \"{project}\" (DATA_PATH '{data_path}')"
+    )
+
+
+@lru_cache(maxsize=None)
+def get_default_connection():
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     found_projects = {project.stem for project in settings.data_dir.glob("*.ducklake")}
-    default_projects = {
-        project_id,
+    projects = found_projects | {
         settings.default_project_id,
         settings.internal_project_id,
     }
-    projects = found_projects | default_projects
     conn = duckdb.connect()
     conn.execute("INSTALL ducklake;")
     conn.execute("INSTALL sqlite;")
-    try:
-        for project in projects:
-            metadata = settings.data_dir / f"{project}.ducklake"
-            data_path = settings.data_dir / f"{project}"
-            conn.execute(
-                f"ATTACH 'ducklake:sqlite:{metadata}' AS \"{project}\" (DATA_PATH '{data_path}')"
-            )
-            if project not in found_projects:
-                if project == settings.internal_project_id:
-                    migrate(conn)
-                if project == settings.default_project_id:
-                    dataset = f'"{settings.default_project_id}"."{settings.default_dataset_id}"'
-                    conn.execute(f"CREATE SCHEMA IF NOT EXISTS {dataset}")
-        yield conn
-    finally:
-        conn.close()
+    for project in projects:
+        attach_project(conn, project)
+        if project not in found_projects:
+            if project == settings.internal_project_id:
+                migrate(conn)
+            if project == settings.default_project_id:
+                dataset = (
+                    f'"{settings.default_project_id}"."{settings.default_dataset_id}"'
+                )
+                conn.execute(f"CREATE SCHEMA IF NOT EXISTS {dataset}")
+    return conn
+
+
+@lru_cache(maxsize=None)
+def get_default_connection_with_project(project_id: Optional[str] = None):
+    conn = get_default_connection()
+    attach_project(conn, project_id)
+    return conn
 
 
 def reset():
@@ -98,17 +106,17 @@ def reset():
 def cursor(project_id: Optional[str] = None, dataset_id: Optional[str] = None):
     project_id = strip_quotes(project_id)
     dataset_id = strip_quotes(dataset_id or "main")
-    with connection(project_id) as conn:
-        cur = conn.cursor()
-        try:
-            cur.execute(f'USE "{project_id}"."{dataset_id}"')
-        except duckdb.CatalogException:
-            cur.execute(f'USE "{project_id}"."main"')
-        try:
-            yield cur
-            conn.commit()
-        finally:
-            cur.close()
+    conn = get_default_connection_with_project(project_id)
+    cur = conn.cursor()
+    try:
+        cur.execute(f'USE "{project_id}"."{dataset_id}"')
+    except duckdb.CatalogException:
+        cur.execute(f'USE "{project_id}"."main"')
+    try:
+        yield cur
+        cur.commit()
+    finally:
+        cur.close()
 
 
 @contextlib.contextmanager
@@ -529,6 +537,8 @@ def query(
     with cursor(project_id, dataset_id) as cur:
         result = None
         for tree in sqlglot.parse(bq_sql, "bigquery"):
+            if not tree:
+                continue
             if is_js_udf(tree):
                 bind_js_udf(cur, tree)
                 continue
