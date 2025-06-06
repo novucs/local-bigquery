@@ -1,6 +1,7 @@
 import contextlib
 import functools
 import inspect
+import json
 from datetime import datetime
 from functools import lru_cache
 from typing import Optional
@@ -8,6 +9,7 @@ from typing import Optional
 import duckdb
 import sqlglot
 from py_mini_racer import MiniRacer
+from sqlglot import exp
 
 from local_bigquery.errors import NotFoundError, AlreadyExistsError
 from local_bigquery.models import (
@@ -535,27 +537,11 @@ def query(
 ) -> tuple[list[TableRow], TableSchema]:
     params = bigquery_params_to_duckdb_params(parameters)
     with cursor(project_id, dataset_id) as cur:
-        result = None
-        for tree in sqlglot.parse(bq_sql, "bigquery"):
-            if not tree:
-                continue
-            if is_js_udf(tree):
-                bind_js_udf(cur, tree)
-                continue
-
-            transform = bigquery_to_duckdb_sqlglot(project_id, dataset_id)
-            duckdb_sql = tree.transform(transform).sql("duckdb")
-            used_params = {
-                node.this.this: params.get(node.this.this)
-                for node in tree.dfs()
-                if isinstance(node, sqlglot.exp.Parameter)
-            }
-            with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql, params=params):
-                result = cur.sql(duckdb_sql, params=used_params)
-
-        if result is None:
+        results = execute_sql(project_id, dataset_id, bq_sql, params, cur)
+        if not results:
             return [], TableSchema(fields=[], foreignTypeInfo=None)
 
+        result = results[-1]
         duckdb_fields = list(zip(result.columns, result.types))
         bigquery_fields = duckdb_fields_to_bigquery_fields(duckdb_fields)
         bigquery_schema = TableSchema(fields=bigquery_fields, foreignTypeInfo=None)
@@ -564,6 +550,80 @@ def query(
         bigquery_rows = duckdb_values_to_bigquery_values(duckdb_rows)
 
         return bigquery_rows, bigquery_schema
+
+
+def execute_sql(project_id, dataset_id, bq_sql, params, cur, load=True):
+    results = []
+    trees = sqlglot.parse(bq_sql, "bigquery")
+    if load:
+        persistent_trees = load_persistent_trees(project_id)
+    else:
+        persistent_trees = []
+    for tree in trees:
+        if is_persistent_udf(tree):
+            persist_tree(project_id, tree)
+    for index, tree in enumerate(persistent_trees + trees):
+        if not tree:
+            continue
+        persistent_tree = None
+        if is_persistent_udf(tree):
+            tree = make_udf_temporary(tree)
+            persistent_tree = tree.copy()
+        if is_js_udf(tree):
+            bind_js_udf(cur, tree)
+            continue
+        transform = bigquery_to_duckdb_sqlglot(project_id, dataset_id)
+        duckdb_sql = tree.transform(transform).sql("duckdb")
+        used_params = {
+            node.this.this: params.get(node.this.this)
+            for node in tree.dfs()
+            if isinstance(node, sqlglot.exp.Parameter)
+        }
+        with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql, params=params):
+            result = cur.sql(duckdb_sql, params=used_params)
+            if result:
+                results.append(result)
+        if persistent_tree and index > len(persistent_trees):
+            persist_tree(project_id, persistent_tree)
+    return results
+
+
+def is_persistent_udf(tree):
+    if not tree:
+        return False
+    if getattr(tree, "kind", None) != "FUNCTION":
+        return False
+    return not any(
+        node for node in tree.dfs() if isinstance(node, exp.TemporaryProperty)
+    )
+
+
+def make_udf_temporary(tree: exp.Expression) -> exp.Expression:
+    props = tree.args.get("properties")
+    if not props:
+        tree.set("properties", exp.Properties(expressions=[exp.TemporaryProperty()]))
+        return tree
+    if any(isinstance(e, exp.TemporaryProperty) for e in props.expressions):
+        return tree
+    props.set("expressions", [exp.TemporaryProperty(), *props.expressions])
+    return tree
+
+
+def persist_tree(project_id, tree):
+    with open(settings.data_dir / f"{project_id}_trees.json", "a") as f:
+        f.write(json.dumps(tree.dump()) + "\n")
+
+
+def load_persistent_trees(project_id):
+    trees = []
+    try:
+        with open(settings.data_dir / f"{project_id}_trees.json", "r") as f:
+            for line in f:
+                if line:
+                    trees.append(exp.Expression.load(json.loads(line)))
+    except FileNotFoundError:
+        pass
+    return trees
 
 
 def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):

@@ -10,7 +10,8 @@ from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.sql import GoogleSqlLexer
 
 from local_bigquery import db
-from local_bigquery.db import cursor, bigquery_to_duckdb_sqlglot, is_js_udf, bind_js_udf
+from local_bigquery.db import cursor
+from local_bigquery.errors import AlreadyExistsError, NotFoundError
 from local_bigquery.settings import settings
 from prompt_toolkit.completion import Completer, Completion
 
@@ -169,26 +170,13 @@ def get_current_scope(cur):
     return results
 
 
-def execute_sql(cur, sql):
+def execute_sql(cur, sql, first_run=True):
     try:
         project_id, dataset_id = get_current_scope(cur)
-        transform = bigquery_to_duckdb_sqlglot(project_id, dataset_id)
-        trees = sqlglot.parse(sql, "bigquery")
-    except sqlglot.ParseError as e:
-        display(e)
-        return
-    try:
-        for tree in trees:
-            if not tree:
-                continue
-            if is_js_udf(tree):
-                bind_js_udf(cur, tree)
-                continue
-            sql = tree.transform(transform).sql("duckdb")
-            result = cur.sql(sql)
-            if result:
-                display(result)
-    except (duckdb.Error, sqlglot.ParseError) as e:
+        results = db.execute_sql(project_id, dataset_id, sql, None, cur, load=first_run)
+        for result in results:
+            display(result)
+    except (duckdb.Error, sqlglot.ParseError, NotFoundError, AlreadyExistsError) as e:
         display(e)
         return
     except RuntimeError as e:
@@ -223,6 +211,7 @@ def main():
     display("Type 'help' for a list of commands.")
     try:
         with cursor(settings.default_project_id, settings.default_dataset_id) as cur:
+            first_run = True
             while True:
                 refresh(cur, completer)
                 try:
@@ -240,7 +229,8 @@ def main():
                 if command := commands.get(text.rstrip(";")):
                     command()
                 else:
-                    execute_sql(cur, text)
+                    execute_sql(cur, text, first_run=first_run)
+                    first_run = False
     except EOFError:
         pass
     exit_()
