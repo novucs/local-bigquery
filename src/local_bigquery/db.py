@@ -53,7 +53,7 @@ def build_table_name(
 
 
 def attach_project(conn, project):
-    metadata = settings.data_dir / f"{project}.ducklake"
+    metadata = settings.data_dir / f"{project}.sqlite"
     data_path = settings.data_dir / f"{project}"
     conn.execute(
         f"ATTACH IF NOT EXISTS 'ducklake:sqlite:{metadata}' AS \"{project}\" (DATA_PATH '{data_path}')"
@@ -63,7 +63,7 @@ def attach_project(conn, project):
 @lru_cache(maxsize=None)
 def get_default_connection():
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    found_projects = {project.stem for project in settings.data_dir.glob("*.ducklake")}
+    found_projects = {project.stem for project in settings.data_dir.glob("*.sqlite")}
     projects = found_projects | {
         settings.default_project_id,
         settings.internal_project_id,

@@ -95,7 +95,7 @@ class BigQueryCompleter(Completer):
 
 
 def refresh(cur, completer):
-    found_projects = {project.stem for project in settings.data_dir.glob("*.ducklake")}
+    found_projects = {project.stem for project in settings.data_dir.glob("*.sqlite")}
     for project in found_projects:
         db.attach_project(cur, project)
     # `SHOW ALL TABLES` currently unsupported by DuckLake.
