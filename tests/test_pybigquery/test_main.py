@@ -607,18 +607,30 @@ def test_external_query(postgres_url, bq):
             person.description AS person_description
         FROM
             EXTERNAL_QUERY(
-                'us.default',
-                '''
-                SELECT
-                    name,
-                    description
-                FROM
-                    person
-                '''
+                @postgres_connection_string,
+                @postgres_query
             ) AS person
         ORDER BY
             person.name
         """,
+        config=bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter(
+                    "postgres_connection_string", "STRING", "us.default"
+                ),
+                bigquery.ScalarQueryParameter(
+                    "postgres_query",
+                    "STRING",
+                    """
+                        SELECT
+                            name,
+                            description
+                        FROM
+                            person
+                    """,
+                ),
+            ]
+        ),
     ) == [
         {
             "person_name": "Alice",
@@ -636,8 +648,8 @@ def test_external_query_cte(postgres_url, bq):
         bq,
         """
         SELECT
-            person.name AS person_name,
-            person.description AS person_description
+            name AS person_name,
+            description AS person_description
         FROM
             EXTERNAL_QUERY(
                 'us.default',
@@ -651,9 +663,9 @@ def test_external_query_cte(postgres_url, bq):
                 )
                 SELECT * FROM cte
                 '''
-            ) AS person
+            )
         ORDER BY
-            person.name
+            name
         """,
     ) == [
         {

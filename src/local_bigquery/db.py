@@ -546,8 +546,9 @@ def query(
                 bind_js_udf(cur, tree)
                 continue
 
-            transform = bigquery_to_duckdb_sqlglot(project_id, dataset_id)
-            duckdb_sql = tree.transform(transform).sql("duckdb")
+            transform = bigquery_to_duckdb_sqlglot(project_id, dataset_id, params)
+            tree = tree.transform(transform)
+            duckdb_sql = tree.sql("duckdb")
             used_params = {
                 node.this.this: params.get(node.this.this)
                 for node in tree.dfs()
@@ -628,10 +629,10 @@ def bind_js_udf(cur, tree):
     cur.create_function(name, fn, param_types, return_type)
 
 
-def bigquery_to_duckdb_sqlglot(project_id, dataset_id):
+def bigquery_to_duckdb_sqlglot(project_id, dataset_id, params):
     def transform(node):
         node = bigquery_to_duckdb_sqlglot_wildcard(project_id, dataset_id, node)
-        node = bigquery_to_duckdb_external_query(node)
+        node = bigquery_to_duckdb_external_query(node, params)
         return node
 
     return transform
@@ -704,7 +705,7 @@ def setup_postgres_connection(cur):
     )
 
 
-def bigquery_to_duckdb_external_query(node):
+def bigquery_to_duckdb_external_query(node, params):
     if not isinstance(node, sqlglot.exp.Table):
         return node
     if not node.this or not node.this.this:
@@ -716,12 +717,12 @@ def bigquery_to_duckdb_external_query(node):
             raise sqlglot.ParseError(
                 "EXTERNAL_QUERY requires two arguments: connection_id and query"
             )
-        connection_id = args[0].this
+        connection_id = get_param_or_literal_value(args[0], params)
         if connection_id != settings.postgres_connection_id:
-            raise NotImplementedError(
-                f"EXTERNAL_QUERY only supports connection_id '{settings.postgres_connection_id}', found: '{connection_id.this}'"
+            raise sqlglot.ParseError(
+                f"EXTERNAL_QUERY expected connection ID '{settings.postgres_connection_id}', found: '{connection_id}'"
             )
-        sql = args[1].this
+        sql = get_param_or_literal_value(args[1], params)
         trees = sqlglot.parse(sql, "postgres")
 
         if len(trees) != 1:
@@ -756,3 +757,14 @@ def is_cte_table(tree, node):
         n for n in tree.find_all(sqlglot.exp.With) for n in n.find_all(sqlglot.exp.CTE)
     ]
     return any(cte.alias == node.this.this for cte in ctes)
+
+
+def get_param_or_literal_value(node, params):
+    if isinstance(node, sqlglot.exp.Parameter):
+        param_name = node.this.this
+        if param_name not in params:
+            raise ValueError(f"Parameter '{param_name}' not found")
+        return params[param_name]
+    if isinstance(node, sqlglot.exp.Literal):
+        return node.this
+    raise ValueError("Node is neither Parameter nor Literal")
