@@ -11,7 +11,7 @@ Grab the container, run it, and hit it with a BigQuery client.
 ### Docker
 Start the container
 ```bash
-docker run --init -d --rm -p 9050:9050 -v /tmp/local-bigquery/:/data --name bigquery ghcr.io/novucs/local-bigquery:0.2.2
+docker run --init -d --rm -p 9050:9050 -v /tmp/local-bigquery/:/data --name bigquery ghcr.io/novucs/local-bigquery:0.2.3
 ```
 
 Enter the REPL
@@ -35,7 +35,7 @@ volumes:
   bigquery_data: {}
 services:
   bigquery:
-    image: ghcr.io/novucs/local-bigquery:0.2.2
+    image: ghcr.io/novucs/local-bigquery:0.2.3
     ports:
       - "9050:9050"
     environment:
@@ -89,7 +89,7 @@ engine = create_engine("bigquery://project/dataset", connect_args={"client": cli
 from google.cloud import bigquery
 from testcontainers.core.container import DockerContainer
 
-bigquery_image = "ghcr.io/novucs/local-bigquery:0.2.2"
+bigquery_image = "ghcr.io/novucs/local-bigquery:0.2.3"
 with DockerContainer(bigquery_image).with_exposed_ports(9050) as container:
     host = container.get_container_host_ip()
     port = container.get_exposed_port(9050)
