@@ -745,6 +745,7 @@ def postgres_tables_to_duckdb_sqlglot(tree, node):
         this=node.this.this,
         db="public" if not node.db else node.db,
         catalog="pg",
+        alias=node.alias,
     )
 
 

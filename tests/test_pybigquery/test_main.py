@@ -656,10 +656,10 @@ def test_external_query_cte(postgres_url, bq):
                 '''
                 WITH cte AS (
                     SELECT
-                        name,
-                        description
+                        p.name,
+                        p.description
                     FROM
-                        person
+                        person AS p
                 )
                 SELECT * FROM cte
                 '''
