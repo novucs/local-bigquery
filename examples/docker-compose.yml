@@ -14,5 +14,9 @@ services:
       DEFAULT_DATASET_ID: local
       INTERNAL_PROJECT_ID: internal
       INTERNAL_DATASET_ID: internal
+      # Support for external connections to Postgres, requires an available Postgres instance.
+      # SELECT * FROM EXTERNAL_QUERY('us.default', 'SELECT 1');
+      POSTGRES_CONNECTION_ID: us.default
+      POSTGRES_CONNECTION_URI: postgresql://postgres:example@db:5432/postgres
     volumes:
       - bigquery_data:/data

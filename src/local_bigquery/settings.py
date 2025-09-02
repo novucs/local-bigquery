@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     default_dataset_id: str = Field("local")
     internal_project_id: str = Field("internal")
     internal_dataset_id: str = Field("internal")
+    postgres_connection_id: str = Field("us.default")
+    postgres_uri: str = Field("postgresql://postgres:example@db:5432/postgres")
 
 
 settings = Settings()

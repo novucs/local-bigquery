@@ -11,6 +11,7 @@ from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery
 from google.cloud.bigquery import QueryJobConfig
 from sqlalchemy import column, create_engine, select, text
+from testcontainers.postgres import PostgresContainer
 
 from local_bigquery.main import app, db
 from local_bigquery.settings import settings
@@ -568,4 +569,99 @@ def test_javascript_udf(bq):
         {"product": 5.0, "x": 1, "y": 5},
         {"product": 20.0, "x": 2, "y": 10},
         {"product": 45.0, "x": 3, "y": 15},
+    ]
+
+
+@pytest.fixture
+def postgres_url():
+    postgres = PostgresContainer("postgres:17")
+    postgres.start()
+    connection_uri = postgres.get_connection_url()
+    engine = create_engine(connection_uri)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE person (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100),
+                    description TEXT
+                );
+                INSERT INTO person (name, description) VALUES
+                ('Alice', 'Enjoys hiking and outdoor activities.'),
+                ('Bob', 'Avid reader and coffee enthusiast.');
+                """
+            )
+        )
+    settings.postgres_uri = connection_uri.replace("+psycopg2", "")
+    yield connection_uri
+    postgres.stop()
+
+
+def test_external_query(postgres_url, bq):
+    assert query(
+        bq,
+        """
+        SELECT
+            person.name AS person_name,
+            person.description AS person_description
+        FROM
+            EXTERNAL_QUERY(
+                'us.default',
+                '''
+                SELECT
+                    name,
+                    description
+                FROM
+                    person
+                '''
+            ) AS person
+        ORDER BY
+            person.name
+        """,
+    ) == [
+        {
+            "person_name": "Alice",
+            "person_description": "Enjoys hiking and outdoor activities.",
+        },
+        {
+            "person_name": "Bob",
+            "person_description": "Avid reader and coffee enthusiast.",
+        },
+    ]
+
+
+def test_external_query_cte(postgres_url, bq):
+    assert query(
+        bq,
+        """
+        SELECT
+            person.name AS person_name,
+            person.description AS person_description
+        FROM
+            EXTERNAL_QUERY(
+                'us.default',
+                '''
+                WITH cte AS (
+                    SELECT
+                        name,
+                        description
+                    FROM
+                        person
+                )
+                SELECT * FROM cte
+                '''
+            ) AS person
+        ORDER BY
+            person.name
+        """,
+    ) == [
+        {
+            "person_name": "Alice",
+            "person_description": "Enjoys hiking and outdoor activities.",
+        },
+        {
+            "person_name": "Bob",
+            "person_description": "Avid reader and coffee enthusiast.",
+        },
     ]

@@ -9,6 +9,7 @@ dependencies = [
     "mini-racer>=0.12.4",
     "numpy>=2.2.4",
     "prompt-toolkit>=3.0.50",
+    "psycopg2-binary>=2.9.10",
     "pydantic-settings>=2.8.1",
     "pygments>=2.19.1",
     "pytz>=2025.2",

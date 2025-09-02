@@ -536,7 +536,10 @@ def query(
     params = bigquery_params_to_duckdb_params(parameters)
     with cursor(project_id, dataset_id) as cur:
         result = None
-        for tree in sqlglot.parse(bq_sql, "bigquery"):
+        trees = sqlglot.parse(bq_sql, "bigquery")
+        if has_external_query(trees):
+            setup_postgres_connection(cur)
+        for tree in trees:
             if not tree:
                 continue
             if is_js_udf(tree):
@@ -627,7 +630,9 @@ def bind_js_udf(cur, tree):
 
 def bigquery_to_duckdb_sqlglot(project_id, dataset_id):
     def transform(node):
-        return bigquery_to_duckdb_sqlglot_wildcard(project_id, dataset_id, node)
+        node = bigquery_to_duckdb_sqlglot_wildcard(project_id, dataset_id, node)
+        node = bigquery_to_duckdb_external_query(node)
+        return node
 
     return transform
 
@@ -674,3 +679,80 @@ def bigquery_to_duckdb_sqlglot_wildcard(project_id, dataset_id, node):
         return selects[0]
     unions = functools.reduce(lambda x, y: x.union(y), selects)
     return sqlglot.exp.paren(unions)
+
+
+def has_external_query(trees):
+    return any(
+        node
+        for tree in trees
+        for node in tree.dfs()
+        if isinstance(node, sqlglot.exp.Table)
+        and node.this
+        and node.this.this
+        and strip_quotes(node.this.this).upper() == "EXTERNAL_QUERY"
+    )
+
+
+def setup_postgres_connection(cur):
+    cur.execute(
+        f"""
+        INSTALL postgres;
+        LOAD postgres;
+        DETACH DATABASE IF EXISTS pg;
+        ATTACH IF NOT EXISTS '{settings.postgres_uri}' AS pg (TYPE postgres);
+        """
+    )
+
+
+def bigquery_to_duckdb_external_query(node):
+    if not isinstance(node, sqlglot.exp.Table):
+        return node
+    if not node.this or not node.this.this:
+        return node
+    table_name = strip_quotes(node.this.this)
+    if table_name.upper() == "EXTERNAL_QUERY":
+        args = node.this.expressions
+        if not args or len(args) != 2:
+            raise sqlglot.ParseError(
+                "EXTERNAL_QUERY requires two arguments: connection_id and query"
+            )
+        connection_id = args[0].this
+        if connection_id != settings.postgres_connection_id:
+            raise NotImplementedError(
+                f"EXTERNAL_QUERY only supports connection_id '{settings.postgres_connection_id}', found: '{connection_id.this}'"
+            )
+        sql = args[1].this
+        trees = sqlglot.parse(sql, "postgres")
+
+        if len(trees) != 1:
+            raise sqlglot.ParseError("EXTERNAL_QUERY query must be a single statement")
+
+        tree = trees[0]
+        tree = tree.transform(lambda n: postgres_tables_to_duckdb_sqlglot(tree, n))
+        node = sqlglot.exp.Subquery(this=tree, alias=node.alias)
+    return node
+
+
+def postgres_tables_to_duckdb_sqlglot(tree, node):
+    if not isinstance(node, sqlglot.exp.Table):
+        return node
+    if not node.this or not node.this.this:
+        return node
+    if is_cte_table(tree, node):
+        return node
+    return sqlglot.exp.Table(
+        this=node.this.this,
+        db="public" if not node.db else node.db,
+        catalog="pg",
+    )
+
+
+def is_cte_table(tree, node):
+    if not isinstance(node, sqlglot.exp.Table):
+        return False
+    if not node.this or not node.this.this:
+        return False
+    ctes = [
+        n for n in tree.find_all(sqlglot.exp.With) for n in n.find_all(sqlglot.exp.CTE)
+    ]
+    return any(cte.alias == node.this.this for cte in ctes)
