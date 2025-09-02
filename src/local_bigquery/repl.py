@@ -10,7 +10,14 @@ from prompt_toolkit.lexers import PygmentsLexer
 from pygments.lexers.sql import GoogleSqlLexer
 
 from local_bigquery import db
-from local_bigquery.db import cursor, bigquery_to_duckdb_sqlglot, is_js_udf, bind_js_udf
+from local_bigquery.db import (
+    cursor,
+    bigquery_to_duckdb_sqlglot,
+    is_js_udf,
+    bind_js_udf,
+    has_external_query,
+    setup_postgres_connection,
+)
 from local_bigquery.settings import settings
 from prompt_toolkit.completion import Completer, Completion
 
@@ -178,6 +185,8 @@ def execute_sql(cur, sql):
         display(e)
         return
     try:
+        if has_external_query(trees):
+            setup_postgres_connection(cur)
         for tree in trees:
             if not tree:
                 continue
