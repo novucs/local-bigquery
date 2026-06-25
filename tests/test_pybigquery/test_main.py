@@ -97,6 +97,16 @@ def test_query(bq):
     assert query(bq, "SELECT 1 AS a") == [{"a": 1}]
 
 
+def test_query_with_explicit_job_id(bq):
+    # A caller-supplied job id forces the client off the jobs.query fast path and
+    # onto jobs.insert + jobs.get polling. The emulator must store the job under
+    # the supplied id so the poll resolves instead of 404ing.
+    job_id = "analyse-explicit-job-id"
+    job = bq.query("SELECT 1 AS a", job_id=job_id)
+    assert job.job_id == job_id
+    assert [dict(row.items()) for row in job.result()] == [{"a": 1}]
+
+
 def test_multi_query(bq):
     bq.create_dataset("dataset1", exists_ok=True)
     query(bq, "DROP TABLE IF EXISTS project1.dataset1.table1")

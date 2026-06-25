@@ -731,7 +731,13 @@ def bigquery_jobs_insert(
         body.configuration.query.query,
         parameters=body.configuration.query.queryParameters,
     )
-    job_id = str(uuid.uuid4())
+    # Honor a caller-supplied job id so the client can poll jobs.get with the same
+    # id it sent. The client only uses this insert path (instead of jobs.query)
+    # when it self-assigns an id, e.g. to cancel a running job by id.
+    if body.jobReference and body.jobReference.jobId:
+        job_id = body.jobReference.jobId
+    else:
+        job_id = str(uuid.uuid4())
     session_id = str(uuid.uuid4())
     now = timestamp_now()
     job_reference = JobReference(jobId=job_id, location="US", projectId=project_id)
