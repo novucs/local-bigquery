@@ -550,7 +550,6 @@ dependencies = [
     { name = "mini-racer" },
     { name = "numpy" },
     { name = "prompt-toolkit" },
-    { name = "psycopg2-binary" },
     { name = "pydantic-settings" },
     { name = "pygments" },
     { name = "pytz" },
@@ -560,6 +559,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "google-cloud-bigquery" },
+    { name = "psycopg2-binary" },
     { name = "pytest" },
     { name = "sqlalchemy-bigquery" },
     { name = "testcontainers" },
@@ -572,7 +572,6 @@ requires-dist = [
     { name = "mini-racer", specifier = ">=0.12.4" },
     { name = "numpy", specifier = ">=2.2.4" },
     { name = "prompt-toolkit", specifier = ">=3.0.50" },
-    { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "pydantic-settings", specifier = ">=2.8.1" },
     { name = "pygments", specifier = ">=2.19.1" },
     { name = "pytz", specifier = ">=2025.2" },
@@ -582,6 +581,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "google-cloud-bigquery", specifier = ">=3.31.0" },
+    { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "sqlalchemy-bigquery", specifier = ">=1.13.0" },
     { name = "testcontainers", specifier = ">=4.10.0" },

@@ -7,9 +7,10 @@ dependencies = [
     "duckdb>=1.2.2",
     "fastapi[standard]>=0.115.12",
     "mini-racer>=0.12.4",
+    # numpy and pytz are undeclared runtime imports of duckdb's Python client,
+    # used when converting numeric and tz-aware timestamp results.
     "numpy>=2.2.4",
     "prompt-toolkit>=3.0.50",
-    "psycopg2-binary>=2.9.10",
     "pydantic-settings>=2.8.1",
     "pygments>=2.19.1",
     "pytz>=2025.2",
@@ -19,6 +20,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "google-cloud-bigquery>=3.31.0",
+    "psycopg2-binary>=2.9.10",
     "pytest>=8.3.5",
     "sqlalchemy-bigquery>=1.13.0",
     "testcontainers>=4.10.0",
