@@ -88,66 +88,15 @@ def reset():
     settings.data_dir.mkdir(parents=True, exist_ok=True)
 
 
-class ReadWriteLock:
-    """DuckLake cannot commit concurrent write transactions: overlapping writes
-    fail with "database is locked" and can leave the catalog unreadable.
-    Readers may run in parallel, writers must be exclusive. Re-entrant per
-    thread, because query() holds the lock while wildcard expansion calls
-    list_tables()."""
-
-    def __init__(self):
-        self._condition = threading.Condition()
-        self._readers = 0
-        self._writer = False
-        self._writers_waiting = 0
-        self._local = threading.local()
-
-    @contextlib.contextmanager
-    def acquire(self, write: bool):
-        if getattr(self._local, "depth", 0):
-            self._local.depth += 1
-            try:
-                yield
-            finally:
-                self._local.depth -= 1
-            return
-        with self._condition:
-            if write:
-                self._writers_waiting += 1
-                while self._writer or self._readers:
-                    self._condition.wait()
-                self._writers_waiting -= 1
-                self._writer = True
-            else:
-                while self._writer or self._writers_waiting:
-                    self._condition.wait()
-                self._readers += 1
-        self._local.depth = 1
-        try:
-            yield
-        finally:
-            self._local.depth = 0
-            with self._condition:
-                if write:
-                    self._writer = False
-                else:
-                    self._readers -= 1
-                self._condition.notify_all()
-
-
-catalog_lock = ReadWriteLock()
+catalog_lock = threading.RLock()
 
 
 @contextlib.contextmanager
-def cursor(
-    project_id: Optional[str] = None,
-    dataset_id: Optional[str] = None,
-    write: bool = True,
-):
+def cursor(project_id: Optional[str] = None, dataset_id: Optional[str] = None):
     project_id = strip_quotes(project_id) or settings.default_project_id
     dataset_id = strip_quotes(dataset_id) or "main"
     conn = get_default_connection_with_project(project_id)
-    with catalog_lock.acquire(write):
+    with catalog_lock:
         cur = conn.cursor()
         try:
             cur.execute(f"USE {table_expr(project_id, dataset_id).sql('duckdb')}")
@@ -157,7 +106,6 @@ def cursor(
             yield cur
             cur.commit()
         except Exception:
-            # Best effort: DDL autocommits, so there may be no active transaction.
             with contextlib.suppress(duckdb.Error):
                 cur.rollback()
             raise
@@ -166,10 +114,8 @@ def cursor(
 
 
 @contextlib.contextmanager
-def internal_cursor(write: bool = True):
-    with cursor(
-        settings.internal_project_id, settings.internal_dataset_id, write=write
-    ) as cur:
+def internal_cursor():
+    with cursor(settings.internal_project_id, settings.internal_dataset_id) as cur:
         yield cur
 
 
@@ -235,7 +181,7 @@ def store_where(keys: dict) -> str:
 
 def store_list(table: str, model, **keys) -> list:
     keys = {key: strip_quotes(value) for key, value in keys.items()}
-    with internal_cursor(write=False) as cur:
+    with internal_cursor() as cur:
         rows = cur.sql(
             f"SELECT item FROM {table} WHERE {store_where(keys)}", params=keys
         ).fetchall()
@@ -266,7 +212,7 @@ def store_delete(table: str, **keys):
 
 
 def list_projects() -> list[Project]:
-    with cursor(write=False) as cur:
+    with cursor() as cur:
         results = cur.sql("SELECT database_name FROM duckdb_databases")
         project_ids = sorted(row[0] for row in results.fetchall())
     return [
@@ -286,7 +232,7 @@ def timestamp_now() -> str:
 
 def list_datasets(project_id) -> list[Dataset]:
     project_id = strip_quotes(project_id)
-    with cursor(project_id, write=False) as cur:
+    with cursor(project_id) as cur:
         results = cur.sql(
             "SELECT schema_name FROM duckdb_schemas WHERE database_name = $project_id",
             params={"project_id": project_id},
@@ -300,7 +246,7 @@ def get_dataset(
 ) -> Optional[Dataset]:
     project_id = strip_quotes(project_id)
     dataset_id = strip_quotes(dataset_id)
-    with cursor(project_id, write=False) as cur:
+    with cursor(project_id) as cur:
         found = cur.sql(
             """
             SELECT schema_name
@@ -363,7 +309,7 @@ def delete_dataset(project_id, dataset_id):
 
 
 def list_tables(project_id, dataset_id: Optional[str] = None) -> list[str]:
-    with cursor(project_id, dataset_id, write=False) as cur:
+    with cursor(project_id, dataset_id) as cur:
         result = cur.sql("SHOW TABLES")
         return [table_name for table_name, *_ in result.fetchall()]
 
@@ -416,15 +362,6 @@ def get_query_results(
     )
 
 
-def is_read_only(trees) -> bool:
-    # EXTERNAL_QUERY re-ATTACHes the postgres catalog, which mutates shared state.
-    return not has_external_query(trees) and all(
-        isinstance(tree, (sqlglot.exp.Select, sqlglot.exp.Union, sqlglot.exp.Subquery))
-        for tree in trees
-        if tree
-    )
-
-
 def query(
     project_id,
     dataset_id,
@@ -433,7 +370,7 @@ def query(
 ) -> tuple[list[TableRow], TableSchema]:
     params = bigquery_params_to_duckdb_params(parameters)
     trees = sqlglot.parse(bq_sql, "bigquery")
-    with cursor(project_id, dataset_id, write=not is_read_only(trees)) as cur:
+    with cursor(project_id, dataset_id) as cur:
         result = None
         if has_external_query(trees):
             setup_postgres_connection(cur)
