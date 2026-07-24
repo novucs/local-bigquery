@@ -6,7 +6,6 @@ import sqlglot
 
 from local_bigquery.models import QueryParameter
 from local_bigquery.transform import (
-    fill_missing_fields,
     bigquery_params_to_duckdb_params,
     duckdb_fields_to_bigquery_fields,
     duckdb_values_to_bigquery_values,
@@ -241,19 +240,6 @@ def test_bigquery_params_to_duckdb_params():
         ],
         "struct_param": {"field1": "struct value 1", "field2": 42},
         "array_struct_param": [{"field1": "array struct value 1a", "field2": 100}],
-    }
-
-
-def test_fill_missing_fields():
-    data = {"id": "1", "nested": [{"item": "item1"}, {"item": "item2"}, {}]}
-    converted_data = {k: fill_missing_fields(v) for k, v in data.items()}
-    assert converted_data == {
-        "id": "1",
-        "nested": [
-            {"item": "item1"},
-            {"item": "item2"},
-            {"item": None},
-        ],
     }
 
 

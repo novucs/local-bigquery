@@ -193,16 +193,3 @@ def bigquery_params_to_duckdb_params(params: list[QueryParameter]) -> dict[str, 
                 unnamed_count += 1
 
     return output
-
-
-def fill_missing_fields(data):
-    if isinstance(data, dict):
-        return {k: fill_missing_fields(v) for k, v in data.items()}
-    elif isinstance(data, list):
-        new_list = [fill_missing_fields(item) for item in data]
-        if new_list and all(isinstance(item, dict) for item in new_list):
-            all_keys = set().union(*(item.keys() for item in new_list))
-            new_list = [{key: d.get(key, None) for key in all_keys} for d in new_list]
-        return new_list
-    else:
-        return data

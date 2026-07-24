@@ -1,6 +1,7 @@
 import contextlib
 import functools
 import inspect
+import json
 from datetime import datetime
 from functools import lru_cache
 from typing import Optional
@@ -28,7 +29,6 @@ from local_bigquery.models import (
 from local_bigquery.settings import settings
 from local_bigquery.transform import (
     bigquery_schema_to_sql,
-    fill_missing_fields,
     bigquery_params_to_duckdb_params,
     duckdb_values_to_bigquery_values,
     duckdb_fields_to_bigquery_fields,
@@ -44,12 +44,16 @@ def strip_quotes(value: Optional[str]) -> Optional[str]:
     return value
 
 
+def quote_identifier(name: str) -> str:
+    escaped = name.replace('"', '""')
+    return f'"{escaped}"'
+
+
 def build_table_name(
     project_id: Optional[str], dataset_id: Optional[str], table_id: str
 ) -> str:
-    parts = [project_id, dataset_id, table_id]
-    parts = [strip_quotes(part) for part in parts if part if part]
-    return ".".join([f'"{part}"' for part in parts])
+    parts = [strip_quotes(part) for part in (project_id, dataset_id, table_id)]
+    return ".".join(quote_identifier(part) for part in parts if part)
 
 
 def attach_project(conn, project):
@@ -571,18 +575,34 @@ def query(
 
 
 def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
+    jsons = [row.json_ for row in rows if row.json_ and row.json_.root]
+    keys = list(dict.fromkeys(k for j in jsons for k in j.root))
+    if not keys:
+        return
     table_name = build_table_name(project_id, dataset_id, table_id)
     with cursor(project_id, dataset_id) as cur:
-        for row in rows:
-            if not row.json_ or not row.json_.root:
-                continue
-            columns = {f'"{k}"' for k, v in row.json_.root.items()}
-            columns_str = ", ".join(columns)
-            sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({', '.join([f'${col}' for col in columns])})"
-            params = {k: v.root for k, v in row.json_.root.items()}
-            params = fill_missing_fields(params)
-            with debug_sql(duckdb_sql=sql, params=params):
-                cur.execute(sql, params)
+        empty = cur.sql(f"SELECT * FROM {table_name} LIMIT 0")
+        types = {n.casefold(): str(t) for n, t in zip(empty.columns, empty.types)}
+        columns = [
+            (quote_identifier(k), types.get(k.casefold(), "VARCHAR")) for k in keys
+        ]
+        fields = [f"{q} {'VARCHAR' if t == 'JSON' else t}" for q, t in columns]
+        selects = [
+            f"CAST(r.{q} AS JSON)" if t == "JSON" else f"r.{q}" for q, t in columns
+        ]
+        sql = (
+            f"INSERT INTO {table_name} ({', '.join(q for q, _ in columns)}) "
+            f"SELECT {', '.join(selects)} "
+            f"FROM (SELECT unnest(from_json($payload, $spec)) AS r)"
+        )
+        with debug_sql(duckdb_sql=sql):
+            cur.execute(
+                sql,
+                {
+                    "payload": f"[{','.join(j.model_dump_json() for j in jsons)}]",
+                    "spec": json.dumps([f"STRUCT({', '.join(fields)})"]),
+                },
+            )
 
 
 def is_js_udf(tree):

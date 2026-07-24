@@ -204,24 +204,19 @@ def test_bulk_insert(bq):
         bigquery.Table(
             "`bigquery-public-data`.test_dataset.test_table",
             schema=[
-                bigquery.SchemaField("name", "STRING"),
+                bigquery.SchemaField("Name", "STRING"),
                 bigquery.SchemaField("age", "INTEGER"),
+                bigquery.SchemaField("meta", "JSON"),
             ],
         )
     )
-    bq.insert_rows(
-        table,
-        [
-            {"name": "Alice", "age": 30},
-            {"name": "Bob", "age": 25},
-        ],
-    )
+    rows = [{"name": f"user{i}", "age": i, "meta": {"i": i}} for i in range(1000)]
+    bq.insert_rows(table, rows)
     assert query(
-        bq, "SELECT * FROM `bigquery-public-data`.test_dataset.test_table"
-    ) == [
-        {"name": "Alice", "age": 30},
-        {"name": "Bob", "age": 25},
-    ]
+        bq,
+        "SELECT Name, age, meta FROM `bigquery-public-data`.test_dataset.test_table"
+        " ORDER BY age",
+    ) == [{"Name": r["name"], "age": r["age"], "meta": r["meta"]} for r in rows]
 
 
 def test_create_record_table(bq):
