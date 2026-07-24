@@ -687,3 +687,30 @@ def test_external_query_cte(postgres_url, bq):
 def test_list_projects(bq):
     projects = [project.project_id for project in bq.list_projects()]
     assert "local" in projects
+
+
+def test_concurrent_queries(server_url):
+    errors = []
+
+    def worker(i):
+        try:
+            client = bigquery.Client(
+                project="project1",
+                credentials=AnonymousCredentials(),
+                client_options=ClientOptions(api_endpoint=server_url),
+            )
+            try:
+                client.query(f"CREATE TABLE IF NOT EXISTS conc_{i} (v INT64)").result()
+                client.query(f"INSERT INTO conc_{i} VALUES ({i})").result()
+                assert query(client, f"SELECT v FROM conc_{i}") == [{"v": i}]
+            finally:
+                client.close()
+        except Exception as e:
+            errors.append(f"{type(e).__name__}: {e}")
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
