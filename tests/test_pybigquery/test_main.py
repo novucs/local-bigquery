@@ -682,3 +682,8 @@ def test_external_query_cte(postgres_url, bq):
             "person_description": "Avid reader and coffee enthusiast.",
         },
     ]
+
+
+def test_list_projects(bq):
+    projects = [project.project_id for project in bq.list_projects()]
+    assert "local" in projects

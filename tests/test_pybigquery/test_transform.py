@@ -4,11 +4,13 @@ import duckdb
 import pytest
 import sqlglot
 
-from local_bigquery.models import QueryParameter
+from local_bigquery.models import QueryParameter, TableFieldSchema
 from local_bigquery.transform import (
     bigquery_params_to_duckdb_params,
+    bigquery_schema_to_duckdb_sql,
     duckdb_fields_to_bigquery_fields,
     duckdb_values_to_bigquery_values,
+    table_expr,
 )
 
 
@@ -283,7 +285,7 @@ def test_duckdb_fields_to_bigquery_fields(all_duckdb_type_results):
         {"mode": "NULLABLE", "name": "int64", "type": "INTEGER"},
         {"mode": "NULLABLE", "name": "float64", "type": "FLOAT"},
         {"mode": "NULLABLE", "name": "string", "type": "STRING"},
-        {"mode": "NULLABLE", "name": "bytes", "type": "STRING"},
+        {"mode": "NULLABLE", "name": "bytes", "type": "BYTES"},
         {"mode": "NULLABLE", "name": "bool", "type": "BOOLEAN"},
         {"mode": "NULLABLE", "name": "date", "type": "DATE"},
         {"mode": "NULLABLE", "name": "time", "type": "TIME"},
@@ -329,7 +331,7 @@ def test_duckdb_values_to_bigquery_values(all_duckdb_type_results):
                 {"v": "1"},
                 {"v": "1.23"},
                 {"v": "example"},
-                {"v": "abc"},
+                {"v": "YWJj"},
                 {"v": "true"},
                 {"v": "2024-01-01"},
                 {"v": "12:34:56"},
@@ -355,3 +357,112 @@ def test_duckdb_values_to_bigquery_values(all_duckdb_type_results):
             ]
         }
     ]
+
+
+def field(name, type_, mode=None, fields=None):
+    return TableFieldSchema(name=name, type=type_, mode=mode, fields=fields)
+
+
+@pytest.fixture
+def all_bigquery_schema_fields():
+    return [
+        field("id", "INT64", "REQUIRED"),
+        field("order", "STRING"),
+        field("tags", "STRING", "REPEATED"),
+        field(
+            "rec",
+            "RECORD",
+            None,
+            [field("a", "INT64"), field("b", "STRING", "REPEATED")],
+        ),
+        field("recs", "RECORD", "REPEATED", [field("a", "INT64")]),
+        field("ts", "TIMESTAMP"),
+        field("n", "NUMERIC"),
+        field("raw", "BYTES"),
+        field("doc", "JSON"),
+        field("f", "FLOAT"),
+        field("flag", "BOOLEAN"),
+        field("dt", "DATETIME"),
+    ]
+
+
+def test_bigquery_schema_to_duckdb_sql(all_bigquery_schema_fields):
+    sql = bigquery_schema_to_duckdb_sql(
+        all_bigquery_schema_fields, table_expr("project1", "dataset1", "table1")
+    )
+    assert sql == (
+        'CREATE TABLE "project1"."dataset1"."table1" ('
+        '"id" BIGINT NOT NULL, '
+        '"order" TEXT, '
+        '"tags" TEXT[], '
+        '"rec" STRUCT("a" BIGINT, "b" TEXT[]), '
+        '"recs" STRUCT("a" BIGINT)[], '
+        '"ts" TIMESTAMPTZ, '
+        '"n" DECIMAL, '
+        '"raw" BLOB, '
+        '"doc" JSON, '
+        '"f" REAL, '
+        '"flag" BOOLEAN, '
+        '"dt" TIMESTAMP)'
+    )
+
+
+def test_bigquery_schema_to_duckdb_sql_executes(all_bigquery_schema_fields):
+    conn = duckdb.connect()
+    conn.execute("CREATE SCHEMA dataset1")
+    conn.execute(
+        bigquery_schema_to_duckdb_sql(
+            all_bigquery_schema_fields, table_expr(None, "dataset1", "table1")
+        )
+    )
+    result = conn.sql("SELECT * FROM dataset1.table1 LIMIT 0")
+    assert list(zip(result.columns, [str(t) for t in result.types])) == [
+        ("id", "BIGINT"),
+        ("order", "VARCHAR"),
+        ("tags", "VARCHAR[]"),
+        ("rec", "STRUCT(a BIGINT, b VARCHAR[])"),
+        ("recs", "STRUCT(a BIGINT)[]"),
+        ("ts", "TIMESTAMP WITH TIME ZONE"),
+        ("n", "DECIMAL(18,3)"),
+        ("raw", "BLOB"),
+        ("doc", "JSON"),
+        ("f", "FLOAT"),
+        ("flag", "BOOLEAN"),
+        ("dt", "TIMESTAMP"),
+    ]
+
+
+def test_bigquery_schema_to_duckdb_sql_round_trips_through_duckdb_fields(
+    all_bigquery_schema_fields,
+):
+    conn = duckdb.connect()
+    conn.execute("CREATE SCHEMA dataset1")
+    conn.execute(
+        bigquery_schema_to_duckdb_sql(
+            all_bigquery_schema_fields, table_expr(None, "dataset1", "table1")
+        )
+    )
+    result = conn.sql("SELECT * FROM dataset1.table1 LIMIT 0")
+    fields = duckdb_fields_to_bigquery_fields(list(zip(result.columns, result.types)))
+    assert [(f.name, f.type, f.mode) for f in fields] == [
+        ("id", "INTEGER", "NULLABLE"),
+        ("order", "STRING", "NULLABLE"),
+        ("tags", "STRING", "REPEATED"),
+        ("rec", "RECORD", "NULLABLE"),
+        ("recs", "RECORD", "REPEATED"),
+        ("ts", "TIMESTAMP", "NULLABLE"),
+        ("n", "FLOAT", "NULLABLE"),
+        ("raw", "BYTES", "NULLABLE"),
+        ("doc", "JSON", "NULLABLE"),
+        ("f", "FLOAT", "NULLABLE"),
+        ("flag", "BOOLEAN", "NULLABLE"),
+        ("dt", "TIMESTAMP", "NULLABLE"),
+    ]
+
+
+def test_table_expr_quotes_and_strips():
+    assert table_expr("p", "d", "t").sql("duckdb") == '"p"."d"."t"'
+    assert table_expr("`p`", '"d"', "t").sql("duckdb") == '"p"."d"."t"'
+    assert table_expr("p", "d").sql("duckdb") == '"p"."d"'
+    assert table_expr(None, "d", "t").sql("duckdb") == '"d"."t"'
+    assert table_expr(None, None, 'a"b').sql("duckdb") == '"a""b"'

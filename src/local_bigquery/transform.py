@@ -1,9 +1,10 @@
+import base64
 import datetime
 from decimal import Decimal
 from typing import Any, List, Optional
 
-from duckdb.typing import DuckDBPyType
-import base64
+from duckdb.sqltypes import DuckDBPyType
+from sqlglot import exp
 
 from local_bigquery.models import (
     QueryParameter,
@@ -14,73 +15,118 @@ from local_bigquery.models import (
     QueryParameterType,
 )
 
+# sqlglot emits standard BigQuery type names; the REST API wants legacy ones.
+BIGQUERY_LEGACY_TYPES = {
+    "INT64": "INTEGER",
+    "FLOAT64": "FLOAT",
+    "BOOL": "BOOLEAN",
+    "NUMERIC": "FLOAT",
+    "BIGNUMERIC": "FLOAT",
+    "DATETIME": "TIMESTAMP",
+}
 
-def field_to_sql(field):
-    name = field.name
-    mode = field.mode or "NULLABLE"
-    typ = (field.type or "").upper()
+PARAM_DECODERS = {
+    "STRING": lambda value: value,
+    "INT64": int,
+    "FLOAT64": float,
+    "NUMERIC": float,
+    "BIGNUMERIC": float,
+    "BOOL": lambda value: value.lower() == "true",
+    "BYTES": base64.b64decode,
+    "DATE": datetime.date.fromisoformat,
+    "TIME": datetime.time.fromisoformat,
+    "TIMESTAMP": datetime.datetime.fromisoformat,
+    "DATETIME": datetime.datetime.fromisoformat,
+}
 
-    if typ in {"RECORD", "STRUCT"}:
-        subfields = ", ".join(field_to_sql(f) for f in field.fields or [])
-        sql_type = f"STRUCT<{subfields}>"
+
+def strip_quotes(value: Optional[str]) -> Optional[str]:
+    return value.strip("`'\"") or None if value else None
+
+
+def quote_identifier(name: str) -> str:
+    return exp.to_identifier(name, quoted=True).sql("duckdb")
+
+
+def table_expr(
+    project_id: Optional[str], dataset_id: Optional[str], table_id: Optional[str] = None
+) -> exp.Table:
+    catalog, db, table = (
+        strip_quotes(part) for part in (project_id, dataset_id, table_id)
+    )
+    if table is None:
+        catalog, db, table = None, catalog, db
+    return exp.table_(table, db=db, catalog=catalog, quoted=True)
+
+
+def bigquery_field_to_datatype(field: TableFieldSchema) -> exp.DataType:
+    bigquery_type = (field.type or "").upper()
+    if bigquery_type in {"RECORD", "STRUCT"}:
+        datatype = exp.DataType(
+            this=exp.DataType.Type.STRUCT,
+            nested=True,
+            expressions=[
+                exp.ColumnDef(
+                    this=exp.to_identifier(subfield.name, quoted=True),
+                    kind=bigquery_field_to_datatype(subfield),
+                )
+                for subfield in field.fields or []
+            ],
+        )
     else:
-        sql_type = typ
+        datatype = exp.DataType.build(bigquery_type, dialect="bigquery")
+    if field.mode == "REPEATED":
+        datatype = exp.DataType(
+            this=exp.DataType.Type.ARRAY, nested=True, expressions=[datatype]
+        )
+    return datatype
 
-    if mode == "REPEATED":
-        return f"{name} ARRAY<{sql_type}>"
-    nullable = "NOT NULL" if mode == "REQUIRED" else ""
-    return f"{name} {sql_type} {nullable}".strip()
 
-
-def bigquery_schema_to_sql(schema: list, table_name: str) -> str:
-    columns = ", ".join(field_to_sql(f) for f in schema)
-    return f"CREATE TABLE {table_name} ({columns});"
+def bigquery_schema_to_duckdb_sql(
+    schema: Optional[List[TableFieldSchema]], table: exp.Table
+) -> str:
+    columns = [
+        exp.ColumnDef(
+            this=exp.to_identifier(field.name, quoted=True),
+            kind=bigquery_field_to_datatype(field),
+            constraints=[exp.ColumnConstraint(kind=exp.NotNullColumnConstraint())]
+            if field.mode == "REQUIRED"
+            else [],
+        )
+        for field in schema or []
+    ]
+    create = exp.Create(kind="TABLE", this=exp.Schema(this=table, expressions=columns))
+    return create.sql("duckdb")
 
 
 def duckdb_field_to_bigquery_field(
     name: str,
-    duckdb_type: DuckDBPyType,
+    duckdb_type: Optional[DuckDBPyType] = None,
+    datatype: Optional[exp.DataType] = None,
 ) -> TableFieldSchema:
-    mode = "NULLABLE"
-    fields = None
-    match duckdb_type.id:
-        case "integer" | "bigint" | "smallint" | "tinyint":
-            bigquery_type = "INTEGER"
-        case "float" | "decimal" | "double":
-            bigquery_type = "FLOAT"
-        case "varchar":
-            bigquery_type = "STRING"
-            if str(duckdb_type) == "JSON":
-                bigquery_type = "JSON"
-        case "bytes" | "blob":
-            bigquery_type = "BYTES"
-        case "boolean":
-            bigquery_type = "BOOLEAN"
-        case "date":
-            bigquery_type = "DATE"
-        case "time":
-            bigquery_type = "TIME"
-        case "timestamp" | "timestamp with time zone":
-            bigquery_type = "TIMESTAMP"
-        case "json":
-            bigquery_type = "JSON"
-        case "list":
-            mode = "REPEATED"
-            child_type = duckdb_type.children[0][1]
-            if child_type.id == "struct":
-                bigquery_type = "RECORD"
-                fields = duckdb_fields_to_bigquery_fields(child_type.children)
-            else:
-                bigquery_type = duckdb_field_to_bigquery_field(name, child_type).type
-        case "struct" | "map":
-            bigquery_type = "RECORD"
-            fields = [
-                duckdb_field_to_bigquery_field(child_name, child_type)
-                for child_name, child_type in duckdb_type.children
-            ]
-        case _:
-            raise ValueError(f"Unsupported DuckDB type: {duckdb_type.id}")
-    return TableFieldSchema(mode=mode, name=name, type=bigquery_type, fields=fields)
+    if datatype is None:
+        datatype = exp.DataType.build(str(duckdb_type), dialect="duckdb")
+    if datatype.this == exp.DataType.Type.ARRAY:
+        field = duckdb_field_to_bigquery_field(name, datatype=datatype.expressions[0])
+        field.mode = "REPEATED"
+        return field
+    if datatype.this == exp.DataType.Type.STRUCT:
+        return TableFieldSchema(
+            mode="NULLABLE",
+            name=name,
+            type="RECORD",
+            fields=[
+                duckdb_field_to_bigquery_field(column.name, datatype=column.kind)
+                for column in datatype.expressions
+            ],
+        )
+    bigquery_type = datatype.sql("bigquery").split("(")[0].strip()
+    return TableFieldSchema(
+        mode="NULLABLE",
+        name=name,
+        type=BIGQUERY_LEGACY_TYPES.get(bigquery_type, bigquery_type),
+        fields=None,
+    )
 
 
 def duckdb_fields_to_bigquery_fields(
@@ -97,13 +143,13 @@ def duckdb_value_to_bigquery_value(value: Any) -> TableCell:
         return TableCell(v=None)
     if isinstance(value, bool):
         return TableCell(v=str(value).lower())
-    if isinstance(value, int) or isinstance(value, float) or isinstance(value, Decimal):
+    if isinstance(value, (int, float, Decimal)):
         return TableCell(v=str(value))
     if isinstance(value, str):
         return TableCell(v=value)
     if isinstance(value, datetime.datetime):
         return TableCell(v=str(int(value.timestamp() * 1e6)))
-    if isinstance(value, datetime.date) or isinstance(value, datetime.time):
+    if isinstance(value, (datetime.date, datetime.time)):
         return TableCell(v=value.isoformat())
     if isinstance(value, list):
         return TableCell(v=[duckdb_value_to_bigquery_value(item) for item in value])
@@ -128,68 +174,35 @@ def bigquery_param_to_duckdb_param(
 ) -> Any:
     if not param_type or not param_value:
         return None
-    if param_type.type == "STRING":
-        return param_value.value
-    elif param_type.type == "INT64":
-        return int(param_value.value)
-    elif param_type.type == "FLOAT64":
-        return float(param_value.value)
-    elif param_type.type == "NUMERIC":
-        return float(param_value.value)
-    elif param_type.type == "BIGNUMERIC":
-        return float(param_value.value)
-    elif param_type.type == "BOOL":
-        return param_value.value.lower() == "true"
-    elif param_type.type == "BYTES":
-        return base64.b64decode(param_value.value)
-    elif param_type.type == "DATE":
-        return datetime.datetime.strptime(param_value.value, "%Y-%m-%d").date()
-    elif param_type.type == "TIME":
-        return datetime.datetime.strptime(param_value.value, "%H:%M:%S").time()
-    elif param_type.type in ("TIMESTAMP", "DATETIME"):
-        # Handle timezone if present, otherwise assume UTC
-        if "+" in param_value.value:
-            return datetime.datetime.strptime(param_value.value, "%Y-%m-%d %H:%M:%S%z")
-        else:
-            return datetime.datetime.strptime(param_value.value, "%Y-%m-%d %H:%M:%S")
-    elif param_type.type == "ARRAY":
+    if param_type.type == "ARRAY":
         return [
-            bigquery_param_to_duckdb_param(param_type.arrayType, val)
-            for val in param_value.arrayValues
+            bigquery_param_to_duckdb_param(param_type.arrayType, value)
+            for value in param_value.arrayValues or []
         ]
-    elif param_type.type == "STRUCT":
-        struct_output = {}
-        for field in param_type.structTypes:
-            field_name = field.name
-            field_type = field.type
-            field_value = param_value.structValues.get(field_name)
-            if field_value:
-                struct_output[field_name] = bigquery_param_to_duckdb_param(
-                    field_type, field_value
-                )
-        return struct_output
-    return None
+    if param_type.type == "STRUCT":
+        values = param_value.structValues or {}
+        return {
+            field.name: bigquery_param_to_duckdb_param(field.type, values[field.name])
+            for field in param_type.structTypes or []
+            if values.get(field.name)
+        }
+    decode = PARAM_DECODERS.get(param_type.type)
+    return decode(param_value.value) if decode else None
 
 
-def bigquery_params_to_duckdb_params(params: list[QueryParameter]) -> dict[str, Any]:
-    if not params:
-        return {}
-
+def bigquery_params_to_duckdb_params(
+    params: Optional[list[QueryParameter]],
+) -> dict[str, Any]:
     output = {}
     unnamed_count = 0
-
-    for param in params:
+    for param in params or []:
+        if not param.parameterType or not param.parameterValue:
+            continue
         name = param.name
-        param_type = param.parameterType
-        param_value = param.parameterValue
-
-        if param_type and param_value:
-            if name:
-                output[name] = bigquery_param_to_duckdb_param(param_type, param_value)
-            else:
-                output[f"param{unnamed_count}"] = bigquery_param_to_duckdb_param(
-                    param_type, param_value
-                )
-                unnamed_count += 1
-
+        if not name:
+            name = f"param{unnamed_count}"
+            unnamed_count += 1
+        output[name] = bigquery_param_to_duckdb_param(
+            param.parameterType, param.parameterValue
+        )
     return output
