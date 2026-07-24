@@ -2,7 +2,7 @@ volumes:
   bigquery_data: {}
 services:
   bigquery:
-    image: ghcr.io/novucs/local-bigquery:0.2.4
+    image: ghcr.io/novucs/local-bigquery:0.2.5
     ports:
       - "9050:9050"
     environment:
