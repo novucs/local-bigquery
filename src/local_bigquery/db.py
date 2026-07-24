@@ -1,4 +1,5 @@
 import contextlib
+import fcntl
 import functools
 import inspect
 import json
@@ -52,8 +53,23 @@ def attach_project(conn, project):
 
 
 @lru_cache(maxsize=None)
-def get_default_connection():
+def lock_data_dir():
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    handle = (settings.data_dir / ".lock").open("w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise RuntimeError(
+            f"{settings.data_dir} is already in use by another process. DuckLake's "
+            f"SQLite catalog supports a single writer, so concurrent processes "
+            f"silently lose writes. Run one server process per data directory."
+        )
+    return handle
+
+
+@lru_cache(maxsize=None)
+def get_default_connection():
+    lock_data_dir()
     found_projects = {project.stem for project in settings.data_dir.glob("*.ducklake")}
     projects = found_projects | {
         settings.default_project_id,
