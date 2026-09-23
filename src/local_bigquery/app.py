@@ -12,10 +12,12 @@ from local_bigquery.api import (
     jobs,
     models,
     projects,
+    row_access_policies,
     routines,
     tables,
     uploads,
 )
+from local_bigquery.catalog import row_access
 from local_bigquery.errors import BigQueryError, from_exception, not_implemented
 
 DISCOVERY = json.loads((pathlib.Path(__file__).parent / "discovery.json").read_text())
@@ -37,6 +39,19 @@ async def handle_error(request: Request, error: Exception) -> JSONResponse:
 
 for error_type in (BigQueryError, RequestValidationError):
     app.add_exception_handler(error_type, handle_error)
+
+
+@app.middleware("http")
+async def identify_caller(request: Request, call_next):
+    headers = request.headers
+    identity = row_access.identify(
+        headers.get("x-bqemu-caller"), headers.get("x-bqemu-groups")
+    )
+    token = row_access.caller.set(identity)
+    try:
+        return await call_next(request)
+    finally:
+        row_access.caller.reset(token)
 
 
 @app.get("/$discovery/rest", include_in_schema=False)
@@ -64,7 +79,7 @@ def stub(method_id: str):
     return handler
 
 
-for module in (projects, datasets, tables, jobs, models, routines):
+for module in (projects, datasets, tables, jobs, models, routines, row_access_policies):
     app.include_router(
         module.router, prefix=PREFIX, dependencies=[Depends(valid_project)]
     )

@@ -9,6 +9,7 @@ KEYS = {
     "datasets": ("project_id", "dataset_id"),
     "tables": ("project_id", "dataset_id", "table_id"),
     "routines": ("project_id", "dataset_id", "routine_id"),
+    "row_access_policies": ("project_id", "dataset_id", "table_id", "policy_id"),
 }
 
 

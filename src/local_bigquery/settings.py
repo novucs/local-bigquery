@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     data_dir: Path = Field("/data")
     default_project_id: str = Field("local")
     default_dataset_id: str = Field("local")
+    caller: str = Field("user:local-bigquery@localhost")
     postgres_connection_id: str = Field("us.default")
     postgres_uri: str = Field("postgresql://postgres:example@db:5432/postgres")
 
