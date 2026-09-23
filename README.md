@@ -57,7 +57,18 @@ services:
 
 ### Without Docker
 ```bash
-uv run local-bigquery --port 9050 --project local --dataset local --data-dir /tmp/local-bigquery
+uv run local-bigquery --port 9050 --grpc-port 9060 --project local --dataset local --data-dir /tmp/local-bigquery
+```
+
+The BigQuery Storage Read/Write APIs are served over insecure gRPC on `--grpc-port`:
+```python
+import grpc
+from google.cloud import bigquery_storage_v1
+from google.cloud.bigquery_storage_v1.services.big_query_read.transports import BigQueryReadGrpcTransport
+
+channel = grpc.insecure_channel("localhost:9060")
+bqstorage = bigquery_storage_v1.BigQueryReadClient(transport=BigQueryReadGrpcTransport(channel=channel))
+frame = client.list_rows("dataset.table").to_dataframe(bqstorage_client=bqstorage)
 ```
 
 ### BQ CLI
