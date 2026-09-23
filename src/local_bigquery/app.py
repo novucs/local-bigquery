@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from local_bigquery.api import datasets, jobs, models, projects, tables
+from local_bigquery.api import datasets, jobs, models, projects, tables, uploads
 from local_bigquery.errors import BigQueryError, from_exception, not_implemented
 
 DISCOVERY = json.loads((pathlib.Path(__file__).parent / "discovery.json").read_text())
@@ -60,6 +60,10 @@ for module in (projects, datasets, tables, jobs, models):
     app.include_router(
         module.router, prefix=PREFIX, dependencies=[Depends(valid_project)]
     )
+
+app.include_router(
+    uploads.router, prefix=f"/upload{PREFIX}", dependencies=[Depends(valid_project)]
+)
 
 for method in methods(DISCOVERY):
     path = re.sub(r"\{\+resource\}", "{resource:path}", method["path"])

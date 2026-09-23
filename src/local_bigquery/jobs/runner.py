@@ -1,5 +1,6 @@
 import concurrent.futures
 import contextlib
+import os
 import re
 from dataclasses import dataclass
 
@@ -12,11 +13,16 @@ from local_bigquery.errors import (
     already_exists,
     from_exception,
     not_found,
-    not_implemented,
 )
-from local_bigquery.jobs import query, store
+from local_bigquery.jobs import copy, extract, load, query, store
 
 JOB_TYPES = ("query", "load", "copy", "extract")
+HANDLERS = {"load": load.run, "copy": copy.run, "extract": extract.run}
+QUERY_STATISTICS = {
+    "totalBytesProcessed": "0",
+    "totalBytesBilled": "0",
+    "cacheHit": False,
+}
 ABORT_SESSION = re.compile(r"^\s*CALL\s+BQ\.ABORT_SESSION\s*\(\s*\)\s*;?\s*$", re.I)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
 
@@ -50,19 +56,12 @@ def _done(job: dict, statistics: dict, error: BigQueryError | None = None) -> di
     status = {"state": "DONE"}
     if error:
         status |= {"errorResult": error.proto(), "errors": [error.proto()]}
-    query_statistics = {
-        "totalBytesProcessed": "0",
-        "totalBytesBilled": "0",
-        "cacheHit": False,
-    } | statistics.pop("query", {})
+    if "query" in statistics:
+        statistics["query"] = QUERY_STATISTICS | statistics["query"]
     return job | {
         "status": status,
         "statistics": job["statistics"]
-        | {
-            "endTime": metadata.now(),
-            "totalBytesProcessed": "0",
-            "query": query_statistics,
-        }
+        | {"endTime": metadata.now(), "totalBytesProcessed": "0"}
         | statistics,
     }
 
@@ -81,19 +80,23 @@ def get(project_id: str, job_id: str) -> dict:
     return job
 
 
-def submit(project_id: str, job_id: str, configuration: dict) -> dict:
+def submit(
+    project_id: str, job_id: str, configuration: dict, upload: str | None = None
+) -> dict:
     job_type = next((kind for kind in JOB_TYPES if kind in configuration), None)
-    if job_type != "query":
-        raise not_implemented(f"{(job_type or 'unknown').capitalize()} jobs")
-    configuration = configuration | {"jobType": "QUERY"}
-    if configuration.get("dryRun"):
+    if job_type is None:
+        raise BigQueryError("invalid", "Job configuration must specify a job type")
+    configuration = configuration | {"jobType": job_type.upper()}
+    if job_type == "query" and configuration.get("dryRun"):
         return _dry_run(project_id, configuration)
     if store.load(project_id, job_id):
         raise already_exists("Job", f"{project_id}:{job_id}")
-    session = _session(project_id, configuration["query"])
+    session = (
+        _session(project_id, configuration["query"]) if job_type == "query" else None
+    )
     job = store.save(_job(project_id, job_id, configuration))
     running = _running[(project_id, job_id)] = Running()
-    running.future = _executor.submit(_execute, job, session, running)
+    running.future = _executor.submit(_execute, job, job_type, session, running, upload)
     return job
 
 
@@ -107,28 +110,65 @@ def _dry_run(project_id: str, configuration: dict) -> dict:
     return _done(job, {"query": statistics})
 
 
-def _execute(job: dict, session: sessions.Session | None, running: Running):
+def _query(job: dict, session: sessions.Session | None, running: Running) -> dict:
+    project_id, job_id = job["jobReference"]["projectId"], job["jobReference"]["jobId"]
+    config = job["configuration"]["query"]
+    extra = {"query": {}}
+    with session.lock if session else contextlib.nullcontext():
+        if session and ABORT_SESSION.match(config.get("query", "")):
+            sessions.abort(session.id)
+            return extra
+        cursor = session.cursor if session else database.connection().cursor()
+        running.cursor = cursor
+        try:
+            statistics, children, destination = query.execute(
+                cursor, project_id, job_id, config, isolated=bool(session)
+            )
+        finally:
+            if not session:
+                cursor.close()
+    extra["query"] = statistics
+    if children:
+        extra["numChildJobs"] = str(len(children))
+    if destination:
+        config["destinationTable"] = destination
+    for index, child in enumerate(children):
+        child_id = f"script_job_{job_id}_{index}"
+        child_job = _job(project_id, child_id, job["configuration"])
+        child_job["statistics"] |= {"parentJobId": job_id, "startTime": metadata.now()}
+        store.save(_done(child_job, {"query": child}))
+    return extra
+
+
+def _handle(job: dict, job_type: str, running: Running, upload: str | None) -> dict:
+    with database.cursor() as cursor:
+        running.cursor = cursor
+        try:
+            config = job["configuration"][job_type]
+            return {job_type: HANDLERS[job_type](cursor, config, upload)}
+        finally:
+            if upload:
+                os.remove(upload)
+
+
+def _execute(
+    job: dict,
+    job_type: str,
+    session: sessions.Session | None,
+    running: Running,
+    upload: str | None,
+):
     project_id, job_id = job["jobReference"]["projectId"], job["jobReference"]["jobId"]
     job["statistics"]["startTime"] = metadata.now()
     job = store.save(job | {"status": {"state": "RUNNING"}})
-    config = job["configuration"]["query"]
-    statistics, children, destination, error = {}, [], None, None
+    extra, error = {job_type: {}}, None
     try:
         if running.cancelled:
             raise duckdb.InterruptException()
-        with session.lock if session else contextlib.nullcontext():
-            if session and ABORT_SESSION.match(config.get("query", "")):
-                sessions.abort(session.id)
-            else:
-                cursor = session.cursor if session else database.connection().cursor()
-                running.cursor = cursor
-                try:
-                    statistics, children, destination = query.execute(
-                        cursor, project_id, job_id, config, isolated=bool(session)
-                    )
-                finally:
-                    if not session:
-                        cursor.close()
+        if job_type == "query":
+            extra = _query(job, session, running)
+        else:
+            extra = _handle(job, job_type, running, upload)
     except Exception as exception:
         error = (
             BigQueryError(
@@ -137,18 +177,8 @@ def _execute(job: dict, session: sessions.Session | None, running: Running):
             if running.cancelled
             else from_exception(exception)
         )
-    extra = {"query": statistics}
-    if children:
-        extra["numChildJobs"] = str(len(children))
     if session:
         extra["sessionInfo"] = {"sessionId": session.id}
-    if destination:
-        job["configuration"]["query"]["destinationTable"] = destination
-    for index, child in enumerate(children):
-        child_id = f"script_job_{job_id}_{index}"
-        child_job = _job(project_id, child_id, job["configuration"])
-        child_job["statistics"] |= {"parentJobId": job_id, "startTime": metadata.now()}
-        store.save(_done(child_job, {"query": child}))
     store.save(_done(job, extra, error))
     _running.pop((project_id, job_id), None)
 

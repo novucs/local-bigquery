@@ -106,7 +106,6 @@ def test_insert_rows_bulk_with_json_and_case_insensitive_keys(bq, dataset):
     ]
 
 
-@pytest.mark.xfail(reason="insertId dedup not implemented")
 def test_insert_dedups_by_insert_id(bq, dataset):
     table = create(bq, dataset)
     for _ in range(2):
@@ -114,7 +113,6 @@ def test_insert_dedups_by_insert_id(bq, dataset):
     assert select(bq, table) == [{"x": 1}]
 
 
-@pytest.mark.xfail(reason="per-row insertErrors not implemented")
 def test_skip_invalid_rows_reports_per_row_errors(bq, dataset):
     table = create(bq, dataset)
     errors = bq.insert_rows_json(
@@ -127,7 +125,6 @@ def test_skip_invalid_rows_reports_per_row_errors(bq, dataset):
     assert select(bq, table) == [{"x": 1}]
 
 
-@pytest.mark.xfail(reason="per-row insertErrors not implemented")
 def test_invalid_row_stops_the_whole_request(bq, dataset):
     table = create(bq, dataset)
     errors = bq.insert_rows_json(table, [{"x": 1}, {"x": "abc"}])

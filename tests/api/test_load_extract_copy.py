@@ -4,7 +4,6 @@ import io
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pytest
 from google.api_core.exceptions import BadRequest, Conflict, NotFound
 from google.cloud import bigquery
 
@@ -46,7 +45,6 @@ def ctas(bq, dataset, *values):
     return table
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_json_rows(bq, dataset):
     table = table_id(dataset)
     job = load_json(bq, table, [{"x": 1}, {"x": 2}])
@@ -54,7 +52,6 @@ def test_load_json_rows(bq, dataset):
     assert select(bq, table) == [(1,), (2,)]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_json_autodetects_schema(bq, dataset):
     table = table_id(dataset)
     rows = [{"x": 1, "s": "a", "f": 1.5, "b": True}]
@@ -62,7 +59,6 @@ def test_load_json_autodetects_schema(bq, dataset):
     assert types(bq, table) == ["INT64", "STRING", "FLOAT64", "BOOL"]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_csv_skipping_header(bq, dataset):
     table = table_id(dataset)
     schema = [*X, bigquery.SchemaField("s", "STRING")]
@@ -71,7 +67,6 @@ def test_load_csv_skipping_header(bq, dataset):
     assert select(bq, table) == [(1, "a"), (2, "b")]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_csv_autodetect(bq, dataset):
     table = table_id(dataset)
     load_file(bq, table, b"x,s,d\n1,a,2020-01-01\n", autodetect=True)
@@ -79,7 +74,6 @@ def test_load_csv_autodetect(bq, dataset):
     assert select(bq, table) == [(1, "a", datetime.date(2020, 1, 1))]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_newline_delimited_json_with_nested_fields(bq, dataset):
     table = table_id(dataset)
     schema = [
@@ -94,7 +88,6 @@ def test_load_newline_delimited_json_with_nested_fields(bq, dataset):
     assert select(bq, table) == [(1, ["a", "b"], {"y": "z"}), (2, [], None)]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_parquet(bq, dataset):
     table = table_id(dataset)
     buffer = io.BytesIO()
@@ -105,7 +98,6 @@ def test_load_parquet(bq, dataset):
     assert select(bq, table) == [(1, "a", 1.5, ts)]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_dataframe(bq, dataset):
     table = table_id(dataset)
     frame = pd.DataFrame({"x": [1, 2], "s": ["a", "b"]})
@@ -113,7 +105,6 @@ def test_load_dataframe(bq, dataset):
     assert select(bq, table) == [(1, "a"), (2, "b")]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_write_append(bq, dataset):
     table = table_id(dataset)
     load_json(bq, table, [{"x": 1}])
@@ -121,7 +112,6 @@ def test_load_write_append(bq, dataset):
     assert select(bq, table) == [(1,), (2,)]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_write_truncate(bq, dataset):
     table = table_id(dataset)
     load_json(bq, table, [{"x": 1}])
@@ -129,7 +119,6 @@ def test_load_write_truncate(bq, dataset):
     assert select(bq, table) == [(2,)]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_write_empty_rejects_non_empty_table(bq, dataset):
     table = table_id(dataset)
     load_json(bq, table, [{"x": 1}])
@@ -137,13 +126,11 @@ def test_load_write_empty_rejects_non_empty_table(bq, dataset):
         load_json(bq, table, [{"x": 2}], write_disposition=EMPTY)
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_create_never_requires_existing_table(bq, dataset):
     with fails(NotFound, "notFound"):
         load_json(bq, table_id(dataset), [{"x": 1}], create_disposition="CREATE_NEVER")
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_adding_field_requires_schema_update_option(bq, dataset):
     table = table_id(dataset)
     load_json(bq, table, [{"x": 1}])
@@ -157,7 +144,6 @@ def test_load_adding_field_requires_schema_update_option(bq, dataset):
     assert select(bq, table) == [(1, None), (2, "a")]
 
 
-@pytest.mark.xfail(reason="load jobs not implemented")
 def test_load_max_bad_records(bq, dataset):
     table = table_id(dataset)
     with fails(BadRequest, "invalid"):
@@ -167,7 +153,6 @@ def test_load_max_bad_records(bq, dataset):
     assert select(bq, table) == [(1,)]
 
 
-@pytest.mark.xfail(reason="copy jobs not implemented")
 def test_copy_table(bq, dataset):
     source, destination = ctas(bq, dataset, 1, 2), table_id(dataset)
     job = bq.copy_table(source, destination).result()
@@ -175,7 +160,6 @@ def test_copy_table(bq, dataset):
     assert select(bq, destination) == [(1,), (2,)]
 
 
-@pytest.mark.xfail(reason="copy jobs not implemented")
 def test_copy_multiple_sources(bq, dataset):
     sources, destination = (
         [ctas(bq, dataset, 1), ctas(bq, dataset, 2)],
@@ -185,7 +169,6 @@ def test_copy_multiple_sources(bq, dataset):
     assert select(bq, destination) == [(1,), (2,)]
 
 
-@pytest.mark.xfail(reason="copy jobs not implemented")
 def test_copy_write_truncate(bq, dataset):
     source, destination = ctas(bq, dataset, 1), ctas(bq, dataset, 2)
     config = bigquery.CopyJobConfig(write_disposition=TRUNCATE)
@@ -193,7 +176,6 @@ def test_copy_write_truncate(bq, dataset):
     assert select(bq, destination) == [(1,)]
 
 
-@pytest.mark.xfail(reason="copy jobs not implemented")
 def test_copy_write_empty_rejects_non_empty_table(bq, dataset):
     source, destination = ctas(bq, dataset, 1), ctas(bq, dataset, 2)
     config = bigquery.CopyJobConfig(write_disposition=EMPTY)
@@ -201,7 +183,6 @@ def test_copy_write_empty_rejects_non_empty_table(bq, dataset):
         bq.copy_table(source, destination, job_config=config).result()
 
 
-@pytest.mark.xfail(reason="copy jobs not implemented")
 def test_copy_missing_source(bq, dataset):
     with fails(NotFound, "notFound"):
         bq.copy_table(table_id(dataset), table_id(dataset)).result()

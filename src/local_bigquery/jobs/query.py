@@ -5,9 +5,9 @@ from sqlglot import exp
 
 from local_bigquery.catalog import datasets, tables
 from local_bigquery.catalog import ddl as catalog_ddl
-from local_bigquery.engine import database, results, types
+from local_bigquery.engine import database, types
 from local_bigquery.engine.database import quote
-from local_bigquery.errors import already_exists, from_duckdb, not_found
+from local_bigquery.errors import from_duckdb
 from local_bigquery.jobs import merge
 from local_bigquery.sql import js, params
 from local_bigquery.sql.dialect import DuckDBDialect
@@ -112,22 +112,14 @@ def _reference(table: dict) -> tuple[str, str, str]:
 
 
 def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated: bool):
-    project_id, dataset_id, table_id = _reference(destination)
-    table = tables.name(project_id, dataset_id, table_id)
-    found = tables.exists(project_id, dataset_id, table_id)
-    label = f"{project_id}:{dataset_id}.{table_id}"
-    disposition = config.get("writeDisposition") or "WRITE_EMPTY"
-    if not found and config.get("createDisposition") == "CREATE_NEVER":
-        raise not_found("Table", label)
-    if found and disposition == "WRITE_EMPTY":
-        if cur.sql(f"SELECT 1 FROM {table} LIMIT 1").fetchone():
-            raise already_exists("Table", label)
-    append = found and disposition == "WRITE_APPEND"
+    reference = _reference(destination)
+    write = config.get("writeDisposition") or "WRITE_EMPTY"
+    create = config.get("createDisposition")
     if not isolated:
-        results.materialise(cur, sql, table, bound, append)
+        tables.write(cur, sql, bound, reference, write, create)
         return
     with database.cursor() as writer:
-        results.materialise(cur, sql, table, bound, append, writer)
+        tables.write(cur, sql, bound, reference, write, create, writer)
 
 
 def _evaluator(cur: duckdb.DuckDBPyConnection):

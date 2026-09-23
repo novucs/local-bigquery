@@ -1,4 +1,5 @@
 import json
+import time
 
 import duckdb
 
@@ -15,6 +16,8 @@ from local_bigquery.models import Table, TableFieldSchema
 DERIVED = ("schema", "numRows", "numBytes", "type")
 STORED_TYPES = ("MATERIALIZED_VIEW", "SNAPSHOT")
 RESULTS = "_results"
+DEDUP_SECONDS = 60
+_recent: dict[tuple[str, str], float] = {}
 
 
 def physical(project_id: str, dataset_id: str, table_id: str) -> tuple[str, str, str]:
@@ -254,6 +257,27 @@ def update(
     )
 
 
+def write(
+    cur: duckdb.DuckDBPyConnection,
+    query: str,
+    params: dict | None,
+    reference: tuple[str, str, str],
+    write_disposition: str,
+    create_disposition: str | None = None,
+    writer: duckdb.DuckDBPyConnection | None = None,
+):
+    table = name(*reference)
+    found = exists(*reference)
+    label = "{}:{}.{}".format(*reference)
+    if not found and create_disposition == "CREATE_NEVER":
+        raise not_found("Table", label)
+    if found and write_disposition == "WRITE_EMPTY":
+        if cur.sql(f"SELECT 1 FROM {table} LIMIT 1").fetchone():
+            raise already_exists("Table", label)
+    append = found and write_disposition == "WRITE_APPEND"
+    results.materialise(cur, query, table, params, append, writer)
+
+
 def delete(project_id: str, dataset_id: str, table_id: str):
     kind, _ = _lookup(project_id, dataset_id, table_id) or (None, None)
     if kind is None:
@@ -275,20 +299,67 @@ def _select(column: str, t) -> str:
     return f"r.{column}"
 
 
+def _template(project_id: str, dataset_id: str, table_id: str, suffix: str) -> str:
+    template = get(project_id, dataset_id, table_id)
+    if not _lookup(project_id, dataset_id, table_id + suffix):
+        create(
+            project_id,
+            dataset_id,
+            {
+                "tableReference": {"tableId": table_id + suffix},
+                "schema": template.schema_.model_dump(exclude_none=True),
+            },
+            translate=None,
+        )
+    return table_id + suffix
+
+
+def _problem(location: str, message: str) -> dict:
+    return {"reason": "invalid", "location": location, "message": message}
+
+
+def _unconvertible(schema: dict, rows: list[dict]) -> list[list[str]]:
+    scalars = [
+        (column, t)
+        for column, t in schema.values()
+        if t.id not in ("list", "array", "struct", "map")
+        and str(t) not in ("JSON", "BLOB")
+    ]
+    if not scalars or not rows:
+        return [[] for _ in rows]
+    spec = json.dumps(
+        [f"STRUCT({', '.join(f'{quote(column)} VARCHAR' for column, _ in scalars)})"]
+    )
+    checks = ", ".join(
+        f"CASE WHEN r.{quote(column)} IS NOT NULL "
+        f"AND TRY_CAST(r.{quote(column)} AS {t}) IS NULL THEN '{column}' END"
+        for column, t in scalars
+    )
+    with database.cursor() as cur:
+        found = cur.execute(
+            f"SELECT list_filter([{checks}], f -> f IS NOT NULL) "
+            "FROM (SELECT unnest(from_json($payload, $spec)) AS r)",
+            {"payload": json.dumps(rows), "spec": spec},
+        ).fetchall()
+    return [columns for (columns,) in found]
+
+
+def _deduplicate(table: str, rows: list) -> list:
+    now = time.monotonic()
+    for key, seen in list(_recent.items()):
+        if now - seen > DEDUP_SECONDS:
+            del _recent[key]
+    unique = []
+    for index, insert_id, data in rows:
+        if insert_id is None or (table, insert_id) not in _recent:
+            _recent[(table, insert_id)] = now
+            unique.append((index, data))
+    return unique
+
+
 def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> dict:
     if suffix := body.get("templateSuffix"):
-        template = get(project_id, dataset_id, table_id)
-        table_id += suffix
-        if not _lookup(project_id, dataset_id, table_id):
-            create(
-                project_id,
-                dataset_id,
-                {
-                    "tableReference": {"tableId": table_id},
-                    "schema": template.schema_.model_dump(exclude_none=True),
-                },
-                translate=None,
-            )
+        table_id = _template(project_id, dataset_id, table_id, suffix)
     load(project_id, dataset_id, table_id)
     table = name(project_id, dataset_id, table_id)
     with database.cursor() as cur:
@@ -296,49 +367,49 @@ def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> d
         schema = {
             c.casefold(): (c, t) for c, t in zip(relation.columns, relation.types)
         }
-    required = {
+    required = [
         f.name
         for f in columns(project_id, dataset_id, table_id)
         if f.mode == "REQUIRED"
-    }
-    errors, valid, seen = [], [], set()
-    for index, row in enumerate(body.get("rows") or []):
-        data = row.get("json") or {}
+    ]
+    rows = body.get("rows") or []
+    known = [
+        {
+            schema[k.casefold()][0]: v
+            for k, v in (row.get("json") or {}).items()
+            if k.casefold() in schema
+        }
+        for row in rows
+    ]
+    unconvertible = _unconvertible(schema, known)
+    errors, valid = [], []
+    for index, row in enumerate(rows):
         problems = [
-            {"reason": "invalid", "location": key, "message": f"no such field: {key}."}
-            for key in data
+            _problem(key, f"no such field: {key}.")
+            for key in row.get("json") or {}
             if key.casefold() not in schema and not body.get("ignoreUnknownValues")
-        ] + [
-            {
-                "reason": "invalid",
-                "location": key,
-                "message": f"Missing required field: {key}.",
-            }
+        ]
+        problems += [
+            _problem(key, f"Missing required field: {key}.")
             for key in required
-            if next(
-                (v for k, v in data.items() if k.casefold() == key.casefold()), None
+            if known[index].get(key) is None
+        ]
+        problems += [
+            _problem(
+                key,
+                f"Cannot convert value to {schema[key.casefold()][1]}: {known[index][key]}",
             )
-            is None
+            for key in unconvertible[index]
         ]
         if problems:
             errors.append({"index": index, "errors": problems})
-        elif (insert_id := row.get("insertId")) is None or insert_id not in seen:
-            seen.add(insert_id)
-            valid.append(
-                (
-                    index,
-                    {
-                        schema[k.casefold()][0]: v
-                        for k, v in data.items()
-                        if k.casefold() in schema
-                    },
-                )
-            )
+        else:
+            valid.append((index, row.get("insertId"), known[index]))
     if errors and not body.get("skipInvalidRows"):
         stopped = {"reason": "stopped", "location": "", "message": ""}
-        errors += [{"index": index, "errors": [stopped]} for index, _ in valid]
-        return {"insertErrors": sorted(errors, key=lambda e: e["index"])}
-    errors += _insert(table, schema, valid)
+        errors += [{"index": index, "errors": [stopped]} for index, _, _ in valid]
+    else:
+        errors += _insert(table, schema, _deduplicate(table, valid))
     return {"insertErrors": sorted(errors, key=lambda e: e["index"])} if errors else {}
 
 
