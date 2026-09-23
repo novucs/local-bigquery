@@ -4,7 +4,7 @@ import json
 import sqlglot
 from sqlglot import exp
 
-from local_bigquery.catalog import datasets, tables
+from local_bigquery.catalog import datasets, metadata, tables
 from local_bigquery.catalog import routines as catalog_routines
 from local_bigquery.engine import database
 from local_bigquery.engine.database import quote
@@ -70,11 +70,17 @@ def _tables(project_id: str, dataset_id: str | None) -> list[dict]:
             dataset.datasetReference.datasetId for dataset in datasets.list_(project_id)
         ]
     )
-    return [
-        tables.load(project_id, ds, summary["tableReference"]["tableId"])
-        for ds in dataset_ids
-        for summary in tables.list_(project_id, ds)
+    listings = metadata.existing(tables.list_, [(project_id, ds) for ds in dataset_ids])
+    references = [
+        (
+            project_id,
+            summary["tableReference"]["datasetId"],
+            summary["tableReference"]["tableId"],
+        )
+        for listing in listings
+        for summary in listing
     ]
+    return metadata.existing(tables.load, references)
 
 
 def _identity(table: dict) -> list[str]:

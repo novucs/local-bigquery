@@ -66,7 +66,9 @@ def list_(
         "ORDER BY schema_name",
         [project_id, bool(all)],
     )
-    datasets = [get(project_id, dataset_id) for (dataset_id,) in rows]
+    datasets = metadata.existing(
+        get, [(project_id, dataset_id) for (dataset_id,) in rows]
+    )
     return [dataset for dataset in datasets if _matches(dataset, filter)]
 
 

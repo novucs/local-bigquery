@@ -29,6 +29,17 @@ def merge(target: dict, patch: dict) -> dict:
     return merged
 
 
+def existing(load, keys) -> list:
+    found = []
+    for key in keys:
+        try:
+            found.append(load(*key))
+        except BigQueryError as error:
+            if error.reason != "notFound":
+                raise
+    return found
+
+
 def check_etag(resource: dict, etag: str | None):
     if etag and etag != resource.get("etag"):
         raise BigQueryError("conditionNotMet", "Precondition check failed.")

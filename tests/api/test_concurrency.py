@@ -46,3 +46,21 @@ def test_new_policy_applies_to_concurrent_readers(bq, dataset):
         future.result()
     readers.shutdown()
     assert rows(bq, f"SELECT x FROM {table}") == [(1,)]
+
+
+def test_listings_tolerate_concurrent_deletes(bq, dataset):
+    def work(i: int):
+        if i % 2:
+            dataset_id = unique("gone")
+            bq.create_dataset(dataset_id)
+            run(bq, f"CREATE TABLE {dataset_id}.t (x INT64)")
+            bq.delete_dataset(dataset_id, delete_contents=True)
+        else:
+            list(bq.list_datasets())
+            rows(bq, "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA")
+            rows(
+                bq,
+                f"SELECT table_name FROM {dataset.dataset_id}.INFORMATION_SCHEMA.TABLES",
+            )
+
+    parallel(work, 48)
