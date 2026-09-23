@@ -74,7 +74,7 @@ CASES = [
         xfail="FORMAT passed to DuckDB fmt-style format",
     ),
     q("SELECT ASCII('A'), CHR(65), UNICODE('â')", rows=[(65, "A", 226)]),
-    q("SELECT TO_CODE_POINTS('ab')", [97, 98], xfail="missing function"),
+    q("SELECT TO_CODE_POINTS('ab')", [97, 98]),
     q("SELECT CODE_POINTS_TO_STRING([97, 98])", "ab", xfail="missing function"),
     q("SELECT TO_HEX(b'abc'), FROM_HEX('616263')", rows=[("616263", b"abc")]),
     q("SELECT TO_BASE64(b'abc'), FROM_BASE64('YWJj')", rows=[("YWJj", b"abc")]),

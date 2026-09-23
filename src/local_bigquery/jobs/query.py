@@ -6,13 +6,7 @@ from local_bigquery.engine import database, results, types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import already_exists, from_duckdb, not_found
 from local_bigquery.sql import js, params
-from local_bigquery.sql.translate import (
-    Context,
-    attach_postgres,
-    parse,
-    translate,
-    uses_external_query,
-)
+from local_bigquery.sql.translate import Context, parse, translate
 
 STATEMENT_TYPES = {
     exp.Insert: "INSERT",
@@ -166,21 +160,51 @@ def execute(
     isolated: bool = False,
 ) -> tuple[dict, list[dict], dict | None]:
     default = config.get("defaultDataset") or {}
+    attachments = []
+
+    def attach_postgres(uri: str) -> str:
+        alias = f"pg_{len(attachments)}_{id(attachments)}"
+        cur.execute(
+            f"LOAD postgres; ATTACH '{uri}' AS {alias} (TYPE postgres, READ_ONLY)"
+        )
+        attachments.append(alias)
+        return alias
+
+    temporary = cur.sql("SELECT table_name FROM duckdb_tables() WHERE temporary")
     context = Context(
         default.get("projectId") or project_id,
         default.get("datasetId"),
         *params.bind(config.get("queryParameters") or []),
+        temporary={name.casefold() for (name,) in temporary.fetchall()},
+        attach_postgres=attach_postgres,
     )
     database.attach(context.project_id)
-    trees = parse(config.get("query") or "")
     found = context.dataset_id and datasets.exists(
         context.project_id, context.dataset_id
     )
     cur.execute(
         f"USE {quote(context.project_id, context.dataset_id if found else 'main')}"
     )
-    if uses_external_query(trees):
-        attach_postgres(cur)
+    try:
+        trees = parse(config.get("query") or "")
+        return _execute(
+            cur, project_id, job_id, config, dry_run, isolated, context, trees
+        )
+    finally:
+        for alias in attachments:
+            cur.execute(f"DETACH {alias}")
+
+
+def _execute(
+    cur: duckdb.DuckDBPyConnection,
+    project_id: str,
+    job_id: str | None,
+    config: dict,
+    dry_run: bool,
+    isolated: bool,
+    context: Context,
+    trees: list[exp.Expression],
+) -> tuple[dict, list[dict], dict | None]:
     body = [tree for tree in trees if not _temporary_function(tree)]
     last = body[-1] if body else None
     destination = None

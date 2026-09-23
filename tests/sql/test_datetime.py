@@ -389,7 +389,6 @@ CASES = [
     q(
         "SELECT SAFE.PARSE_DATE('%Y-%m-%d', '2019-02-29')",
         None,
-        xfail="SAFE. prefix unsupported",
     ),
     q("SELECT UNIX_DATE(DATE '2008-12-25')", 14238),
     q(

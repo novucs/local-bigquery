@@ -75,7 +75,6 @@ CASES = [
     q(
         "SELECT SAFE.LN(-1), SAFE.SQRT(-1)",
         rows=[(None, None)],
-        xfail="SAFE. prefix unsupported",
     ),
     q(
         "SELECT SAFE.LN(1 / 0)",
