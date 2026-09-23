@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     default_project_id: str = Field("local")
     default_dataset_id: str = Field("local")
     postgres_connection_id: str = Field("us.default")
+    gcs_local_root: Path | None = Field(None)
     postgres_uri: str = Field("postgresql://postgres:example@db:5432/postgres")
 
 

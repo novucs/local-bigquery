@@ -62,6 +62,8 @@ services:
       # SELECT * FROM EXTERNAL_QUERY('us.default', 'SELECT 1');
       POSTGRES_CONNECTION_ID: us.default
       POSTGRES_URI: postgresql://postgres:example@db:5432/postgres
+      # Serve gs://<bucket>/<path> for loads, extracts and EXPORT DATA from a local directory.
+      GCS_LOCAL_ROOT: /data/gcs
     volumes:
       - bigquery_data:/data
 ```

@@ -23,7 +23,7 @@ EXPORT_OPTIONS = {
 
 def write(
     cur: duckdb.DuckDBPyConnection, query: str, params: dict, config: dict
-) -> list[str]:
+) -> int:
     kind = (config.get("destinationFormat") or "CSV").upper()
     if kind not in FORMATS:
         raise BigQueryError("invalid", f"Unsupported destination format: {kind}")
@@ -36,20 +36,22 @@ def write(
     if compression := config.get("compression"):
         options.append(f"COMPRESSION {compression.lower()}")
     uris = config.get("destinationUris") or [config.get("destinationUri")]
+    rows = 0
     for uri in uris:
         target = path(cur, uri.replace("*", "000000000000"))
-        cur.execute(
+        (rows,) = cur.execute(
             f"COPY ({query}) TO {literal(target)} ({', '.join(options)})", params
-        )
-    return ["1" for _ in uris]
+        ).fetchone()
+    return rows
 
 
 def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
     source = config["sourceTable"]
     reference = (source["projectId"], source["datasetId"], source["tableId"])
     tables.load(*reference)
-    counts = write(cur, f"SELECT * FROM {tables.name(*reference)}", {}, config)
-    return {"destinationUriFileCounts": counts, "inputBytes": "0"}
+    write(cur, f"SELECT * FROM {tables.name(*reference)}", {}, config)
+    uris = config.get("destinationUris") or [config.get("destinationUri")]
+    return {"destinationUriFileCounts": ["1" for _ in uris], "inputBytes": "0"}
 
 
 def export_config(tree: exp.Export) -> dict:
@@ -60,4 +62,12 @@ def export_config(tree: exp.Export) -> dict:
         elif key := EXPORT_OPTIONS.get(option.name.lower()):
             value = option.args["value"]
             config[key] = value.this if isinstance(value, exp.Boolean) else value.name
+    if not config.get("destinationUri"):
+        raise BigQueryError("invalidQuery", "Option 'uri' is missing or empty.")
+    kind = config.get("destinationFormat", "CSV").upper()
+    if kind not in FORMATS or kind == "NEWLINE_DELIMITED_JSON":
+        raise BigQueryError(
+            "invalidQuery",
+            f"'{kind}' is not a valid value; failed to set 'format' in EXPORT DATA OPTIONS",
+        )
     return config

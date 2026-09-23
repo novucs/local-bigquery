@@ -5,7 +5,7 @@ import duckdb
 
 from local_bigquery.catalog import tables
 from local_bigquery.catalog.tables import columns, create, get, load, name
-from local_bigquery.engine import database, results
+from local_bigquery.engine import database, results, types
 from local_bigquery.engine.database import quote
 from local_bigquery.models import TableFieldSchema
 
@@ -40,8 +40,17 @@ def _template(project_id: str, dataset_id: str, table_id: str, suffix: str) -> s
     return table_id + suffix
 
 
+def _legacy(t) -> str:
+    return types.field("", t).type.lower()
+
+
 def _problem(location: str, message: str) -> dict:
-    return {"reason": "invalid", "location": location, "message": message}
+    return {
+        "reason": "invalid",
+        "location": location,
+        "debugInfo": "",
+        "message": message,
+    }
 
 
 def _unconvertible(schema: dict, rows: list[dict]) -> list[list[str]]:
@@ -123,7 +132,8 @@ def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> d
         problems += [
             _problem(
                 key,
-                f"Cannot convert value to {schema[key.casefold()][1]}: {known[index][key]}",
+                f"Cannot convert value to {_legacy(schema[key.casefold()][1])} "
+                f"(bad value): {known[index][key]}",
             )
             for key in unconvertible[index]
         ]

@@ -10,6 +10,13 @@ from local_bigquery.jobs.storage import literal, path
 from local_bigquery.models import TableFieldSchema
 
 READERS = {"PARQUET": "read_parquet", "AVRO": "read_avro", "ORC": "read_orc"}
+FORMATS = {"CSV", "NEWLINE_DELIMITED_JSON", *READERS}
+
+
+def validate(config: dict):
+    kind = config.get("sourceFormat") or "CSV"
+    if kind not in FORMATS:
+        raise BigQueryError("invalid", f"Invalid source format {kind}")
 
 
 def _options(options: dict) -> str:
@@ -62,29 +69,6 @@ def _projection(config: dict, fields: list[TableFieldSchema]) -> tuple[str, str]
     return ", ".join(casts), " OR ".join(bad) or "false"
 
 
-def _evolve(cur: duckdb.DuckDBPyConnection, config: dict, reference: tuple, query: str):
-    existing = {f.name.casefold() for f in tables.columns(*reference)}
-    relation = cur.sql(query)
-    added = [
-        (column, t)
-        for column, t in zip(relation.columns, relation.types)
-        if column.casefold() not in existing
-    ]
-    if added and "ALLOW_FIELD_ADDITION" not in (
-        config.get("schemaUpdateOptions") or []
-    ):
-        raise BigQueryError(
-            "invalid",
-            "Provided Schema does not match Table {}:{}.{}. ".format(*reference)
-            + f"Cannot add fields (field: {added[0][0]})",
-        )
-    for column, t in added:
-        cur.execute(
-            f"ALTER TABLE {tables.name(*reference)} "
-            f"ADD COLUMN {quote(column)} {types.normalised(t)}"
-        )
-
-
 def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
     target = config["destinationTable"]
     reference = (target["projectId"], target["datasetId"], target["tableId"])
@@ -115,7 +99,13 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
     query = f"SELECT {projection} FROM {reader} WHERE NOT ({bad})"
     created = not tables.exists(*reference)
     if not created:
-        _evolve(cur, config, reference, query)
+        tables.evolve(
+            cur,
+            reference,
+            cur.sql(query),
+            config.get("schemaUpdateOptions"),
+            "Provided Schema does not match Table {}:{}.{}. ".format(*reference),
+        )
     write = config.get("writeDisposition") or "WRITE_APPEND"
     tables.write(cur, query, None, reference, write, config.get("createDisposition"))
     if created and fields:

@@ -56,6 +56,10 @@ def quote(*parts: str) -> str:
 def connection() -> duckdb.DuckDBPyConnection:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(config={"TimeZone": "UTC"})
+    con.execute(
+        "SET ducklake_max_retry_count = 100; SET ducklake_retry_wait_ms = 20; "
+        "SET ducklake_retry_backoff = 1.05"
+    )
     con.execute(f"ATTACH '{settings.data_dir / 'emulator.duckdb'}' AS emulator")
     con.execute(EMULATOR_SCHEMA)
     con.execute("ATTACH ':memory:' AS bq")

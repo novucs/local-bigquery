@@ -1,3 +1,4 @@
+import contextlib
 import json
 import re
 
@@ -8,7 +9,7 @@ from local_bigquery.catalog import datasets, routines, tables
 from local_bigquery.catalog import ddl as catalog_ddl
 from local_bigquery.engine import database, types
 from local_bigquery.engine.database import quote
-from local_bigquery.errors import from_duckdb
+from local_bigquery.errors import BigQueryError, from_duckdb
 from local_bigquery.jobs import extract, merge
 from local_bigquery.sql import js, params, script
 from local_bigquery.sql.dialect import DuckDBDialect
@@ -116,15 +117,49 @@ def _reference(table: dict) -> tuple[str, str, str]:
     return table["projectId"], table["datasetId"], table["tableId"]
 
 
+def _check_destination(relation, config: dict, write: str):
+    names = {column.casefold() for column in relation.columns}
+    field = (config.get("timePartitioning") or {}).get("field")
+    if field and field.casefold() not in names:
+        raise BigQueryError(
+            "invalid",
+            "The field specified for partitioning cannot be found in the schema.",
+        )
+    for field in (config.get("clustering") or {}).get("fields") or []:
+        if field.casefold() not in names:
+            raise BigQueryError(
+                "invalid",
+                "The field specified for clustering cannot be found in the schema. "
+                f"Invalid field: {field}",
+            )
+    if config.get("schemaUpdateOptions") and write != "WRITE_APPEND":
+        raise BigQueryError(
+            "invalid",
+            "Schema update options should only be specified with WRITE_APPEND "
+            "disposition, or with WRITE_TRUNCATE disposition on a table partition.",
+        )
+
+
 def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated: bool):
     reference = _reference(destination)
     write = config.get("writeDisposition") or "WRITE_EMPTY"
     create = config.get("createDisposition")
-    if not isolated:
-        tables.write(cur, sql, bound, reference, write, create)
-        return
-    with database.cursor() as writer:
-        tables.write(cur, sql, bound, reference, write, create, writer)
+    relation = cur.sql(sql, params=bound)
+    _check_destination(relation, config, write)
+    with database.cursor() if isolated else contextlib.nullcontext(cur) as writer:
+        if write == "WRITE_APPEND" and tables.exists(*reference):
+            options = config.get("schemaUpdateOptions")
+            tables.evolve(
+                writer, reference, relation, options, "Invalid schema update. "
+            )
+        tables.write(
+            cur, sql, bound, reference, write, create, writer if isolated else None
+        )
+    layout = {
+        key: config[key] for key in ("timePartitioning", "clustering") if key in config
+    }
+    if layout and reference[1] != tables.RESULTS:
+        tables.record(*reference, tables.load(*reference) | layout)
 
 
 def _evaluator(cur: duckdb.DuckDBPyConnection):
@@ -160,7 +195,12 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
     if isinstance(tree, exp.Export):
         sql, bound = translate(tree.this, context)
         if not dry_run:
-            extract.write(cur, sql, bound, extract.export_config(tree))
+            rows = extract.write(cur, sql, bound, extract.export_config(tree))
+            statistics["exportDataStatistics"] = {
+                "fileCount": "1",
+                "rowCount": str(rows),
+            }
+            statistics |= {"transferredBytes": "0", "totalPartitionsProcessed": "0"}
         return statistics
     parts = ddl.split(tree)
     if dry_run:

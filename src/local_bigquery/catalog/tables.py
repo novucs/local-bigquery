@@ -10,7 +10,16 @@ from local_bigquery.errors import (
 )
 from local_bigquery.models import Table, TableFieldSchema
 
-DERIVED = ("schema", "numRows", "numBytes", "type")
+DERIVED = (
+    "schema",
+    "numRows",
+    "numBytes",
+    "type",
+    "numLongTermBytes",
+    "numTotalLogicalBytes",
+    "numActiveLogicalBytes",
+    "numLongTermLogicalBytes",
+)
 STORED_TYPES = ("MATERIALIZED_VIEW", "SNAPSHOT")
 RESULTS = "_results"
 
@@ -113,7 +122,11 @@ def load(project_id: str, dataset_id: str, table_id: str) -> dict:
         "type": _type(resource, kind),
         "schema": {"fields": _overlay(fields, extras)},
         "numRows": str(num_rows),
-        "numBytes": str(num_rows * len(fields) * 8),
+        "numBytes": str(num_bytes := num_rows * len(fields) * 8),
+        "numLongTermBytes": "0",
+        "numTotalLogicalBytes": str(num_bytes),
+        "numActiveLogicalBytes": str(num_bytes),
+        "numLongTermLogicalBytes": "0",
     }
 
 
@@ -254,6 +267,30 @@ def update(
         table_id,
         resource | {"lastModifiedTime": metadata.now()},
     )
+
+
+def evolve(
+    cur: duckdb.DuckDBPyConnection,
+    reference: tuple[str, str, str],
+    relation: duckdb.DuckDBPyRelation,
+    options: list[str] | None,
+    prefix: str,
+):
+    existing = {f.name.casefold() for f in columns(*reference)}
+    added = [
+        (column, t)
+        for column, t in zip(relation.columns, relation.types)
+        if column.casefold() not in existing
+    ]
+    if added and "ALLOW_FIELD_ADDITION" not in (options or []):
+        raise BigQueryError(
+            "invalid", f"{prefix}Cannot add fields (field: {added[0][0]})"
+        )
+    for column, t in added:
+        cur.execute(
+            f"ALTER TABLE {name(*reference)} "
+            f"ADD COLUMN {quote(column)} {types.normalised(t)}"
+        )
 
 
 def write(

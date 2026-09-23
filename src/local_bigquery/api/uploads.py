@@ -36,7 +36,10 @@ def _parts(content_type: str, payload: bytes) -> tuple[dict, bytes]:
     parts = [part.get_payload(decode=True) for part in message.iter_parts()]
     if len(parts) != 2:
         raise BigQueryError("invalid", "Multipart upload must have two parts")
-    return json.loads(parts[0]), parts[1]
+    try:
+        return json.loads(parts[0]), parts[1]
+    except json.JSONDecodeError as error:
+        raise BigQueryError("invalid", f"Invalid JSON payload received. {error}")
 
 
 @router.post("/projects/{project_id}/jobs")
@@ -52,7 +55,9 @@ async def upload(project_id: str, uploadType: str, request: Request):
     _resumable[upload_id] = (project_id, await request.json())
     open(_file(upload_id), "wb").close()
     location = request.url.include_query_params(upload_id=upload_id)
-    return Response(headers={"Location": str(location)})
+    return Response(
+        headers={"Location": str(location), "X-GUploader-UploadID": upload_id}
+    )
 
 
 @router.put("/projects/{project_id}/jobs")

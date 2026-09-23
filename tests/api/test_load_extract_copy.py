@@ -10,7 +10,7 @@ import pytest
 from google.api_core.exceptions import BadRequest, Conflict, NotFound
 from google.cloud import bigquery
 
-from tests.cases import fails, run, type_name, unique
+from tests.cases import fails, run, run_job, type_name, unique
 
 X = [bigquery.SchemaField("x", "INTEGER")]
 APPEND = bigquery.WriteDisposition.WRITE_APPEND
@@ -261,3 +261,61 @@ def test_export_data_statement(bq, dataset, local):
     )
     exported = next(local.iterdir()).read_text().splitlines()
     assert exported == ["x", "1"]
+
+
+def test_export_data_statistics(bq, local):
+    job = run_job(
+        bq,
+        f"EXPORT DATA OPTIONS (uri = 'file://{local}/stats-*.csv', format = 'CSV') "
+        "AS SELECT x FROM UNNEST([1, 2, 3]) AS x",
+    )
+    statistics = job._properties["statistics"]["query"]
+    assert statistics["statementType"] == "EXPORT_DATA"
+    assert statistics["exportDataStatistics"] == {"fileCount": "1", "rowCount": "3"}
+
+
+@pytest.fixture
+def bucket(local, monkeypatch):
+    from local_bigquery.settings import settings
+
+    monkeypatch.setattr(settings, "gcs_local_root", local)
+    return local / "bucket"
+
+
+def test_extract_to_gcs_local_root(bq, dataset, bucket):
+    extract(bq, ctas(bq, dataset, 1), "gs://bucket/out/data.csv")
+    assert (bucket / "out" / "data.csv").read_text().splitlines() == ["x", "1"]
+
+
+def test_load_from_gcs_local_root(bq, dataset, bucket):
+    bucket.mkdir()
+    (bucket / "in.csv").write_text("x\n1\n2\n")
+    table = table_id(dataset)
+    config = bigquery.LoadJobConfig(schema=X, skip_leading_rows=1)
+    bq.load_table_from_uri("gs://bucket/in.csv", table, job_config=config).result()
+    assert select(bq, table) == [(1,), (2,)]
+
+
+def test_export_data_to_gcs_local_root(bq, bucket):
+    run(
+        bq,
+        "EXPORT DATA OPTIONS (uri = 'gs://bucket/export/*.csv', format = 'CSV', "
+        "overwrite = true) AS SELECT 1 AS x",
+    )
+    assert [p.read_text() for p in (bucket / "export").iterdir()] == ["x\n1\n"]
+
+
+def test_export_data_requires_uri(bq):
+    with fails(BadRequest, "invalidQuery") as info:
+        run(bq, "EXPORT DATA OPTIONS (format = 'CSV') AS SELECT 1 AS x")
+    assert "Option 'uri' is missing or empty." in str(info.value)
+
+
+def test_export_data_rejects_orc(bq, local):
+    with fails(BadRequest, "invalidQuery") as info:
+        run(
+            bq,
+            f"EXPORT DATA OPTIONS (uri = 'file://{local}/x-*.orc', format = 'ORC') "
+            "AS SELECT 1 AS x",
+        )
+    assert "'ORC' is not a valid value; failed to set 'format'" in str(info.value)

@@ -30,7 +30,7 @@ def create(project_id: str) -> Session:
 
 def get(session_id: str) -> Session:
     if session_id not in _sessions:
-        raise BigQueryError("invalid", f"Session {session_id} was not found.")
+        raise BigQueryError("invalid", "Invalid input session id.")
     return _sessions[session_id]
 
 
