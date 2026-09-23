@@ -8,6 +8,7 @@ from local_bigquery.errors import BigQueryError
 KEYS = {
     "datasets": ("project_id", "dataset_id"),
     "tables": ("project_id", "dataset_id", "table_id"),
+    "routines": ("project_id", "dataset_id", "routine_id"),
 }
 
 

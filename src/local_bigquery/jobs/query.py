@@ -1,19 +1,23 @@
 import json
+import re
 
 import duckdb
 from sqlglot import exp
 
-from local_bigquery.catalog import datasets, tables
+from local_bigquery.catalog import datasets, routines, tables
 from local_bigquery.catalog import ddl as catalog_ddl
 from local_bigquery.engine import database, results, types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import already_exists, from_duckdb, not_found
 from local_bigquery.jobs import merge
-from local_bigquery.sql import js, params
+from local_bigquery.sql import js, params, script
 from local_bigquery.sql.dialect import DuckDBDialect
 from local_bigquery.sql.rules import ddl
 from local_bigquery.sql.translate import Context, parse, translate
 
+TEMPORARY_FUNCTION = re.compile(
+    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?TEMP(?:ORARY)?\s+FUNCTION\b", re.IGNORECASE
+)
 STATEMENT_TYPES = {
     exp.Insert: "INSERT",
     exp.Update: "UPDATE",
@@ -189,6 +193,7 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
             cur.execute(sql, bound)
     if isinstance(tree, DDL):
         catalog_ddl.apply(tree, context.project_id, context.dataset_id, _evaluator(cur))
+        routines.record(tree, context.project_id, context.dataset_id)
     return statistics
 
 
@@ -199,6 +204,7 @@ def execute(
     config: dict,
     dry_run: bool = False,
     isolated: bool = False,
+    variables: dict | None = None,
 ) -> tuple[dict, list[dict], dict | None]:
     default = config.get("defaultDataset") or {}
     attachments = []
@@ -218,6 +224,8 @@ def execute(
         *params.bind(config.get("queryParameters") or []),
         temporary={name.casefold() for (name,) in temporary.fetchall()},
         attach_postgres=attach_postgres,
+        variables={} if variables is None else variables,
+        system={"current_job_id": job_id, "script.job_id": job_id, "time_zone": "UTC"},
     )
     database.attach(context.project_id)
     found = context.dataset_id and datasets.exists(
@@ -227,13 +235,17 @@ def execute(
         f"USE {quote(context.project_id, context.dataset_id if found else 'main')}"
     )
     try:
-        trees = parse(config.get("query") or "")
+        statements = script.parse_script(config.get("query") or "")
         return _execute(
-            cur, project_id, job_id, config, dry_run, isolated, context, trees
+            cur, project_id, job_id, config, dry_run, isolated, context, statements
         )
     finally:
         for alias in attachments:
             cur.execute(f"DETACH {alias}")
+
+
+def _definition(statement: script.Statement) -> bool:
+    return statement.kind == "SQL" and bool(TEMPORARY_FUNCTION.match(statement.text))
 
 
 def _execute(
@@ -244,31 +256,43 @@ def _execute(
     dry_run: bool,
     isolated: bool,
     context: Context,
-    trees: list[exp.Expression],
+    statements: list[script.Statement],
 ) -> tuple[dict, list[dict], dict | None]:
-    body = [tree for tree in trees if not _temporary_function(tree)]
-    last = body[-1] if body else None
+    scripted = script.is_script([s for s in statements if not _definition(s)])
+    if scripted and dry_run:
+        return {"statementType": "SCRIPT"}, [], None
     destination = None
-    if isinstance(last, exp.Query) and job_id:
-        destination = config.get("destinationTable") or {
+    if job_id:
+        destination = {
             "projectId": project_id,
             "datasetId": tables.RESULTS,
             "tableId": job_id,
         }
-    children = []
-    for tree in trees:
+        if not scripted:
+            destination = config.get("destinationTable") or destination
+    if scripted:
+        config = config | {"writeDisposition": "WRITE_TRUNCATE"}
+    children, produced = [], []
+
+    def run_sql(tree: exp.Expression) -> dict | None:
         if js.is_udf(tree):
-            js.bind(cur, tree, context)
-        elif _temporary_function(tree):
+            return js.bind(cur, tree, context)
+        if _temporary_function(tree):
             cur.execute(translate(tree, context)[0])
-        else:
-            target = destination if tree is last else None
-            children.append(
-                _statement(cur, tree, context, target, config, dry_run, isolated)
-            )
-    if len(children) == 1:
-        return children[0], [], destination
-    return {"statementType": "SCRIPT"}, children, destination
+            return None
+        target = destination if isinstance(tree, exp.Query) else None
+        statistics = _statement(
+            cur, tree, context, target, config, dry_run, isolated or scripted
+        )
+        children.append(statistics)
+        produced.append(target)
+        return statistics
+
+    script.Interpreter(cur, context, run_sql).run(statements)
+    result = destination if any(produced) else None
+    if not scripted:
+        return (children[0] if children else {}), [], result
+    return {"statementType": "SCRIPT"}, children, result
 
 
 def translate_view(project_id: str, dataset_id: str, sql: str) -> str:

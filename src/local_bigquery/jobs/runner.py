@@ -124,7 +124,12 @@ def _execute(job: dict, session: sessions.Session | None, running: Running):
                 running.cursor = cursor
                 try:
                     statistics, children, destination = query.execute(
-                        cursor, project_id, job_id, config, isolated=bool(session)
+                        cursor,
+                        project_id,
+                        job_id,
+                        config,
+                        isolated=bool(session),
+                        variables=session.variables if session else None,
                     )
                 finally:
                     if not session:

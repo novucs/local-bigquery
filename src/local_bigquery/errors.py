@@ -84,7 +84,7 @@ DUCKDB_ERRORS = [
         "Function not found: {name}",
     ),
     (
-        re.compile(r'Referenced column "(?P<name>[^"]+)" not found'),
+        re.compile(r'Referenced column "(?P<name>[^"]+)" (?:was )?not found'),
         "invalidQuery",
         "Unrecognized name: {name}",
     ),

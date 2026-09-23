@@ -270,7 +270,6 @@ def test_table_function_joined_with_table(bq, dataset, routine):
     assert [tuple(r) for r in rows] == [("two",)]
 
 
-@pytest.mark.xfail(reason="procedures not supported")
 def test_procedure_out_argument(bq, routine):
     run(
         bq, f"CREATE PROCEDURE {routine}(x INT64, OUT y INT64) BEGIN SET y = x * 2; END"
@@ -278,14 +277,12 @@ def test_procedure_out_argument(bq, routine):
     assert scalar(bq, f"DECLARE r INT64; CALL {routine}(3, r); SELECT r") == 6
 
 
-@pytest.mark.xfail(reason="procedures not supported")
 def test_procedure_inout_argument(bq, routine):
     run(bq, f"CREATE PROCEDURE {routine}(INOUT v INT64) BEGIN SET v = v + 1; END")
     sql = f"DECLARE v INT64 DEFAULT 1; CALL {routine}(v); CALL {routine}(v); SELECT v"
     assert scalar(bq, sql) == 3
 
 
-@pytest.mark.xfail(reason="procedures not supported")
 def test_procedure_modifies_table(bq, dataset, routine):
     table = f"{dataset.dataset_id}.{unique('t')}"
     run(bq, f"CREATE TABLE {table} (v INT64)")
@@ -294,7 +291,6 @@ def test_procedure_modifies_table(bq, dataset, routine):
     assert scalar(bq, f"SELECT SUM(v) FROM {table}") == 7
 
 
-@pytest.mark.xfail(reason="procedures not supported")
 def test_drop_procedure(bq, routine):
     run(bq, f"CREATE PROCEDURE {routine}() BEGIN SELECT 1; END")
     run(bq, f"DROP PROCEDURE {routine}")

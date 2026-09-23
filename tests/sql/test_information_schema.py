@@ -122,7 +122,6 @@ def test_partitions(bq, dataset):
     ) == [("20200101", 2), ("20200102", 1)]
 
 
-@pytest.mark.xfail(reason="routine return types not recorded")
 def test_routines(bq, dataset):
     ds = dataset.dataset_id
     routine = unique("f")

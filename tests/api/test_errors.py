@@ -93,7 +93,6 @@ def test_get_missing_model(bq, dataset):
         bq.get_model(f"{dataset.dataset_id}.missing_model", retry=FAST_RETRY)
 
 
-@pytest.mark.xfail(reason="routines.get not implemented")
 def test_get_missing_routine(bq, dataset):
     with fails(NotFound, "notFound"):
         bq.get_routine(f"{dataset.dataset_id}.missing_routine", retry=FAST_RETRY)
