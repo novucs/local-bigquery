@@ -99,6 +99,13 @@ DUCKDB_ERRORS = [
         "Function not found: {function_name} at [{function_position}]",
     ),
     (
+        re.compile(
+            r"Python exception occurred while executing the UDF: \w+: (?P<name>.*)"
+        ),
+        "invalidQuery",
+        "{name}",
+    ),
+    (
         re.compile(r'Referenced column "(?P<name>[^"]+)" (?:was )?not found'),
         "invalidQuery",
         "Unrecognized name: {name}",
@@ -144,7 +151,7 @@ def _position(message: str) -> tuple[int, int]:
     return int(match[1]), len(match[3]) - len(f"LINE {match[1]}: ") + 1
 
 
-def _function(tree, name: str) -> tuple[str, str]:
+def _function(tree, name: str, context=None) -> tuple[str, str]:
     for node in tree.find_all(sqlglot.exp.Anonymous) if tree is not None else []:
         if node.name.casefold() != name.casefold() or "line" not in node.meta:
             continue
@@ -153,10 +160,14 @@ def _function(tree, name: str) -> tuple[str, str]:
             path = node.parent.this
             meta = next(iter(path.find_all(sqlglot.exp.Identifier))).meta
             column = meta.get("col", 0) - (meta.get("end", 0) - meta.get("start", 0))
-            return (
-                f"{path.sql(dialect='bigquery')}.{node.name}",
-                f"{meta['line']}:{column}",
-            )
+            parts = [
+                part
+                for identifier in path.find_all(sqlglot.exp.Identifier)
+                for part in identifier.name.split(".")
+            ]
+            if len(parts) == 1 and context is not None:
+                parts.insert(0, context.project_id)
+            return f"`{'.'.join(parts)}`.{node.name}", f"{meta['line']}:{column}"
         return node.name, f"{node.meta['line']}:{column}"
     return name, "1:1"
 
@@ -212,7 +223,7 @@ def from_duckdb(error: Exception, context=None, tree=None) -> BigQueryError:
             table = name
             if context is not None and "." not in name:
                 table = f"{context.project_id}:{context.dataset_id}.{name}"
-            function_name, function_position = _function(tree, name)
+            function_name, function_position = _function(tree, name, context)
             arguments = ", ".join(
                 ARGUMENT_TYPES.get(argument.split("(")[0], argument.split("(")[0])
                 for argument in (match.groupdict().get("arguments") or "").split(", ")

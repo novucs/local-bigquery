@@ -1,7 +1,7 @@
 from sqlglot import exp
 
 from local_bigquery.sql import js
-from local_bigquery.sql.dialect import TableMacro
+from local_bigquery.sql.dialect import TableMacro, table_body
 
 
 def definition(tree: exp.Expression, context) -> exp.Expression:
@@ -18,10 +18,8 @@ def definition(tree: exp.Expression, context) -> exp.Expression:
         ):
             param.set("kind", None)
     returns = tree.find(exp.ReturnsProperty)
-    if isinstance(tree.expression, exp.Query) and not isinstance(
-        tree.expression, exp.Subquery
-    ):
-        tree.set("expression", TableMacro(this=tree.expression))
+    if body := table_body(tree):
+        tree.set("expression", TableMacro(this=body))
     elif returns is not None and not returns.args.get("is_table"):
         tree.set("expression", exp.cast(tree.expression, returns.this))
     return tree
@@ -41,6 +39,10 @@ def call(node: exp.Expression, context) -> exp.Expression:
         args = [_coerce(arg, kind) for arg, kind in zip(node.expressions, kinds)]
         return exp.Anonymous(this=name, expressions=args)
     if isinstance(node, exp.Table) and isinstance(node.this, exp.Anonymous):
+        if not node.catalog and "." in node.db:
+            catalog, db = node.db.split(".", 1)
+            node.set("db", exp.to_identifier(db, quoted=True))
+            node.set("catalog", exp.to_identifier(catalog, quoted=True))
         if node.db and not node.catalog:
             node.set("catalog", exp.to_identifier(context.project_id))
     return node

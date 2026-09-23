@@ -46,6 +46,8 @@ def statement_type(tree: exp.Expression) -> str:
             kind = "MATERIALIZED_VIEW"
         if tree.meta.get("snapshot"):
             kind = "SNAPSHOT_TABLE"
+        if tree.meta.get("table_function"):
+            kind = "TABLE_FUNCTION"
         if isinstance(tree, exp.Create) and kind == "TABLE" and tree.expression:
             return "CREATE_TABLE_AS_SELECT"
         return f"{verb}_{kind}"
@@ -282,9 +284,19 @@ def _execute(
         config = config | {"writeDisposition": "WRITE_TRUNCATE"}
     children, produced = [], []
 
+    def report(statistics: dict):
+        children.append(statistics)
+        produced.append(None)
+
     def run_sql(tree: exp.Expression) -> dict | None:
-        if js.is_udf(tree):
+        if js.is_udf(tree) and _temporary_function(tree):
             return js.bind(cur, tree, context)
+        if js.is_udf(tree):
+            statistics = {"statementType": statement_type(tree)} | _ddl(tree, context)
+            js.bind(cur, tree, context)
+            routines.record(tree, context.project_id, context.dataset_id)
+            report(statistics)
+            return statistics
         if _temporary_function(tree):
             cur.execute(translate(tree, context)[0])
             return None
@@ -296,8 +308,8 @@ def _execute(
         produced.append(target)
         return statistics
 
-    script.Interpreter(cur, context, run_sql).run(statements)
-    result = destination if any(produced) else None
+    script.Interpreter(cur, context, run_sql, report).run(statements)
+    result = destination if produced and produced[-1] else None
     if not scripted:
         return (children[0] if children else {}), [], result
     return {"statementType": "SCRIPT"}, children, result

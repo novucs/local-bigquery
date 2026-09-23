@@ -243,6 +243,34 @@ def test_failed_statement_keeps_earlier_statements(bq, table):
     assert count(bq, table) == 1
 
 
+def test_variable_column_keeps_its_name(bq):
+    result = run(bq, "DECLARE label STRING DEFAULT 'big'; SELECT label")
+    assert [field.name for field in result.schema] == ["label"]
+
+
+def test_script_ending_in_dml_has_no_result(bq, table):
+    result = run(bq, f"SELECT 1 AS a; INSERT {table} VALUES (1)")
+    assert (list(result), list(result.schema)) == ([], [])
+
+
+def test_script_ending_in_ddl_has_no_result(bq, dataset):
+    table = f"{dataset.dataset_id}.{unique('t')}"
+    result = run(bq, f"SELECT 1 AS a; CREATE TABLE {table} (v INT64)")
+    assert (list(result), list(result.schema)) == ([], [])
+
+
+@pytest.mark.xfail(reason="DuckDB aborts transactions on error and has no savepoints")
+def test_transaction_survives_handled_error(bq, table):
+    sql = (
+        "DECLARE outcome STRING DEFAULT 'ok'; "
+        f"BEGIN BEGIN TRANSACTION; INSERT {table} VALUES (1); "
+        "EXECUTE IMMEDIATE 'SELECT 1 / 0'; COMMIT TRANSACTION; "
+        "EXCEPTION WHEN ERROR THEN SET outcome = 'caught'; END; "
+        f"SELECT outcome, (SELECT COUNT(*) FROM {table})"
+    )
+    assert [tuple(r) for r in run(bq, sql)] == [("caught", 1)]
+
+
 def test_execute_immediate_dml(bq, table):
     run(bq, f"EXECUTE IMMEDIATE 'INSERT {table} VALUES (?)' USING 5")
     assert count(bq, table) == 1

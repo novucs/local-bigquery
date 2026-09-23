@@ -4,7 +4,7 @@ import time
 import pytest
 from google.cloud import bigquery
 
-from tests.cases import q, run, scalar, unique
+from tests.cases import q, run, run_job, scalar, unique
 
 _names = (f"js{i}" for i in itertools.count())
 
@@ -165,6 +165,14 @@ CASES = [
         "SELECT no_such_function(1)",
         error="Function not found",
     ),
+    q(
+        js("x INT64", "INT64", "'return x + 1;'", "SELECT {f}(41)"),
+        411,
+    ),
+    q(
+        js("x INT64", "INT64", "'throw new Error(\"boom\");'", "SELECT {f}(1)"),
+        error=r"Error: boom at js\d+\(INT64\) line 1, column 1",
+    ),
 ]
 
 
@@ -305,3 +313,101 @@ def test_temp_functions_do_not_leak_between_queries(bq):
     assert scalar(bq, define.format("'return x + 2;'") + " SELECT leak(1)") == 3.0
     with pytest.raises(Exception):
         run(bq, "SELECT leak(1)")
+
+
+def test_table_function_parenthesised_body(bq, routine):
+    run(
+        bq,
+        f"CREATE TABLE FUNCTION {routine}(n INT64) AS "
+        "(SELECT v, v * 10 AS w FROM UNNEST([1, 2, 3]) AS v WHERE v < n)",
+    )
+    rows = run(bq, f"SELECT v, w FROM {routine}(3) ORDER BY v")
+    assert [tuple(r) for r in rows] == [(1, 10), (2, 20)]
+
+
+def test_table_function_without_arguments(bq, routine):
+    run(
+        bq,
+        f"CREATE TABLE FUNCTION {routine}() AS "
+        "(SELECT v FROM UNNEST(ARRAY<INT64>[]) AS v)",
+    )
+    assert scalar(bq, f"SELECT COUNT(*) FROM {routine}()") == 0
+
+
+def test_table_function_calls_table_function(bq, routine):
+    run(
+        bq,
+        f"CREATE TABLE FUNCTION {routine}(n INT64) AS "
+        "(SELECT v, STRUCT(v AS inner_v) AS s FROM UNNEST([1, 2, 3]) AS v WHERE v <= n)",
+    )
+    run(
+        bq,
+        f"CREATE TABLE FUNCTION {routine}_outer(n INT64) AS "
+        f"(SELECT s FROM {routine}(n) WHERE v > 1)",
+    )
+    rows = run(bq, f"SELECT s FROM {routine}_outer(3) ORDER BY s.inner_v")
+    assert [tuple(r) for r in rows] == [({"inner_v": 2},), ({"inner_v": 3},)]
+
+
+def test_table_function_defined_and_called_in_script(bq, dataset):
+    name = f"`{bq.project}.{dataset.dataset_id}`.{unique('tvf')}"
+    sql = f"CREATE TABLE FUNCTION {name}(n INT64) AS (SELECT n AS x); SELECT x FROM {name}(4)"
+    assert scalar(bq, sql) == 4
+
+
+def test_table_function_ddl_statistics(bq, routine):
+    job = run_job(bq, f"CREATE TABLE FUNCTION {routine}(n INT64) AS SELECT n AS x")
+    assert (job.statement_type, job.ddl_operation_performed) == (
+        "CREATE_TABLE_FUNCTION",
+        "CREATE",
+    )
+    job = run_job(bq, f"DROP TABLE FUNCTION {routine}")
+    assert (job.statement_type, job.ddl_operation_performed) == (
+        "DROP_TABLE_FUNCTION",
+        "DROP",
+    )
+    with pytest.raises(Exception):
+        run(bq, f"SELECT * FROM {routine}(1)")
+
+
+def test_js_function_ddl_statistics(bq, routine):
+    job = run_job(
+        bq,
+        f"CREATE FUNCTION {routine}(x FLOAT64) RETURNS FLOAT64 "
+        "LANGUAGE js AS 'return x * 2;'",
+    )
+    assert (job.statement_type, job.ddl_operation_performed) == (
+        "CREATE_FUNCTION",
+        "CREATE",
+    )
+
+
+def test_procedure_ddl_statistics(bq, routine):
+    job = run_job(bq, f"CREATE PROCEDURE {routine}() BEGIN SELECT 1; END")
+    assert job.statement_type == "SCRIPT"
+    job = run_job(bq, f"DROP PROCEDURE {routine}")
+    assert (job.statement_type, job.ddl_operation_performed) == (
+        "DROP_PROCEDURE",
+        "DROP",
+    )
+
+
+def test_procedure_defined_and_called_in_script(bq, routine):
+    sql = (
+        "DECLARE total INT64 DEFAULT 0; DECLARE part INT64; "
+        f"CREATE OR REPLACE PROCEDURE {routine}(IN a INT64, IN b INT64, OUT s INT64) "
+        "BEGIN SET s = a + b; END; "
+        f"CALL {routine}(10, 5, part); SET total = total + part; "
+        f"CALL {routine}(total, 3, part); SET total = part; SELECT total"
+    )
+    assert scalar(bq, sql) == 18
+
+
+def test_unknown_function_message(bq, dataset):
+    with pytest.raises(Exception, match=r"Function not found: no_such_fn at \[1:8\]"):
+        run(bq, "SELECT no_such_fn(1)")
+    qualified = (
+        rf"Function not found: `[\w\-]+\.{dataset.dataset_id}`\.no_such_fn at \[1:8\]"
+    )
+    with pytest.raises(Exception, match=qualified):
+        run(bq, f"SELECT {dataset.dataset_id}.no_such_fn(1)")
