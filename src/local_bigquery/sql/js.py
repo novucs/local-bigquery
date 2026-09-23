@@ -1,19 +1,21 @@
 import hashlib
 import inspect
 import json
+import re
 import threading
 
 import duckdb
 import pyarrow
 import sqlglot
 from duckdb.sqltypes import DuckDBPyType
-from py_mini_racer import MiniRacer
+from py_mini_racer import JSEvalException, MiniRacer
 from sqlglot import exp
 
 from local_bigquery.engine import database
 from local_bigquery.sql.dialect import BigQueryDialect, DuckDBDialect
 
 INTEGERS = {"tinyint", "smallint", "integer", "bigint", "hugeint"}
+THROWN = re.compile(r"^<anonymous>:(\d+): (.*)$")
 _contexts: dict[str, tuple[MiniRacer, threading.Lock]] = {}
 _registered: set[tuple[int, str]] = set()
 _lock = threading.Lock()
@@ -38,8 +40,20 @@ def _convert(value, t: DuckDBPyType):
     return value
 
 
-def _function(names: list[str], body: str, returns: DuckDBPyType):
-    source = f"(function({', '.join(names)}) {{ {body} }})"
+def _error(error: JSEvalException, signature: str) -> ValueError:
+    location, line, caret = str(error).split("\n")[:3]
+    number, message = THROWN.match(location).groups()
+    column = len(caret) - len(caret.lstrip()) + 1
+    return ValueError(
+        f"{message} at {signature} line {int(number) - 1}, column {column}"
+    )
+
+
+def _function(
+    names: list[str], kinds: list[DuckDBPyType], body: str, returns, signature: str
+):
+    source = f"(function({', '.join(names)}) {{\n{body}\n}})"
+    strings = [kind.id in INTEGERS for kind in kinds]
 
     def call(*arrays):
         with _lock:
@@ -49,11 +63,18 @@ def _function(names: list[str], body: str, returns: DuckDBPyType):
                 context.eval("var batch = rows => rows.map(row => f.apply(null, row));")
                 _contexts[source] = context, threading.Lock()
         context, lock = _contexts[source]
-        rows = json.loads(
-            json.dumps(list(zip(*(a.to_pylist() for a in arrays))), default=str)
-        )
-        with lock:
-            values = context.call("batch", rows)
+        columns = [
+            [None if v is None else str(v) for v in a.to_pylist()]
+            if string
+            else a.to_pylist()
+            for a, string in zip(arrays, strings)
+        ]
+        rows = json.loads(json.dumps(list(zip(*columns)), default=str))
+        try:
+            with lock:
+                values = context.call("batch", rows)
+        except JSEvalException as error:
+            raise _error(error, signature) from None
         return pyarrow.array([_convert(value, returns) for value in values])
 
     call.__signature__ = inspect.Signature(
@@ -69,16 +90,21 @@ def _params(tree: exp.Expression) -> list[exp.ColumnDef]:
 def register(tree: exp.Expression) -> str:
     params, returns = _params(tree), tree.find(exp.ReturnsProperty)
     body = tree.expression.name
-    signature = [p.sql() for p in params] + [returns.sql() if returns else "", body]
-    name = "js_" + hashlib.sha1("\n".join(signature).encode()).hexdigest()[:16]
+    types = ", ".join(p.kind.sql(dialect=BigQueryDialect) for p in params)
+    signature = f"{tree.this.this.name}({types})"
+    key = [signature, returns.sql() if returns else "", body]
+    name = "js_" + hashlib.sha1("\n".join(key).encode()).hexdigest()[:16]
     connection = database.connection()
     with _lock:
         if (id(connection), name) not in _registered:
             return_type = _type(returns.this if returns else None)
+            kinds = [_type(p.kind) for p in params]
             connection.create_function(
                 name,
-                _function([p.name for p in params], body, return_type),
-                [_type(p.kind) for p in params],
+                _function(
+                    [p.name for p in params], kinds, body, return_type, signature
+                ),
+                kinds,
                 return_type,
                 type="arrow",
                 null_handling="special",

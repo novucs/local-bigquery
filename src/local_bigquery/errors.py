@@ -81,7 +81,14 @@ DUCKDB_ERRORS = [
             r"(?:Scalar|Aggregate|Table) Function with name (?P<name>\S+) does not exist"
         ),
         "invalidQuery",
-        "Function not found: {name}",
+        "Function not found: {routine} at [{line}:{column}]",
+    ),
+    (
+        re.compile(
+            r"Python exception occurred while executing the UDF: \w+: (?P<name>.*)"
+        ),
+        "invalidQuery",
+        "{name}",
     ),
     (
         re.compile(r'Referenced column "(?P<name>[^"]+)" (?:was )?not found'),
@@ -129,6 +136,22 @@ def _position(message: str) -> tuple[int, int]:
     return int(match[1]), len(match[3]) - len(f"LINE {match[1]}: ") + 1
 
 
+def _routine(context, name: str) -> tuple[str, int, int]:
+    text = context.system.get("statement_text") or "" if context else ""
+    part = r"(?:`[^`]+`|[\w-]+)"
+    pattern = rf"((?:{part}\.)*)({re.escape(name)})\s*\("
+    if not (match := re.search(pattern, text, re.IGNORECASE)):
+        return name, 1, 1
+    start = match.start()
+    line, column = text.count("\n", 0, start) + 1, start - text.rfind("\n", 0, start)
+    qualifier = match[1].replace("`", "").rstrip(".").split(".") if match[1] else []
+    if len(qualifier) == 1:
+        qualifier.insert(0, context.project_id)
+    if not qualifier:
+        return match[2], line, column
+    return f"`{'.'.join(qualifier)}`.{match[2]}", line, column
+
+
 def from_duckdb(error: Exception, context=None) -> BigQueryError:
     message = str(error)
     first = message.split("\n")[0]
@@ -143,6 +166,9 @@ def from_duckdb(error: Exception, context=None) -> BigQueryError:
                 ARGUMENT_TYPES.get(argument.split("(")[0], argument.split("(")[0])
                 for argument in (match.groupdict().get("arguments") or "").split(", ")
             )
+            routine = name
+            if "{routine}" in template:
+                routine, line, column = _routine(context, name)
             return BigQueryError(
                 reason,
                 template.format(
@@ -153,6 +179,7 @@ def from_duckdb(error: Exception, context=None) -> BigQueryError:
                     kind="function" if name[:1].isalpha() else "operator",
                     function=name.upper(),
                     arguments=arguments,
+                    routine=routine,
                 ),
             )
     if "already exists" in first:

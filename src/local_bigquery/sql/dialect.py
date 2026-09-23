@@ -24,6 +24,15 @@ class TableMacro(exp.Expression):
     arg_types = {"this": True}
 
 
+def table_body(tree: exp.Expression) -> exp.Query | None:
+    body = tree.expression
+    if tree.meta.get("table_function") and isinstance(body, exp.Subquery):
+        return body.this
+    if isinstance(body, exp.Query) and not isinstance(body, exp.Subquery):
+        return body
+    return None
+
+
 class BigQueryDialect(BaseBigQuery):
     INVERSE_TIME_MAPPING = BaseBigQuery.INVERSE_TIME_MAPPING
 

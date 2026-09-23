@@ -1,7 +1,7 @@
 from sqlglot import exp
 
 from local_bigquery.catalog import metadata
-from local_bigquery.sql.dialect import BigQueryDialect
+from local_bigquery.sql.dialect import BigQueryDialect, table_body
 
 
 def load(project_id: str, dataset_id: str, routine_id: str) -> dict | None:
@@ -49,7 +49,7 @@ def record(tree: exp.Expression, project_id: str, dataset_id: str | None):
     body, language = tree.expression, tree.find(exp.LanguageProperty)
     resource = {
         "routineType": "TABLE_VALUED_FUNCTION"
-        if isinstance(body, exp.Query)
+        if table_body(tree)
         else "SCALAR_FUNCTION",
         "language": "JAVASCRIPT"
         if language and language.name.lower() == "js"

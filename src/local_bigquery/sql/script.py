@@ -18,7 +18,9 @@ OPEN = {TokenType.L_PAREN, TokenType.L_BRACKET, TokenType.L_BRACE}
 CLOSE = {TokenType.R_PAREN, TokenType.R_BRACKET, TokenType.R_BRACE}
 QUOTED = {TokenType.STRING, TokenType.IDENTIFIER}
 RAISE_MESSAGE = re.compile(r"(?is)^USING\s+MESSAGE\s*=\s*(.*)$")
+TABLE_FUNCTION = re.compile(r"(?is)^(\s*\w+(?:\s+OR\s+REPLACE)?\s+)TABLE\s+(FUNCTION)")
 ALIASES = {"LEAVE": "BREAK", "ITERATE": "CONTINUE"}
+STATEMENTS = {"SQL", "TABLE_FUNCTION", "DROP_PROCEDURE"}
 
 
 class Tokenizer(BigQueryDialect.tokenizer_class):
@@ -101,6 +103,11 @@ class Parser:
             return self.procedure()
         if word == "DROP" and following == "PROCEDURE":
             return Statement("DROP_PROCEDURE", self.until())
+        if word in ("CREATE", "DROP") and any(
+            self.word(n) == "TABLE" and self.word(n + 1) == "FUNCTION" for n in (1, 3)
+        ):
+            text = TABLE_FUNCTION.sub(r"\1\2", self.until(), count=1)
+            return Statement("TABLE_FUNCTION", text)
         if word in ("BREAK", "LEAVE", "CONTINUE", "ITERATE", "RETURN"):
             self.i += 1
             return Statement(ALIASES.get(word, word))
@@ -257,7 +264,7 @@ def parse_script(sql: str) -> list[Statement]:
 
 
 def is_script(statements: list[Statement]) -> bool:
-    return len(statements) > 1 or any(s.kind != "SQL" for s in statements)
+    return len(statements) > 1 or any(s.kind not in STATEMENTS for s in statements)
 
 
 class Control(Exception):
@@ -292,12 +299,15 @@ class Interpreter:
         cursor: duckdb.DuckDBPyConnection,
         context: Context,
         run_sql: Callable[[exp.Expression], dict | None],
+        report: Callable[[dict], None],
     ):
         self.cursor = cursor
         self.context = context
         self.run_sql = run_sql
+        self.report = report
         self.handlers = {
             "SQL": self.sql,
+            "TABLE_FUNCTION": self.sql,
             "DECLARE": self.declare,
             "SET": self.set,
             "IF": self.branch,
@@ -375,6 +385,7 @@ class Interpreter:
 
     def sql(self, statement: Statement):
         for tree in parse(statement.text):
+            tree.meta["table_function"] = statement.kind == "TABLE_FUNCTION"
             statistics = self.run_sql(tree) or {}
             if "numDmlAffectedRows" in statistics:
                 self.context.system["row_count"] = int(statistics["numDmlAffectedRows"])
@@ -399,6 +410,8 @@ class Interpreter:
             values = value.expressions if isinstance(value, exp.Tuple) else [value]
             tables = [self.variable(target.name) for target in targets]
             for table, part in zip(tables, values):
+                if isinstance(part, exp.Var):
+                    part = exp.column(part.name)
                 self.assign(table, part)
 
     def set_system(self, name: str, value: exp.Expression):
@@ -556,17 +569,29 @@ class Interpreter:
         for target, source in outputs:
             self.cursor.execute(f"UPDATE {target} SET {VALUE} = {read(source)}")
 
+    def ddl(self, verb: str, operation: str, reference: tuple[str, str, str]):
+        target = dict(zip(("projectId", "datasetId", "routineId"), reference))
+        self.report(
+            {
+                "statementType": f"{verb}_PROCEDURE",
+                "ddlOperationPerformed": operation,
+                "ddlTargetRoutine": target,
+            }
+        )
+
     def procedure(self, statement: Statement):
         words = [word.upper() for word in statement.names]
-        project_id, dataset_id, routine_id = self.reference(statement.names[-1])
-        if routines.load(project_id, dataset_id, routine_id) is not None:
-            if "EXISTS" in words:
-                return
-            if "REPLACE" not in words:
-                raise BigQueryError(
-                    "duplicate",
-                    f"Already Exists: Routine {project_id}:{dataset_id}.{routine_id}",
-                )
+        reference = self.reference(statement.names[-1])
+        project_id, dataset_id, routine_id = reference
+        exists = routines.load(*reference) is not None
+        if exists and "EXISTS" in words:
+            return self.ddl("CREATE", "SKIP", reference)
+        if exists and "REPLACE" not in words:
+            raise BigQueryError(
+                "duplicate",
+                f"Already Exists: Routine {project_id}:{dataset_id}.{routine_id}",
+            )
+        self.ddl("CREATE", "REPLACE" if exists else "CREATE", reference)
         arguments = []
         for text, _ in statement.items:
             parts = text.split()
@@ -591,11 +616,12 @@ class Interpreter:
 
     def drop_procedure(self, statement: Statement):
         words = statement.text.split()
-        project_id, dataset_id, routine_id = self.reference(words[-1])
-        if routines.load(project_id, dataset_id, routine_id) is None:
+        reference = self.reference(words[-1])
+        if routines.load(*reference) is None:
             if "EXISTS" in (word.upper() for word in words):
-                return
+                return self.ddl("DROP", "SKIP", reference)
             raise BigQueryError(
-                "notFound", f"Not found: Routine {project_id}:{dataset_id}.{routine_id}"
+                "notFound", "Not found: Routine {}:{}.{}".format(*reference)
             )
-        routines.delete(project_id, dataset_id, routine_id)
+        routines.delete(*reference)
+        self.ddl("DROP", "DROP", reference)

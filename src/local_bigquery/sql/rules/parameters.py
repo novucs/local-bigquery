@@ -30,17 +30,24 @@ def _assigned(node: exp.Column) -> bool:
     )
 
 
+def _named(node: exp.Column, value: exp.Expression) -> exp.Expression:
+    if isinstance(node.parent, exp.Select) and node.arg_key == "expressions":
+        return exp.Alias(this=value, alias=exp.to_identifier(node.name))
+    return value
+
+
 def variable(node: exp.Expression, context) -> exp.Expression:
     if not isinstance(node, exp.Column) or not context.variables or _assigned(node):
         return node
     if not node.table and (table := context.variables.get(node.name.lower())):
-        return _read(table)
+        return _named(node, _read(table))
     if (
         node.table
         and not node.db
         and (table := context.variables.get(node.table.lower()))
     ):
-        return exp.func("struct_extract", _read(table), exp.Literal.string(node.name))
+        field = exp.Literal.string(node.name)
+        return _named(node, exp.func("struct_extract", _read(table), field))
     return node
 
 
