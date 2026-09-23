@@ -82,7 +82,6 @@ def test_materialized_view_tracks_base_table(bq, source, name):
     assert bq.get_table(view).table_type == "MATERIALIZED_VIEW"
 
 
-@pytest.mark.xfail(reason="materialized views cannot be dropped or refreshed")
 def test_drop_and_refresh_materialized_view(bq, source, name):
     view = name("mv")
     run(bq, f"CREATE MATERIALIZED VIEW {view} AS SELECT COUNT(*) AS n FROM {source}")

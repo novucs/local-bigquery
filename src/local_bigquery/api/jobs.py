@@ -32,7 +32,7 @@ def results(
     }
     destination = job["configuration"]["query"].get("destinationTable")
     if not destination:
-        return payload, []
+        return payload | {"schema": statistics.get("schema")}, []
     reference = (
         destination["projectId"],
         destination["datasetId"],

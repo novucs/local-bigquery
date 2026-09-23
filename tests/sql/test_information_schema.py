@@ -61,7 +61,6 @@ def test_columns(bq, dataset):
     ]
 
 
-@pytest.mark.xfail(reason="standard TABLES columns missing")
 def test_tables_insertable_and_typed(bq, dataset):
     assert rows(
         bq,
@@ -71,7 +70,6 @@ def test_tables_insertable_and_typed(bq, dataset):
     ) == [("t", "YES", "NO"), ("v", "NO", "NO")]
 
 
-@pytest.mark.xfail(reason="standard COLUMNS columns missing")
 def test_columns_partitioning_and_clustering(bq, dataset):
     ds, table = dataset.dataset_id, unique("layout")
     run(

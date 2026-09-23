@@ -158,7 +158,6 @@ CASES = [
     q(
         "SELECT 1 AS a, 2 AS a",
         rows=[(1, 2)],
-        xfail="duplicate result column names are rejected",
     ),
 ]
 
@@ -186,7 +185,6 @@ def test_columns_are_named_after_references(bq, dataset):
     assert names(bq, dataset, sql) == ["x", "a"]
 
 
-@pytest.mark.xfail(reason="duplicate result column names are rejected")
 def test_duplicate_columns_get_suffixes(bq, dataset):
     sql = "SELECT a.x, b.x, a.x FROM l AS a, l AS b LIMIT 1"
     assert names(bq, dataset, sql) == ["x", "x_1", "x_2"]

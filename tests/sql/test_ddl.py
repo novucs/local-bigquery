@@ -275,7 +275,6 @@ def test_drop_non_empty_schema_requires_cascade(bq):
         bq.get_dataset(schema_id)
 
 
-@pytest.mark.xfail(reason="quoted project.dataset schema paths are not split")
 def test_schema_ddl_with_quoted_project_path(bq, project):
     path = f"{project}.{unique('schema')}"
     create = run_job(bq, f"CREATE SCHEMA `{path}`")
@@ -289,7 +288,6 @@ def test_schema_ddl_with_quoted_project_path(bq, project):
         bq.get_dataset(path)
 
 
-@pytest.mark.xfail(reason="DDL results carry no schema")
 @pytest.mark.parametrize(
     "sql, fields",
     [
@@ -320,7 +318,6 @@ def test_ddl_result_schema(bq, table, sql, fields):
     assert list(result) == []
 
 
-@pytest.mark.xfail(reason="DDL results carry no schema")
 def test_skipped_create_reports_declared_schema(bq, table):
     run(bq, f"CREATE TABLE {table} (x INT64)")
     result = run(bq, f"CREATE TABLE IF NOT EXISTS {table} (x INT64, y STRING)")
@@ -333,7 +330,6 @@ def test_schema_ddl_result_has_no_schema(bq):
     assert run(bq, f"DROP SCHEMA {schema_id}").schema == []
 
 
-@pytest.mark.xfail(reason="dry runs of DDL and DML report no schema")
 def test_dry_runs_report_target_schema(bq, table):
     dry = bigquery.QueryJobConfig(dry_run=True)
     job = bq.query(f"CREATE TABLE {table} (id INT64, label STRING)", job_config=dry)
@@ -346,7 +342,6 @@ def test_dry_runs_report_target_schema(bq, table):
     assert rows(bq, f"SELECT * FROM {table}") == []
 
 
-@pytest.mark.xfail(reason="destination partitioning and clustering are not validated")
 @pytest.mark.parametrize(
     "option, message",
     [
@@ -367,7 +362,6 @@ def test_destination_layout_must_name_result_columns(bq, dataset, option, messag
     assert message in info.value.message
 
 
-@pytest.mark.xfail(reason="destination layout is not recorded")
 def test_destination_layout_is_recorded(bq, dataset):
     destination = f"{bq.project}.{dataset.dataset_id}.{unique('dest')}"
     run_job(
@@ -381,7 +375,6 @@ def test_destination_layout_is_recorded(bq, dataset):
     assert (table.time_partitioning.field, table.clustering_fields) == ("d", ["k"])
 
 
-@pytest.mark.xfail(reason="CTAS accepts duplicate column names")
 def test_create_table_as_select_rejects_duplicate_columns(bq, table):
     with fails(BadRequest, "invalidQuery") as info:
         run(bq, f"CREATE TABLE {table} AS SELECT 1 AS a, 2 AS a")

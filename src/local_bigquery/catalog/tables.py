@@ -13,6 +13,7 @@ from local_bigquery.models import Table, TableFieldSchema
 DERIVED = ("schema", "numRows", "numBytes", "type")
 STORED_TYPES = ("MATERIALIZED_VIEW", "SNAPSHOT")
 RESULTS = "_results"
+INGESTION_TIME = "_PARTITIONTIME"
 
 
 def physical(project_id: str, dataset_id: str, table_id: str) -> tuple[str, str, str]:
@@ -89,6 +90,7 @@ def columns(project_id: str, dataset_id: str, table_id: str) -> list[TableFieldS
         return [
             types.field(column, t, column in required)
             for column, t in zip(relation.columns, relation.types)
+            if column != INGESTION_TIME or dataset_id == RESULTS
         ]
 
 

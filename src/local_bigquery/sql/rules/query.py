@@ -94,24 +94,35 @@ def hll_count(tree: exp.Expression, context) -> exp.Expression:
     return tree
 
 
+def _output(query: exp.Expression) -> exp.Select | None:
+    while isinstance(query, exp.SetOperation):
+        query = query.this
+    return query if isinstance(query, exp.Select) else None
+
+
 def duplicate_columns(tree: exp.Expression, context) -> exp.Expression:
-    select = tree
-    while isinstance(select, exp.SetOperation):
-        select = select.this
-    if not isinstance(select, exp.Select):
+    creates = isinstance(tree, exp.Create) and isinstance(tree.expression, exp.Query)
+    select = _output(tree.expression if creates else tree)
+    if select is None:
         return tree
-    seen = set()
+    seen: dict[str, int] = {}
     for expression in select.expressions:
-        name = expression.alias_or_name.casefold()
+        name = expression.alias_or_name
         if isinstance(expression, exp.Star) or not name:
             continue
-        if name in seen:
+        count = seen.get(name.casefold(), 0)
+        seen[name.casefold()] = count + 1
+        if count and creates:
             raise BigQueryError(
                 "invalidQuery",
                 "Duplicate column names in the result are not supported. "
-                f"Found duplicate(s): {expression.alias_or_name}",
+                f"Found duplicate(s): {name}",
             )
-        seen.add(name)
+        if count:
+            target = (
+                expression.this if isinstance(expression, exp.Alias) else expression
+            )
+            expression.replace(exp.alias_(target.copy(), f"{name}_{count}"))
     return tree
 
 

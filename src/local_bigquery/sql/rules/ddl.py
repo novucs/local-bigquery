@@ -15,7 +15,18 @@ PRECISION = {
 }
 
 
+def _schema_path(tree: exp.Expression) -> exp.Expression:
+    target = tree.find(exp.Table)
+    if target is not None and not target.catalog and "." in target.db:
+        project_id, dataset_id = target.db.rsplit(".", 1)
+        target.set("catalog", exp.to_identifier(project_id, quoted=True))
+        target.set("db", exp.to_identifier(dataset_id, quoted=True))
+    return tree
+
+
 def normalise(tree: exp.Expression) -> exp.Expression:
+    if isinstance(tree, exp.Create | exp.Drop) and tree.args.get("kind") == "SCHEMA":
+        return _schema_path(tree)
     if not isinstance(tree, exp.Command):
         return tree
     text = tree.sql(dialect=BigQueryDialect).strip()
@@ -30,7 +41,7 @@ def normalise(tree: exp.Expression) -> exp.Expression:
             f"ALTER TABLE {match[1]}", dialect=BigQueryDialect
         )
         normalised.set("kind", "SCHEMA")
-        return normalised
+        return _schema_path(normalised)
     return tree
 
 
@@ -72,4 +83,11 @@ def numeric_precision(node: exp.Expression, context) -> exp.Expression:
     return node
 
 
+def materialized_drop(tree: exp.Expression, context) -> exp.Expression:
+    if isinstance(tree, exp.Drop):
+        tree.set("materialized", False)
+    return tree
+
+
+STATEMENT_RULES = [materialized_drop]
 NODE_RULES = [numeric_precision]

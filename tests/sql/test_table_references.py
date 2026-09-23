@@ -65,7 +65,6 @@ def test_table_references(check, case):
     check(case)
 
 
-@pytest.mark.xfail(reason="duplicate result column names are rejected")
 def test_wildcard_self_join_suffixes_duplicate_names(bq, dataset):
     config = bigquery.QueryJobConfig(default_dataset=dataset.reference)
     result = run(
@@ -120,7 +119,6 @@ def test_missing_table_message(bq, project, dataset):
     assert f"Not found: Table {project}:{dataset.dataset_id}.missing" in str(info.value)
 
 
-@pytest.mark.xfail(reason="ingestion-time pseudo-columns unsupported")
 def test_ingestion_time_pseudo_columns(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('ingested')}"
     run(bq, f"CREATE TABLE {table} (x INT64) PARTITION BY _PARTITIONDATE")
@@ -139,7 +137,6 @@ def test_ingestion_time_pseudo_columns(bq, dataset):
     assert list(before) == []
 
 
-@pytest.mark.xfail(reason="ingestion-time pseudo-columns unsupported")
 def test_ingestion_time_defaults_to_now_and_stays_hidden(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('ingested')}"
     run(bq, f"CREATE TABLE {table} (x INT64) PARTITION BY _PARTITIONDATE")

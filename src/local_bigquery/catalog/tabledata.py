@@ -184,17 +184,13 @@ def list_rows(
     int64_timestamps: bool,
 ) -> tuple[results.Page, list[TableFieldSchema]]:
     load(project_id, dataset_id, table_id)
+    visible = columns(project_id, dataset_id, table_id)
     fields = (
         [f.strip().casefold() for f in selected_fields.split(",")]
         if selected_fields
-        else None
+        else [f.name.casefold() for f in visible]
     )
     table = name(project_id, dataset_id, table_id)
     with database.cursor() as cur:
         page = results.page(cur, table, max_results, start, fields, int64_timestamps)
-    schema = [
-        f
-        for f in columns(project_id, dataset_id, table_id)
-        if not fields or f.name.casefold() in fields
-    ]
-    return page, schema
+    return page, [f for f in visible if f.name.casefold() in fields]

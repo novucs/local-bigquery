@@ -2,13 +2,14 @@ import json
 import re
 
 import duckdb
+import sqlglot
 from sqlglot import exp
 
-from local_bigquery.catalog import datasets, routines, tables
+from local_bigquery.catalog import datasets, metadata, routines, tables
 from local_bigquery.catalog import ddl as catalog_ddl
 from local_bigquery.engine import database, types
 from local_bigquery.engine.database import quote
-from local_bigquery.errors import from_duckdb
+from local_bigquery.errors import BigQueryError, from_duckdb
 from local_bigquery.jobs import extract, merge
 from local_bigquery.sql import js, params, script
 from local_bigquery.sql.dialect import DuckDBDialect
@@ -32,6 +33,7 @@ DML_COUNTS = {
     exp.Delete: "deletedRowCount",
 }
 DDL = (exp.Create, exp.Drop, exp.Alter)
+LAYOUT = ("timePartitioning", "rangePartitioning", "clustering")
 
 
 def statement_type(tree: exp.Expression) -> str:
@@ -42,7 +44,7 @@ def statement_type(tree: exp.Expression) -> str:
     if isinstance(tree, DDL):
         verb = type(tree).__name__.upper()
         kind = (tree.args.get("kind") or "TABLE").upper()
-        if tree.find(exp.MaterializedProperty):
+        if tree.find(exp.MaterializedProperty) or tree.args.get("materialized"):
             kind = "MATERIALIZED_VIEW"
         if tree.meta.get("snapshot"):
             kind = "SNAPSHOT_TABLE"
@@ -116,15 +118,87 @@ def _reference(table: dict) -> tuple[str, str, str]:
     return table["projectId"], table["datasetId"], table["tableId"]
 
 
+def _layout(cur, sql: str, bound: dict, config: dict) -> dict:
+    layout = {key: config[key] for key in LAYOUT if config.get(key)}
+    if not layout:
+        return layout
+    columns = {name.casefold() for name in cur.sql(sql, params=bound).columns}
+    partitioning = (
+        layout.get("timePartitioning") or layout.get("rangePartitioning") or {}
+    )
+    if (field := partitioning.get("field")) and field.casefold() not in columns:
+        raise BigQueryError(
+            "invalid",
+            "The field specified for partitioning cannot be found in the schema.",
+        )
+    for field in (layout.get("clustering") or {}).get("fields") or []:
+        if field.casefold() not in columns:
+            raise BigQueryError(
+                "invalid",
+                "The field specified for clustering cannot be found in the schema. "
+                f"Invalid field: {field}",
+            )
+    return layout
+
+
 def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated: bool):
     reference = _reference(destination)
     write = config.get("writeDisposition") or "WRITE_EMPTY"
     create = config.get("createDisposition")
+    layout = _layout(cur, sql, bound, config)
     if not isolated:
         tables.write(cur, sql, bound, reference, write, create)
-        return
-    with database.cursor() as writer:
-        tables.write(cur, sql, bound, reference, write, create, writer)
+    else:
+        with database.cursor() as writer:
+            tables.write(cur, sql, bound, reference, write, create, writer)
+    if layout:
+        stored = metadata.load("tables", *reference) or tables.defaults(*reference)
+        tables.record(*reference, stored | layout)
+
+
+def _fields(relation: duckdb.DuckDBPyRelation, required: set[str]) -> list[dict]:
+    return [
+        types.field(n, t, n in required).model_dump(exclude_none=True)
+        for n, t in zip(relation.columns, relation.types)
+    ]
+
+
+def _declared_schema(cur, tree: exp.Create, context: Context) -> list[dict] | None:
+    if isinstance(tree.expression, exp.Query):
+        sql, bound = translate(tree.expression, context)
+        return _fields(cur.sql(sql, params=bound), set())
+    if not isinstance(tree.this, exp.Schema):
+        return None
+    translated = sqlglot.parse_one(translate(tree, context)[0], dialect=DuckDBDialect)
+    columns = [c for c in translated.this.expressions if isinstance(c, exp.ColumnDef)]
+    select = exp.select(
+        *(exp.alias_(exp.cast(exp.null(), c.args["kind"]), c.name) for c in columns)
+    )
+    required = {
+        c.name
+        for c in columns
+        if any(isinstance(k.kind, exp.NotNullColumnConstraint) for k in c.constraints)
+    }
+    return _fields(cur.sql(select.sql(dialect=DuckDBDialect)), required)
+
+
+def _result_schema(cur, tree, context, statistics: dict, dry_run: bool) -> list | None:
+    target = statistics.get("ddlTargetTable")
+    if tree.find(exp.TemporaryProperty):
+        return None
+    if isinstance(tree, exp.Create) and target:
+        if dry_run or statistics.get("ddlOperationPerformed") == "SKIP":
+            return _declared_schema(cur, tree, context)
+        return tables.load(*_reference(target))["schema"]["fields"]
+    if dry_run and type(tree) in DML_COUNTS:
+        table = tree.find(exp.Table)
+        reference = (
+            table.catalog or context.project_id,
+            table.db or context.dataset_id,
+            table.name,
+        )
+        return tables.load(*reference)["schema"]["fields"]
+    return None
 
 
 def _evaluator(cur: duckdb.DuckDBPyConnection):
@@ -173,11 +247,14 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
                     for n, t in zip(relation.columns, relation.types)
                 ]
                 statistics["schema"] = {"fields": fields}
-            else:
+            elif not isinstance(part, exp.Create):
                 cur.execute(f"EXPLAIN {sql}", bound)
-        return statistics
+        return _with_schema(
+            statistics, _result_schema(cur, tree, context, statistics, True)
+        )
     if statistics.get("ddlOperationPerformed") == "SKIP":
-        return statistics
+        schema = _result_schema(cur, tree, context, statistics, False)
+        return _with_schema(statistics, schema)
     for part in parts:
         sql, bound = translate(part, context)
         if destination is not None:
@@ -192,7 +269,13 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
     if isinstance(tree, DDL):
         catalog_ddl.apply(tree, context.project_id, context.dataset_id, _evaluator(cur))
         routines.record(tree, context.project_id, context.dataset_id)
-    return statistics
+    return _with_schema(
+        statistics, _result_schema(cur, tree, context, statistics, False)
+    )
+
+
+def _with_schema(statistics: dict, fields: list | None) -> dict:
+    return statistics if fields is None else statistics | {"schema": {"fields": fields}}
 
 
 def execute(
