@@ -13,15 +13,17 @@ CREATE MACRO _micros(i) AS
     datepart('hour', i) * 3600000000 + datepart('minute', i) * 60000000
     + datepart('microsecond', i);
 
+CREATE MACRO justify_days(i) AS
+    to_months(CAST(bq.main._months(i) + trunc(datepart('day', i) / 30) AS INTEGER))
+    + to_days(CAST(datepart('day', i) - 30 * trunc(datepart('day', i) / 30) AS INTEGER))
+    + to_microseconds(bq.main._micros(i));
+
 CREATE MACRO justify_hours(i) AS
     to_months(CAST(bq.main._months(i) AS INTEGER))
-    + to_days(CAST(datepart('day', i) + bq.main._micros(i) // 86400000000 AS INTEGER))
-    + to_microseconds(bq.main._micros(i) % 86400000000);
-
-CREATE MACRO justify_days(i) AS
-    to_months(CAST(bq.main._months(i) + datepart('day', i) // 30 AS INTEGER))
-    + to_days(CAST(datepart('day', i) % 30 AS INTEGER))
-    + to_microseconds(bq.main._micros(i));
+    + to_days(CAST(datepart('day', i) + trunc(bq.main._micros(i) / 86400000000) AS INTEGER))
+    + to_microseconds(CAST(
+        bq.main._micros(i) - 86400000000 * trunc(bq.main._micros(i) / 86400000000) AS BIGINT
+    ));
 
 CREATE MACRO justify_interval(i) AS bq.main.justify_days(bq.main.justify_hours(i));
 
@@ -31,10 +33,14 @@ CREATE MACRO _fraction(micros) AS
 
 CREATE MACRO _interval_string(i) AS
     printf(
-        '%d-%d %d %d:%d:%d',
-        datepart('year', i), datepart('month', i), datepart('day', i),
-        datepart('hour', i), datepart('minute', i), datepart('second', i)
-    ) || bq.main._fraction(datepart('microsecond', i));
+        '%s%d-%d %d %s%d:%d:%d',
+        CASE WHEN bq.main._months(i) < 0 THEN '-' ELSE '' END,
+        abs(bq.main._months(i)) // 12, abs(bq.main._months(i)) % 12, datepart('day', i),
+        CASE WHEN bq.main._micros(i) < 0 THEN '-' ELSE '' END,
+        abs(bq.main._micros(i)) // 3600000000,
+        abs(bq.main._micros(i)) // 60000000 % 60,
+        abs(bq.main._micros(i)) // 1000000 % 60
+    ) || bq.main._fraction(abs(bq.main._micros(i)));
 
 CREATE MACRO _offset(seconds, separator, minutes) AS
     CASE WHEN seconds < 0 THEN '-' ELSE '+' END

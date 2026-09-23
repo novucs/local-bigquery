@@ -47,7 +47,6 @@ CASES = [
         "SELECT SUM(x) FROM UNNEST([NUMERIC '1.1', NUMERIC '2.2']) AS x",
         Decimal("3.3"),
         types="NUMERIC",
-        xfail="NUMERIC literal typed DECIMAL(18,3)",
     ),
     q("SELECT AVG(x) FROM UNNEST([1, 2]) AS x", 1.5, types="FLOAT64"),
     q(

@@ -19,7 +19,6 @@ CASES = [
         r"SELECT b'\x00\xff'",
         b"\x00\xff",
         types="BYTES",
-        xfail="byte escapes fail to parse",
     ),
     q("SELECT DATE '2020-02-29'", datetime.date(2020, 2, 29), types="DATE"),
     q("SELECT TIME '12:34:56.789'", datetime.time(12, 34, 56, 789000), types="TIME"),
@@ -55,13 +54,13 @@ CASES = [
         "SELECT BIGNUMERIC '0.12345678901234567890123456789012345678'",
         Decimal("0.12345678901234567890123456789012345678"),
         types="BIGNUMERIC",
-        xfail="BIGNUMERIC mapped to DECIMAL(38,5)",
+        xfail="BIGNUMERIC limited to DECIMAL(38, 18)",
     ),
     q(
         "SELECT BIGNUMERIC '1e40'",
         Decimal("1e40"),
         types="BIGNUMERIC",
-        xfail="BIGNUMERIC mapped to DECIMAL(38,5)",
+        xfail="BIGNUMERIC limited to DECIMAL(38, 18)",
     ),
     q('SELECT JSON \'{"a": [1, "x"]}\'', {"a": [1, "x"]}, types="JSON"),
     q(
@@ -80,7 +79,6 @@ CASES = [
     q(
         "SELECT NUMERIC '99999999999999999999999999999.999999999'",
         Decimal("99999999999999999999999999999.999999999"),
-        xfail="NUMERIC mapped to DECIMAL(18,3)",
     ),
     q(
         "SELECT DATE '0001-01-01', DATE '9999-12-31'",
@@ -111,7 +109,6 @@ CASES = [
     q(
         "SELECT INTERVAL -3 MINUTE",
         relativedelta(minutes=-3),
-        xfail="INTERVAL results crash encoder",
     ),
     q(
         "SELECT INTERVAL 1 DAY - INTERVAL 2 HOUR",
@@ -180,7 +177,7 @@ CASES = [
     q("SELECT SAFE_CAST('abc' AS INT64)", None),
     q("SELECT SAFE_CAST(NULL AS INT64)", None),
     q("SELECT CAST(1.5 AS INT64), CAST(-1.5 AS INT64)", rows=[(2, -2)]),
-    q("SELECT CAST(2.5 AS INT64)", 3, xfail="FLOAT64 to INT64 rounds half to even"),
+    q("SELECT CAST(2.5 AS INT64)", 3),
     q("SELECT CAST(TRUE AS INT64), CAST(0 AS BOOL)", rows=[(1, False)]),
     q("SELECT CAST('true' AS BOOL)", True),
     q("SELECT CAST('2020-01-02' AS DATE)", datetime.date(2020, 1, 2)),
@@ -211,7 +208,6 @@ CASES = [
     q(
         "SELECT CAST('1.0000000005' AS NUMERIC)",
         Decimal("1.000000001"),
-        xfail="NUMERIC mapped to DECIMAL(18,3)",
     ),
     q(
         "SELECT CAST('1.005' AS NUMERIC(10, 2))",
@@ -223,19 +219,16 @@ CASES = [
         "SELECT PARSE_NUMERIC('123.45')",
         Decimal("123.45"),
         types="NUMERIC",
-        xfail="missing function",
     ),
     q(
         "SELECT PARSE_BIGNUMERIC('1.5')",
         Decimal("1.5"),
         types="BIGNUMERIC",
-        xfail="missing function",
     ),
     q(
         "SELECT NUMERIC '1' / 3",
         Decimal("0.333333333"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
     ),
     q(
         "SELECT CAST(1.1 AS NUMERIC) * 3",
@@ -263,7 +256,6 @@ CASES = [
         "SELECT SUM(x) FROM UNNEST([NUMERIC '1.5']) AS x",
         Decimal("1.5"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
     ),
     q("SELECT CURRENT_DATE()", types="DATE"),
     q("SELECT CURRENT_DATETIME()", types="DATETIME"),

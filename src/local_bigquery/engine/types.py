@@ -77,7 +77,7 @@ def _scalar(t: DuckDBPyType) -> tuple[str, str]:
         return "JSON", "JSON"
     if t.id == "decimal":
         precision, scale = (value for _, value in t.children)
-        if scale <= 9 and precision - scale <= 29:
+        if scale <= 9:
             return "NUMERIC", "DECIMAL(38,9)"
         return "BIGNUMERIC", str(t)
     if t.id not in SCALARS:

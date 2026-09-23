@@ -93,7 +93,32 @@ DUCKDB_ERRORS = [
         "invalidQuery",
         "Syntax error: Unexpected {name} at [{line}:{column}]",
     ),
+    (
+        re.compile(
+            r"No function matches the given name and argument types "
+            r"'(?P<name>[^(]+)\((?P<arguments>.*)\)'"
+        ),
+        "invalidQuery",
+        "No matching signature for {kind} {function} for argument types: {arguments}",
+    ),
 ]
+ARGUMENT_TYPES = {
+    "VARCHAR": "STRING",
+    "STRING_LITERAL": "STRING",
+    "INTEGER_LITERAL": "INT64",
+    "TINYINT": "INT64",
+    "SMALLINT": "INT64",
+    "INTEGER": "INT64",
+    "BIGINT": "INT64",
+    "HUGEINT": "INT64",
+    "FLOAT": "FLOAT64",
+    "DOUBLE": "FLOAT64",
+    "DECIMAL": "NUMERIC",
+    "BOOLEAN": "BOOL",
+    "BLOB": "BYTES",
+    "TIMESTAMP": "DATETIME",
+    "TIMESTAMP WITH TIME ZONE": "TIMESTAMP",
+}
 DUCKDB_PREFIX = re.compile(r"^[A-Za-z ]+ Error: ")
 
 
@@ -114,9 +139,21 @@ def from_duckdb(error: Exception, context=None) -> BigQueryError:
             table = name
             if context is not None and "." not in name:
                 table = f"{context.project_id}:{context.dataset_id}.{name}"
+            arguments = ", ".join(
+                ARGUMENT_TYPES.get(argument.split("(")[0], argument.split("(")[0])
+                for argument in (match.groupdict().get("arguments") or "").split(", ")
+            )
             return BigQueryError(
                 reason,
-                template.format(name=name, table=table, line=line, column=column),
+                template.format(
+                    name=name,
+                    table=table,
+                    line=line,
+                    column=column,
+                    kind="function" if name[:1].isalpha() else "operator",
+                    function=name.upper(),
+                    arguments=arguments,
+                ),
             )
     if "already exists" in first:
         reason = "duplicate"

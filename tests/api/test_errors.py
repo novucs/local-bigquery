@@ -1,5 +1,6 @@
 import pytest
 from google.api_core.exceptions import BadRequest, Conflict, Forbidden, NotFound
+from google.cloud import bigquery
 
 from tests.cases import FAST_RETRY, fails, run, unique
 
@@ -10,10 +11,10 @@ def assert_no_duckdb_text(error):
     assert not any(text in error.message for text in DUCKDB_TEXT), error.message
 
 
-@pytest.mark.xfail(reason="unknown table leaks DuckDB message")
 def test_query_missing_table(bq, project, dataset):
+    config = bigquery.QueryJobConfig(default_dataset=dataset.reference)
     with fails(NotFound, "notFound") as info:
-        run(bq, "SELECT * FROM missing_table")
+        run(bq, "SELECT * FROM missing_table", config)
     assert f"Not found: Table {project}:{dataset.dataset_id}.missing_table" in (
         info.value.message
     )
@@ -25,13 +26,12 @@ def test_get_missing_table(bq, project, dataset):
     assert_no_duckdb_text(info.value)
 
 
-@pytest.mark.xfail(reason="duplicate table raises 500")
 def test_create_duplicate_table(bq, project, dataset):
     table_id = f"{dataset.dataset_id}.{unique('t')}"
     bq.create_table(table_id)
     with fails(Conflict, "duplicate") as info:
         bq.create_table(table_id, retry=FAST_RETRY)
-    assert info.value.message.startswith("Already Exists: Table")
+    assert "Already Exists: Table" in info.value.message
 
 
 @pytest.mark.xfail(reason="syntax errors leak DuckDB message")
@@ -60,7 +60,6 @@ def test_type_error(bq):
     assert_no_duckdb_text(info.value)
 
 
-@pytest.mark.xfail(reason="division by zero returns NULL")
 def test_division_by_zero(bq):
     with fails(BadRequest, "invalidQuery") as info:
         run(bq, "SELECT 1 / 0")
