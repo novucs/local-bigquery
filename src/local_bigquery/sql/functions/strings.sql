@@ -59,3 +59,16 @@ CREATE MACRO from_base32(s) AS _from_base32(s);
 
 CREATE MACRO code_points_to_bytes(points) AS
     unhex(array_to_string(list_transform(points, p -> lpad(to_hex(p), 2, '0')), ''));
+
+CREATE MACRO _search_tokens(s) AS list_filter(
+    regexp_split_to_array(lower(s), '[\s\[\]<>(){}|!;,''"`*&?+/:=@.\-$%\\_]+'), t -> t <> ''
+);
+
+CREATE MACRO search(data, query) AS list_has_all(
+    bq.main._search_tokens((
+        SELECT string_agg(json_extract_string(value, '$'), ' ')
+        FROM json_tree(to_json(data))
+        WHERE type = 'VARCHAR'
+    )),
+    bq.main._search_tokens(query)
+);
