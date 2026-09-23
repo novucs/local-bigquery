@@ -62,6 +62,11 @@ def not_implemented(feature: str) -> BigQueryError:
 
 DUCKDB_ERRORS = [
     (
+        re.compile(r"More than one row returned by a (?P<name>subquery)"),
+        "invalidQuery",
+        "Scalar subquery produced more than one element",
+    ),
+    (
         re.compile(r'Table with name "?(?P<name>[^"\s]+)"? already exists'),
         "duplicate",
         "Already Exists: Table {table}",

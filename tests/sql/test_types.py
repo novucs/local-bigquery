@@ -279,7 +279,6 @@ CASES = [
         "SELECT STRUCT(1, 'x')",
         {"_field_1": 1, "_field_2": "x"},
         types="STRUCT<_field_1 INT64, _field_2 STRING>",
-        xfail="anonymous struct fields not named _field_N",
     ),
     q(
         "SELECT [STRUCT(1 AS x)]",
@@ -292,7 +291,7 @@ CASES = [
         types="STRUCT<xs ARRAY<INT64>>",
     ),
     q("SELECT ARRAY<STRING>[]", [], types="ARRAY<STRING>"),
-    q("SELECT [[1]]", error="invalidQuery", xfail="nested arrays accepted"),
+    q("SELECT [[1]]", error="invalidQuery"),
 ]
 
 

@@ -89,12 +89,16 @@ def _element(t: DuckDBPyType) -> DuckDBPyType | None:
     return t.children[0][1] if t.id in ("list", "array") else None
 
 
+def _children(t: DuckDBPyType) -> list[tuple[str, DuckDBPyType]]:
+    return [(n or f"_field_{i + 1}", c) for i, (n, c) in enumerate(t.children)]
+
+
 def field(name: str, t: DuckDBPyType, required: bool = False) -> TableFieldSchema:
     if element := _element(t):
         return field(name, element).model_copy(update={"mode": "REPEATED"})
     mode = "REQUIRED" if required else "NULLABLE"
     if t.id == "struct":
-        fields = [field(child, child_type) for child, child_type in t.children]
+        fields = [field(child, child_type) for child, child_type in _children(t)]
         return TableFieldSchema(name=name, type="RECORD", mode=mode, fields=fields)
     return TableFieldSchema(name=name, type=_scalar(t)[0], mode=mode)
 
@@ -103,9 +107,7 @@ def normalised(t: DuckDBPyType) -> str:
     if element := _element(t):
         return f"{normalised(element)}[]"
     if t.id == "struct":
-        return (
-            f"STRUCT({', '.join(f'{quote(n)} {normalised(c)}' for n, c in t.children)})"
-        )
+        return f"STRUCT({', '.join(f'{quote(n)} {normalised(c)}' for n, c in _children(t))})"
     return _scalar(t)[1]
 
 

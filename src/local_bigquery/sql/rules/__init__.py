@@ -1,14 +1,26 @@
 from local_bigquery.sql.rules import (
+    arrays,
     columns,
     datetime,
     external,
     literals,
     parameters,
+    query,
     safe,
     tables,
 )
 
-MODULES = [columns, tables, datetime, external, parameters, literals, safe]
+MODULES = [
+    columns,
+    query,
+    arrays,
+    tables,
+    datetime,
+    external,
+    parameters,
+    literals,
+    safe,
+]
 STATEMENT_RULES = [
     rule for module in MODULES for rule in getattr(module, "STATEMENT_RULES", [])
 ]
