@@ -53,7 +53,6 @@ CASES = [
         "SELECT AVG(x) FROM UNNEST([NUMERIC '1', NUMERIC '2']) AS x",
         Decimal("1.5"),
         types="NUMERIC",
-        xfail="AVG of NUMERIC returns FLOAT64",
     ),
     q("SELECT AVG(x) FROM UNNEST(ARRAY<INT64>[]) AS x", None),
     q("SELECT MIN(x), MAX(x) FROM UNNEST(['b', 'a', 'c']) AS x", rows=[("a", "c")]),

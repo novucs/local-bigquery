@@ -233,7 +233,7 @@ CASES = [
         Decimal("2.5"),
         types="NUMERIC",
     ),
-    q("SELECT NUMERIC '1.5' + 1.0", 2.5, types="FLOAT64"),
+    q("SELECT NUMERIC '1.5' + 1.0", Decimal("2.5"), types="NUMERIC"),
     q("SELECT 1 + 1.5", 2.5, types="FLOAT64"),
     q("SELECT IF(TRUE, 1, 2.5)", 1.0, types="FLOAT64"),
     q("SELECT [1, 2.5]", [1.0, 2.5], types="ARRAY<FLOAT64>"),
