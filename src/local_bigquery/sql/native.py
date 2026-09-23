@@ -188,7 +188,12 @@ def zone_name(seconds: float, zone: str) -> str:
         return zone
 
 
+def raise_error(message: str):
+    raise ValueError(message)
+
+
 FUNCTIONS = {
+    "_raise": (raise_error, ["VARCHAR"], "NULL"),
     "_zone_name": (zone_name, ["DOUBLE", "VARCHAR"], "VARCHAR"),
     "_json_exact": (json_exact, ["VARCHAR"], "BOOLEAN"),
     "_farm_fingerprint": (farm_fingerprint, ["BLOB"], "BIGINT"),

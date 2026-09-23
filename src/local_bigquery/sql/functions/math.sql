@@ -18,13 +18,13 @@ CREATE MACRO parse_numeric(s) AS CAST(trim(s) AS DECIMAL(38, 9));
 CREATE MACRO parse_bignumeric(s) AS CAST(trim(s) AS DECIMAL(38, 18));
 CREATE MACRO _shift_left(a, b) AS
     CASE
-        WHEN b < 0 THEN error('Bit shift by negative value is not allowed')
+        WHEN b < 0 THEN _raise('Bit shift by negative value is not allowed')
         WHEN b >= 64 THEN 0
         ELSE CAST(a AS BIGINT) << b
     END;
 CREATE MACRO _shift_right(a, b) AS
     CASE
-        WHEN b < 0 THEN error('Bit shift by negative value is not allowed')
+        WHEN b < 0 THEN _raise('Bit shift by negative value is not allowed')
         WHEN b >= 64 THEN 0
         WHEN b = 0 THEN CAST(a AS BIGINT)
         ELSE (CAST(a AS BIGINT) >> b) & (9223372036854775807 >> (b - 1))

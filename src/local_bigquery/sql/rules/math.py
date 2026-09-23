@@ -55,7 +55,7 @@ def _nonzero(node: exp.Binary, value: exp.Expression) -> exp.Expression:
     )
     zero = exp.EQ(this=right, expression=exp.Literal.number(0))
     return exp.Case(
-        ifs=[exp.If(this=zero, true=exp.func("error", message))], default=value
+        ifs=[exp.If(this=zero, true=exp.func("_raise", message))], default=value
     )
 
 
