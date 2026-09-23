@@ -72,7 +72,6 @@ CASES = [
     q(
         "SELECT SAFE.LN(1 / 0)",
         error="division by zero",
-        xfail="SAFE. prefix unsupported",
     ),
     q("SELECT ROUND(2.5), ROUND(-2.5), ROUND(3.5)", rows=[(3.0, -3.0, 4.0)]),
     q("SELECT ROUND(1.2345, 2)", 1.23),

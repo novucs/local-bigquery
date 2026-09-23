@@ -38,4 +38,13 @@ def string(node: exp.Expression, context) -> exp.Expression:
     return node
 
 
-NODE_RULES = [equality, string_input, string]
+def wide_number_mode(node: exp.Expression, context) -> exp.Expression:
+    if isinstance(node, exp.Anonymous) and node.name.lower() == "bq.main.parse_json":
+        node.set(
+            "expressions",
+            [a.expression if isinstance(a, exp.Kwarg) else a for a in node.expressions],
+        )
+    return node
+
+
+NODE_RULES = [equality, string_input, string, wide_number_mode]

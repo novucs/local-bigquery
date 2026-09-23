@@ -34,7 +34,7 @@ def test_create_duplicate_table(bq, project, dataset):
     assert "Already Exists: Table" in info.value.message
 
 
-@pytest.mark.xfail(reason="syntax errors leak DuckDB message")
+@pytest.mark.xfail(reason="syntax error positions differ from BigQuery")
 def test_syntax_error(bq):
     with fails(BadRequest, "invalidQuery") as info:
         run(bq, "SELEC 1")

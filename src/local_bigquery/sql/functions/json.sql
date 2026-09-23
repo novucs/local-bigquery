@@ -123,10 +123,19 @@ CREATE MACRO json_array_insert(j, path, value) AS bq.main._json_put(
     ))
 );
 
-CREATE MACRO parse_json(s) AS CASE
+CREATE MACRO _parse_json_exact(s) AS CASE
     WHEN EXISTS (
         SELECT 1 FROM json_tree(json(s))
         WHERE type = 'DOUBLE' AND regexp_matches(value::VARCHAR, '^-?[0-9]+$')
     ) THEN error('Invalid input to PARSE_JSON: number cannot be stored without loss of precision')
     ELSE json(s)
+END;
+
+CREATE MACRO parse_json(s) AS bq.main._parse_json_exact(s),
+(s, mode) AS CASE lower(mode)
+    WHEN 'exact' THEN bq.main._parse_json_exact(s)
+    WHEN 'round' THEN CASE
+        WHEN json_type(json(s)) IN ('DOUBLE', 'UBIGINT', 'HUGEINT') THEN to_json(CAST(json(s) AS DOUBLE))
+        ELSE json(s) END
+    ELSE error('Invalid wide_number_mode: ' || mode)
 END;

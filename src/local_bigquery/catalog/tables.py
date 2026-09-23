@@ -66,13 +66,17 @@ def defaults(project_id: str, dataset_id: str, table_id: str) -> dict:
     }
 
 
-def _overlay(fields: list[dict], extras: list[dict]) -> list[dict]:
+def _overlay(
+    fields: list[dict], extras: list[dict], nested: bool = False
+) -> list[dict]:
     extras_by_name = {extra["name"].casefold(): extra for extra in extras}
     merged = []
     for field in fields:
         extra = extras_by_name.get(field["name"].casefold(), {})
-        nested = _overlay(field.get("fields", []), extra.get("fields", []))
-        field = extra | field | ({"fields": nested} if nested else {})
+        children = _overlay(field.get("fields", []), extra.get("fields", []), True)
+        field = extra | field | ({"fields": children} if children else {})
+        if nested and extra.get("mode") == "REQUIRED":
+            field["mode"] = "REQUIRED"
         merged.append(field)
     return merged
 

@@ -13,7 +13,6 @@ CASES = [
     q(
         "SELECT PARSE_JSON('922337203685477580701', wide_number_mode => 'round')",
         9.223372036854776e20,
-        xfail="wide_number_mode unsupported",
     ),
     q("SELECT PARSE_JSON('not json')", error="invalidQuery"),
     q("SELECT JSON_OBJECT('a', 1, 'b', 'x')", {"a": 1, "b": "x"}),

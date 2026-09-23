@@ -66,7 +66,6 @@ def test_create_returns_server_populated_fields(bq, dataset):
     assert table.num_rows == 0
 
 
-@pytest.mark.xfail(reason="GEOGRAPHY column type unsupported")
 def test_schema_round_trips_every_type(bq, dataset):
     table = create(bq, dataset, ALL_TYPES)
     fetched = bq.get_table(table)
