@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 from google.cloud import bigquery
 from google.cloud.bigquery import ArrayQueryParameter as Array
+from google.cloud.bigquery import RangeQueryParameter as Range
 from google.cloud.bigquery import ScalarQueryParameter as Scalar
 from google.cloud.bigquery import StructQueryParameter as Struct
 
@@ -124,6 +125,35 @@ CASES = [
         "SELECT x FROM UNNEST([1, 2, 3]) AS x ORDER BY x LIMIT @n",
         rows=[(1,), (2,)],
         params=[Scalar("n", "INT64", 2)],
+    ),
+    q(
+        "SELECT RANGE_START(@r), RANGE_END(@r), RANGE_CONTAINS(@r, DATE '2024-01-02')",
+        rows=[(datetime.date(2024, 1, 1), datetime.date(2024, 2, 1), True)],
+        params=[
+            Range("DATE", datetime.date(2024, 1, 1), datetime.date(2024, 2, 1), "r")
+        ],
+    ),
+    q(
+        "SELECT @r",
+        {"start": datetime.date(2024, 1, 1), "end": None},
+        types="RANGE",
+        params=[Range("DATE", datetime.date(2024, 1, 1), name="r")],
+    ),
+    q(
+        "SELECT RANGE_START(?), RANGE_END(?)",
+        rows=[(datetime.datetime(2024, 1, 1, 10, 30), None)],
+        params=[
+            Range("DATETIME", datetime.datetime(2024, 1, 1, 10, 30)),
+            Range("DATETIME", datetime.datetime(2024, 1, 1, 10, 30)),
+        ],
+    ),
+    q(
+        "SELECT RANGE_START(@r) IS NULL, RANGE_END(@r)",
+        rows=[(True, datetime.datetime(2024, 1, 1, tzinfo=UTC))],
+        params=[
+            Range("TIMESTAMP", end=datetime.datetime(2024, 1, 1, tzinfo=UTC), name="r")
+        ],
+        types=("BOOL", "TIMESTAMP"),
     ),
     q("SELECT 1", 1, params=[Scalar("unused", "INT64", 1)]),
     q("SELECT @missing", error="missing"),
