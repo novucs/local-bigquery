@@ -10,6 +10,15 @@ KEYS = {
     "tables": ("project_id", "dataset_id", "table_id"),
     "routines": ("project_id", "dataset_id", "routine_id"),
     "row_access_policies": ("project_id", "dataset_id", "table_id", "policy_id"),
+    "models": ("project_id", "dataset_id", "model_id"),
+}
+COLLECTIONS = {
+    "project_id": "projects",
+    "dataset_id": "datasets",
+    "table_id": "tables",
+    "routine_id": "routines",
+    "policy_id": "rowAccessPolicies",
+    "model_id": "models",
 }
 
 
@@ -81,3 +90,10 @@ def save(kind: str, resource: dict, *keys: str) -> dict:
 
 def delete(kind: str, *keys: str):
     execute(f"DELETE FROM emulator.{kind} WHERE {_where(kind, len(keys))}", list(keys))
+    names = [COLLECTIONS[key] for key in KEYS[kind]]
+    path = "".join(f"{name}/{key}/" for name, key in zip(names, keys))
+    path += "".join(f"{name}/" for name in names[len(keys) : len(keys) + 1])
+    execute(
+        "DELETE FROM emulator.iam_policies WHERE starts_with(resource || '/', ?)",
+        [path],
+    )

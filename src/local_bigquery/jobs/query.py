@@ -6,7 +6,14 @@ import duckdb
 import sqlglot
 from sqlglot import exp
 
-from local_bigquery.catalog import datasets, metadata, row_access, routines, tables
+from local_bigquery.catalog import (
+    datasets,
+    metadata,
+    models,
+    row_access,
+    routines,
+    tables,
+)
 from local_bigquery.catalog import ddl as catalog_ddl
 from local_bigquery.engine import database, types
 from local_bigquery.engine.database import quote
@@ -261,6 +268,17 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
     statistics = {"statementType": statement_type(tree)}
     if isinstance(tree, DDL):
         statistics |= _ddl(tree, context)
+    if tree.args.get("kind") == "MODEL":
+        fields = isinstance(tree, exp.Create) and _declared_schema(cur, tree, context)
+        models.apply(
+            tree,
+            context.project_id,
+            context.dataset_id,
+            fields or [],
+            _evaluator(cur),
+            dry_run,
+        )
+        return statistics
     if isinstance(tree, exp.Merge) and not dry_run:
         with database.writing(*_target(tree, context)):
             return statistics | merge.run(cur, tree, context)
@@ -427,3 +445,8 @@ def _execute(
 
 def translate_view(project_id: str, dataset_id: str, sql: str) -> str:
     return translate(parse(sql)[0], Context(project_id, dataset_id))[0]
+
+
+def run_ddl(project_id: str, sql: str):
+    with database.cursor() as cur:
+        execute(cur, project_id, None, {"query": sql})

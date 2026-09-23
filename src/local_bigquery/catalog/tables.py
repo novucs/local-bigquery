@@ -10,16 +10,15 @@ from local_bigquery.errors import (
 )
 from local_bigquery.models import Table, TableFieldSchema
 
-DERIVED = (
-    "schema",
+STORAGE_STATS = (
     "numRows",
     "numBytes",
-    "type",
     "numLongTermBytes",
     "numTotalLogicalBytes",
     "numActiveLogicalBytes",
     "numLongTermLogicalBytes",
 )
+DERIVED = ("schema", "type", *STORAGE_STATS)
 STORED_TYPES = ("MATERIALIZED_VIEW", "SNAPSHOT")
 RESULTS = "_results"
 INGESTION_TIME = "_PARTITIONTIME"
@@ -145,8 +144,32 @@ def _type(resource: dict, kind: str) -> str:
     return resource["type"] if resource.get("type") in STORED_TYPES else kind
 
 
-def get(project_id: str, dataset_id: str, table_id: str) -> Table:
-    return Table.model_validate(load(project_id, dataset_id, table_id))
+def _select(fields: list[dict], paths: list[list[str]]) -> list[dict]:
+    selected = []
+    for field in fields:
+        rest = [path[1:] for path in paths if path[0] == field["name"].casefold()]
+        if not rest:
+            continue
+        if [] not in rest:
+            field = field | {"fields": _select(field.get("fields", []), rest)}
+        selected.append(field)
+    return selected
+
+
+def get(
+    project_id: str,
+    dataset_id: str,
+    table_id: str,
+    selected_fields: str | None = None,
+    view: str | None = None,
+) -> Table:
+    resource = load(project_id, dataset_id, table_id)
+    if view == "BASIC":
+        resource = {k: v for k, v in resource.items() if k not in STORAGE_STATS}
+    if selected_fields:
+        paths = [f.strip().casefold().split(".") for f in selected_fields.split(",")]
+        resource["schema"] = {"fields": _select(resource["schema"]["fields"], paths)}
+    return Table.model_validate(resource)
 
 
 def list_(project_id: str, dataset_id: str) -> list[dict]:

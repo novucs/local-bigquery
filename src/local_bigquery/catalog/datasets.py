@@ -118,8 +118,8 @@ def check_empty(project_id: str, dataset_id: str):
 
 
 def forget(project_id: str, dataset_id: str):
-    metadata.delete("tables", project_id, dataset_id)
-    metadata.delete("datasets", project_id, dataset_id)
+    for kind in metadata.KEYS:
+        metadata.delete(kind, project_id, dataset_id)
 
 
 def delete(project_id: str, dataset_id: str, delete_contents: bool):

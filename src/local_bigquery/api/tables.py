@@ -32,8 +32,14 @@ def insert_table(project_id: str, dataset_id: str, body: dict = Body()) -> Table
 
 
 @router.get(TABLE)
-def get_table(project_id: str, dataset_id: str, table_id: str) -> Table:
-    return tables.get(project_id, dataset_id, table_id)
+def get_table(
+    project_id: str,
+    dataset_id: str,
+    table_id: str,
+    selectedFields: str | None = None,
+    view: str | None = None,
+) -> Table:
+    return tables.get(project_id, dataset_id, table_id, selectedFields, view)
 
 
 @router.patch(TABLE)

@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from local_bigquery.api import (
     datasets,
+    iam,
     jobs,
     models,
     projects,
@@ -108,7 +109,16 @@ def stub(method_id: str):
     return handler
 
 
-for module in (projects, datasets, tables, jobs, models, routines, row_access_policies):
+for module in (
+    projects,
+    datasets,
+    tables,
+    jobs,
+    models,
+    routines,
+    row_access_policies,
+    iam,
+):
     app.include_router(
         module.router, prefix=PREFIX, dependencies=[Depends(valid_project)]
     )
@@ -118,9 +128,8 @@ app.include_router(
 )
 
 for method in methods(DISCOVERY):
-    path = re.sub(r"\{\+resource\}", "{resource:path}", method["path"])
     app.add_api_route(
-        f"{PREFIX}/{path.replace('{+', '{')}",
+        f"{PREFIX}/{method['path'].replace('{+', '{')}",
         stub(method["id"]),
         methods=[method["httpMethod"]],
         include_in_schema=False,
