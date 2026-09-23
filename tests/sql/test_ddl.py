@@ -71,7 +71,6 @@ def test_create_existing_table(bq, table):
         run(bq, f"CREATE TABLE {table} (x INT64)")
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_create_table_options(bq, table):
     run(
         bq,
@@ -93,7 +92,6 @@ def test_create_table_options(bq, table):
     assert fetched.schema[0].description == "col"
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_create_table_partitioned_and_clustered(bq, table):
     run(
         bq,
@@ -120,7 +118,6 @@ def test_create_table_as_select(bq, table):
     ]
 
 
-@pytest.mark.xfail(reason="CTAS column list unsupported")
 def test_create_table_as_select_with_column_list(bq, table):
     run(bq, f"CREATE TABLE {table} (a NUMERIC, b STRING) AS SELECT 1, 'x'")
     assert schema(bq, table) == [
@@ -129,7 +126,6 @@ def test_create_table_as_select_with_column_list(bq, table):
     ]
 
 
-@pytest.mark.xfail(reason="CREATE TABLE COPY unsupported")
 def test_create_table_like_and_copy(bq, dataset, table):
     run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x")
     like = f"{dataset.dataset_id}.{unique('like')}"
@@ -146,7 +142,6 @@ def test_create_temp_table_in_script(bq):
     assert [tuple(r.values()) for r in result] == [(2,)]
 
 
-@pytest.mark.xfail(reason="statement type always SELECT")
 def test_create_view(bq, dataset, table):
     run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x UNION ALL SELECT 2")
     view = f"{dataset.dataset_id}.{unique('v')}"
@@ -165,7 +160,6 @@ def test_create_or_replace_view(bq, dataset):
     assert rows(bq, f"SELECT x FROM {view}") == [(2,)]
 
 
-@pytest.mark.xfail(reason="multiple ALTER actions unsupported")
 def test_alter_table_add_column(bq, table):
     run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x")
     alter = run_job(bq, f"ALTER TABLE {table} ADD COLUMN y STRING, ADD COLUMN z INT64")
@@ -190,7 +184,6 @@ def test_alter_table_drop_and_rename_column(bq, table):
     assert rows(bq, f"SELECT z FROM {table}") == [(2,)]
 
 
-@pytest.mark.xfail(reason="ALTER TABLE SET OPTIONS mistranslated")
 def test_alter_table_set_options(bq, table):
     run(bq, f"CREATE TABLE {table} (x INT64)")
     run(
@@ -238,7 +231,6 @@ def test_drop_table(bq, table):
         bq.get_table(table)
 
 
-@pytest.mark.xfail(reason="ddlOperationPerformed not reported")
 def test_drop_table_if_exists_skips(bq, table):
     assert (
         run_job(bq, f"DROP TABLE IF EXISTS {table}").ddl_operation_performed == "SKIP"
@@ -259,7 +251,6 @@ def test_drop_view(bq, dataset):
         bq.get_table(view)
 
 
-@pytest.mark.xfail(reason="statement type always SELECT")
 def test_schema_lifecycle(bq):
     schema_id = unique("schema")
     create = run_job(bq, f"CREATE SCHEMA {schema_id} OPTIONS (description = 'a')")
@@ -272,7 +263,6 @@ def test_schema_lifecycle(bq):
         bq.get_dataset(schema_id)
 
 
-@pytest.mark.xfail(reason="non-empty DROP SCHEMA not resourceInUse")
 def test_drop_non_empty_schema_requires_cascade(bq):
     schema_id = unique("schema")
     run(bq, f"CREATE SCHEMA {schema_id}")

@@ -4,7 +4,15 @@ from sqlglot import exp
 from local_bigquery.errors import BigQueryError
 
 
+def system_variable(node: exp.Expression) -> bool:
+    return isinstance(node, exp.Parameter) and (
+        isinstance(node.this, exp.Parameter) or isinstance(node.parent, exp.Parameter)
+    )
+
+
 def parameter(node: exp.Expression, context) -> exp.Expression:
+    if system_variable(node):
+        return node
     if isinstance(node, exp.Parameter):
         name = node.name
     elif isinstance(node, exp.Placeholder):

@@ -1,11 +1,17 @@
+import json
+
 import duckdb
 from sqlglot import exp
 
 from local_bigquery.catalog import datasets, tables
+from local_bigquery.catalog import ddl as catalog_ddl
 from local_bigquery.engine import database, results, types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import already_exists, from_duckdb, not_found
+from local_bigquery.jobs import merge
 from local_bigquery.sql import js, params
+from local_bigquery.sql.dialect import DuckDBDialect
+from local_bigquery.sql.rules import ddl
 from local_bigquery.sql.translate import Context, parse, translate
 
 STATEMENT_TYPES = {
@@ -33,6 +39,8 @@ def statement_type(tree: exp.Expression) -> str:
         kind = (tree.args.get("kind") or "TABLE").upper()
         if tree.find(exp.MaterializedProperty):
             kind = "MATERIALIZED_VIEW"
+        if tree.meta.get("snapshot"):
+            kind = "SNAPSHOT_TABLE"
         if isinstance(tree, exp.Create) and kind == "TABLE" and tree.expression:
             return "CREATE_TABLE_AS_SELECT"
         return f"{verb}_{kind}"
@@ -68,7 +76,11 @@ def _ddl(tree: exp.Expression, context: Context) -> dict:
         key = "ddlTargetTable"
     else:
         return {}
-    if isinstance(tree, exp.Drop):
+    if isinstance(tree, exp.Drop) and not found and tree.args.get("exists"):
+        operation = "SKIP"
+    elif isinstance(tree, exp.Drop):
+        if kind == "SCHEMA" and found and not tree.args.get("cascade"):
+            datasets.check_empty(*reference.values())
         operation = "DROP"
     elif isinstance(tree, exp.Alter):
         operation = "ALTER"
@@ -104,6 +116,14 @@ def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated
         results.materialise(cur, sql, table, bound, append, writer)
 
 
+def _evaluator(cur: duckdb.DuckDBPyConnection):
+    def evaluate(node: exp.Expression):
+        query = exp.select(exp.func("to_json", node.copy())).sql(dialect=DuckDBDialect)
+        return json.loads(cur.sql(query).fetchone()[0])
+
+    return evaluate
+
+
 def _statement(
     cur: duckdb.DuckDBPyConnection,
     tree: exp.Expression,
@@ -113,41 +133,48 @@ def _statement(
     dry_run: bool,
     isolated: bool,
 ) -> dict:
+    tree = ddl.normalise(tree)
     try:
-        sql, bound = translate(tree, context)
-        return _run(
-            cur, tree, sql, bound, context, destination, config, dry_run, isolated
-        )
+        return _run(cur, tree, context, destination, config, dry_run, isolated)
     except duckdb.Error as error:
         raise from_duckdb(error, context) from error
 
 
-def _run(
-    cur, tree, sql, bound, context, destination, config, dry_run, isolated
-) -> dict:
+def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
     statistics = {"statementType": statement_type(tree)}
     if isinstance(tree, DDL):
         statistics |= _ddl(tree, context)
+    if isinstance(tree, exp.Merge) and not dry_run:
+        return statistics | merge.run(cur, tree, context)
+    parts = ddl.split(tree)
     if dry_run:
-        if isinstance(tree, exp.Query):
-            relation = cur.sql(sql, params=bound)
-            fields = [
-                types.field(n, t).model_dump(exclude_none=True)
-                for n, t in zip(relation.columns, relation.types)
-            ]
-            statistics["schema"] = {"fields": fields}
-        else:
-            cur.execute(f"EXPLAIN {sql}", bound)
+        for part in parts:
+            sql, bound = translate(part, context)
+            if isinstance(part, exp.Query):
+                relation = cur.sql(sql, params=bound)
+                fields = [
+                    types.field(n, t).model_dump(exclude_none=True)
+                    for n, t in zip(relation.columns, relation.types)
+                ]
+                statistics["schema"] = {"fields": fields}
+            else:
+                cur.execute(f"EXPLAIN {sql}", bound)
         return statistics
-    if destination is not None:
-        _write(cur, sql, bound, destination, config, isolated)
-    elif type(tree) in STATEMENT_TYPES:
-        (count,) = cur.execute(sql, bound).fetchone()
-        statistics["numDmlAffectedRows"] = str(count)
-        if key := DML_COUNTS.get(type(tree)):
-            statistics["dmlStats"] = {key: str(count)}
-    else:
-        cur.execute(sql, bound)
+    if statistics.get("ddlOperationPerformed") == "SKIP":
+        return statistics
+    for part in parts:
+        sql, bound = translate(part, context)
+        if destination is not None:
+            _write(cur, sql, bound, destination, config, isolated)
+        elif type(part) in STATEMENT_TYPES:
+            (count,) = cur.execute(sql, bound).fetchone()
+            statistics["numDmlAffectedRows"] = str(count)
+            if key := DML_COUNTS.get(type(part)):
+                statistics["dmlStats"] = {key: str(count)}
+        else:
+            cur.execute(sql, bound)
+    if isinstance(tree, DDL):
+        catalog_ddl.apply(tree, context.project_id, context.dataset_id, _evaluator(cur))
     return statistics
 
 
