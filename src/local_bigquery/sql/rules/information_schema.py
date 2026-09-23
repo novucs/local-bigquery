@@ -4,7 +4,7 @@ import json
 import sqlglot
 from sqlglot import exp
 
-from local_bigquery.catalog import datasets, metadata, tables
+from local_bigquery.catalog import datasets, indexes, metadata, tables
 from local_bigquery.catalog import routines as catalog_routines
 from local_bigquery.engine import database
 from local_bigquery.engine.database import quote
@@ -53,13 +53,13 @@ def _paths(fields: list[dict], prefix: str = "") -> list[tuple[str, dict]]:
     ]
 
 
-def _timestamp(ms: str | None) -> exp.Expression:
-    if not ms:
+def _timestamp(value: str | None) -> exp.Expression:
+    if not value:
         return exp.null()
-    moment = datetime.datetime.fromtimestamp(int(ms) / 1000, datetime.UTC)
-    return exp.cast(
-        exp.Literal.string(moment.isoformat()), exp.DataType.build("TIMESTAMPTZ")
-    )
+    if value.isdigit():
+        moment = datetime.datetime.fromtimestamp(int(value) / 1000, datetime.UTC)
+        value = moment.isoformat()
+    return exp.cast(exp.Literal.string(value), exp.DataType.build("TIMESTAMPTZ"))
 
 
 def _tables(project_id: str, dataset_id: str | None) -> list[dict]:
@@ -193,25 +193,30 @@ def views(project_id: str, dataset_id: str | None):
     return columns, rows
 
 
-def _options(table: dict) -> list[tuple[str, str, str]]:
+def _options(resource: dict) -> list[tuple[str, str, str]]:
     options = []
-    if "description" in table:
-        options.append(("description", "STRING", json.dumps(table["description"])))
-    if "friendlyName" in table:
-        options.append(("friendly_name", "STRING", json.dumps(table["friendlyName"])))
-    if labels := table.get("labels"):
+    if "description" in resource:
+        options.append(("description", "STRING", json.dumps(resource["description"])))
+    if "friendlyName" in resource:
+        options.append(
+            ("friendly_name", "STRING", json.dumps(resource["friendlyName"]))
+        )
+    if "defaultTableExpirationMs" in resource:
+        days = int(resource["defaultTableExpirationMs"]) / 86_400_000
+        options.append(("default_table_expiration_days", "FLOAT64", str(days)))
+    if labels := resource.get("labels"):
         pairs = ", ".join(
             f"STRUCT({json.dumps(k)}, {json.dumps(v)})" for k, v in labels.items()
         )
         options.append(("labels", "ARRAY<STRUCT<STRING, STRING>>", f"[{pairs}]"))
-    if "expirationTime" in table:
+    if "expirationTime" in resource:
         moment = datetime.datetime.fromtimestamp(
-            int(table["expirationTime"]) / 1000, datetime.UTC
+            int(resource["expirationTime"]) / 1000, datetime.UTC
         )
         options.append(
             ("expiration_timestamp", "TIMESTAMP", f'TIMESTAMP "{moment.isoformat()}"')
         )
-    if table.get("requirePartitionFilter"):
+    if resource.get("requirePartitionFilter"):
         options.append(("require_partition_filter", "BOOL", "true"))
     return options
 
@@ -222,6 +227,166 @@ def table_options(project_id: str, dataset_id: str | None):
         _identity(t) + list(option)
         for t in _tables(project_id, dataset_id)
         for option in _options(t)
+    ]
+    return columns, rows
+
+
+def schemata_options(project_id: str, dataset_id: str | None):
+    columns = [
+        "catalog_name",
+        "schema_name",
+        "option_name",
+        "option_type",
+        "option_value",
+    ]
+    rows = [
+        [project_id, d.datasetReference.datasetId, *option]
+        for d in datasets.list_(project_id, all=True)
+        for option in _options(d.model_dump(exclude_none=True))
+    ]
+    return columns, rows
+
+
+def _keys(table: dict):
+    keys = table.get("tableConstraints") or {}
+    if primary := keys.get("primaryKey"):
+        name = f"{table['tableReference']['tableId']}.pk$"
+        yield name, "PRIMARY KEY", primary["columns"], None
+    for key in keys.get("foreignKeys") or []:
+        pairs = key["columnReferences"]
+        referenced = key["referencedTable"]
+        yield (
+            key.get("name"),
+            "FOREIGN KEY",
+            [pair["referencingColumn"] for pair in pairs],
+            (list(referenced.values()), [pair["referencedColumn"] for pair in pairs]),
+        )
+
+
+def table_constraints(project_id: str, dataset_id: str | None):
+    columns = [
+        "constraint_catalog",
+        "constraint_schema",
+        "constraint_name",
+        *IDENTITY,
+        "constraint_type",
+        "is_deferrable",
+        "initially_deferred",
+        "enforced",
+    ]
+    rows = [
+        _identity(t)[:2] + [name] + _identity(t) + [kind, "NO", "NO", "NO"]
+        for t in _tables(project_id, dataset_id)
+        for name, kind, _, _ in _keys(t)
+    ]
+    return columns, rows
+
+
+def key_column_usage(project_id: str, dataset_id: str | None):
+    columns = [
+        "constraint_catalog",
+        "constraint_schema",
+        "constraint_name",
+        *IDENTITY,
+        "column_name",
+        "ordinal_position INT64",
+        "position_in_unique_constraint INT64",
+    ]
+    rows = [
+        _identity(t)[:2]
+        + [name]
+        + _identity(t)
+        + [column, position, position if referenced else None]
+        for t in _tables(project_id, dataset_id)
+        for name, _, key_columns, referenced in _keys(t)
+        for position, column in enumerate(key_columns, start=1)
+    ]
+    return columns, rows
+
+
+def constraint_column_usage(project_id: str, dataset_id: str | None):
+    columns = [
+        *IDENTITY,
+        "column_name",
+        "constraint_catalog",
+        "constraint_schema",
+        "constraint_name",
+    ]
+    rows = [
+        identity + [column] + _identity(t)[:2] + [name]
+        for t in _tables(project_id, dataset_id)
+        for name, _, key_columns, referenced in _keys(t)
+        for identity, used in [referenced or (_identity(t), key_columns)]
+        for column in used
+    ]
+    return columns, rows
+
+
+def materialized_views(project_id: str, dataset_id: str | None):
+    columns = [
+        *IDENTITY,
+        "last_refresh_time TIMESTAMP",
+        "refresh_watermark TIMESTAMP",
+    ]
+    rows = [
+        _identity(t) + [_timestamp(t.get("lastModifiedTime"))] * 2
+        for t in _tables(project_id, dataset_id)
+        if t["type"] == "MATERIALIZED_VIEW"
+    ]
+    return columns, rows
+
+
+def table_snapshots(project_id: str, dataset_id: str | None):
+    columns = [
+        *IDENTITY,
+        "base_table_catalog",
+        "base_table_schema",
+        "base_table_name",
+        "snapshot_time TIMESTAMP",
+    ]
+    rows = [
+        _identity(t)
+        + list(definition["baseTableReference"].values())
+        + [_timestamp(definition["snapshotTime"])]
+        for t in _tables(project_id, dataset_id)
+        if (definition := t.get("snapshotDefinition"))
+    ]
+    return columns, rows
+
+
+def table_storage(project_id: str, dataset_id: str | None):
+    columns = [
+        "project_id",
+        *IDENTITY,
+        "creation_time TIMESTAMP",
+        "total_rows INT64",
+        "total_partitions INT64",
+        "total_logical_bytes INT64",
+        "active_logical_bytes INT64",
+        "long_term_logical_bytes INT64",
+        "total_physical_bytes INT64",
+        "storage_last_modified_time TIMESTAMP",
+        "deleted BOOL",
+        "table_type",
+    ]
+    rows = [
+        [
+            project_id,
+            *_identity(t),
+            _timestamp(t.get("creationTime")),
+            int(t["numRows"]),
+            len(_partitions(t)),
+            size,
+            size,
+            0,
+            size,
+            _timestamp(t.get("lastModifiedTime")),
+            False,
+            TABLE_TYPES.get(t["type"], t["type"]),
+        ]
+        for t in _tables(project_id, dataset_id)
+        if t["type"] != "VIEW"
+        for size in [int(t["numBytes"])]
     ]
     return columns, rows
 
@@ -280,6 +445,78 @@ def routines(project_id: str, dataset_id: str | None):
     return columns, functions + procedures
 
 
+def _indexes(kind: str):
+    def view(project_id: str, dataset_id: str | None):
+        columns = [
+            "index_catalog",
+            "index_schema",
+            "table_name",
+            "index_name",
+            "ddl",
+            "index_status",
+            "coverage_percentage INT64",
+            "unindexed_row_count INT64",
+            "creation_time TIMESTAMP",
+            "last_modification_time TIMESTAMP",
+        ]
+        rows = [
+            _identity(t)
+            + [index["name"], index["ddl"], "ACTIVE", 100, 0]
+            + [_timestamp(index["creationTime"])] * 2
+            for t in _tables(project_id, dataset_id)
+            for index in indexes.list_(*_identity(t), kind)
+        ]
+        return columns, rows
+
+    return view
+
+
+ROUTINE_IDENTITY = ("specific_catalog", "specific_schema", "specific_name")
+
+
+def _routine_identity(routine: dict) -> list[str]:
+    return list(routine["routineReference"].values())
+
+
+def _arguments(routine: dict) -> list[tuple[int, dict]]:
+    arguments = list(enumerate(routine.get("arguments", []), start=1))
+    if "returnType" in routine:
+        return [(0, {"dataType": routine["returnType"]}), *arguments]
+    return arguments
+
+
+def parameters(project_id: str, dataset_id: str | None):
+    columns = [
+        *ROUTINE_IDENTITY,
+        "ordinal_position INT64",
+        "parameter_mode",
+        "is_result",
+        "parameter_name",
+        "data_type",
+        "parameter_default",
+        "is_aggregate",
+    ]
+    rows = [
+        _routine_identity(r)
+        + [position, argument.get("mode"), "YES" if position == 0 else "NO"]
+        + [argument.get("name"), (argument.get("dataType") or {}).get("typeKind")]
+        + [None, None]
+        for r in catalog_routines.list_(project_id, dataset_id)
+        for position, argument in _arguments(r)
+    ]
+    return columns, rows
+
+
+def routine_options(project_id: str, dataset_id: str | None):
+    columns = [*ROUTINE_IDENTITY, "option_name", "option_type", "option_value"]
+    rows = [
+        _routine_identity(r) + list(option)
+        for r in catalog_routines.list_(project_id, dataset_id)
+        for option in _options(r)
+    ]
+    return columns, rows
+
+
 def legacy_tables(project_id: str, dataset_id: str | None):
     columns = [
         "project_id",
@@ -314,6 +551,17 @@ VIEWS = {
     "TABLE_OPTIONS": table_options,
     "PARTITIONS": partitions,
     "ROUTINES": routines,
+    "PARAMETERS": parameters,
+    "ROUTINE_OPTIONS": routine_options,
+    "SCHEMATA_OPTIONS": schemata_options,
+    "TABLE_CONSTRAINTS": table_constraints,
+    "KEY_COLUMN_USAGE": key_column_usage,
+    "CONSTRAINT_COLUMN_USAGE": constraint_column_usage,
+    "MATERIALIZED_VIEWS": materialized_views,
+    "TABLE_SNAPSHOTS": table_snapshots,
+    "TABLE_STORAGE": table_storage,
+    "SEARCH_INDEXES": _indexes("SEARCH"),
+    "VECTOR_INDEXES": _indexes("VECTOR"),
     "__TABLES__": legacy_tables,
 }
 

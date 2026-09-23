@@ -107,7 +107,7 @@ def predicate(project_id: str, dataset_id: str, table_id: str) -> str | None:
     return " OR ".join(granted) or "FALSE"
 
 
-def _table(name: str, project_id: str, dataset_id: str | None) -> tuple[str, str, str]:
+def table(name: str, project_id: str, dataset_id: str | None) -> tuple[str, str, str]:
     parts = name.strip("`").split(".")
     return (
         *([project_id, dataset_id][: 3 - len(parts)]),
@@ -119,8 +119,10 @@ def ddl(
     command: str, keyword: str, project_id: str, dataset_id: str | None, dry_run: bool
 ):
     if keyword == "CREATE" and (match := CREATE.match(command)):
-        replace, if_not_exists, name, table, grantees, filter_predicate = match.groups()
-        keys = _table(table, project_id, dataset_id)
+        replace, if_not_exists, name, table_name, grantees, filter_predicate = (
+            match.groups()
+        )
+        keys = table(table_name, project_id, dataset_id)
         body = {
             "rowAccessPolicyReference": {"policyId": name},
             "filterPredicate": filter_predicate.strip(),
@@ -131,8 +133,8 @@ def ddl(
             save(*keys, body, replace=bool(replace))
         return {"statementType": "CREATE_ROW_ACCESS_POLICY"}
     if keyword == "DROP" and (match := DROP.match(command)):
-        drop_all, if_exists, name, table = match.groups()
-        keys = _table(table, project_id, dataset_id)
+        drop_all, if_exists, name, table_name = match.groups()
+        keys = table(table_name, project_id, dataset_id)
         tables.load(*keys)
         if drop_all:
             if not dry_run:

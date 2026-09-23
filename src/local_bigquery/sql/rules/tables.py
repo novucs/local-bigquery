@@ -1,5 +1,7 @@
+import datetime
 import functools
 import re
+import time
 
 import sqlglot
 from sqlglot import exp
@@ -9,6 +11,7 @@ from local_bigquery.engine import database
 from local_bigquery.errors import BigQueryError
 
 DATASET_ID = re.compile(r"^[\w-]{1,1024}$")
+DECORATOR = re.compile(r"^(.+)@(-?\d+)$")
 DML = exp.Insert | exp.Update | exp.Delete | exp.Merge | exp.TruncateTable
 
 
@@ -54,6 +57,8 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
             "(plus underscores and dashes) and must be at most 1024 characters long.",
             f"{dataset_id}.{table_id}",
         )
+    if table.args.get("when"):
+        return
     kind = tree.args.get("kind")
     if is_target and (
         isinstance(tree, exp.Create)
@@ -68,9 +73,9 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
         "AND schema_name = ? AND lower(view_name) = lower(?) AND NOT internal",
         [project_id, dataset_id, table_id] * 2,
     )
-    if table_id not in {name for (name,) in names}:
-        raise _not_found(project_id, dataset_id, table_id)
     stored = metadata.load("tables", project_id, dataset_id, table_id) or {}
+    if table_id not in {name for (name,) in names} or tables.expired(stored):
+        raise _not_found(project_id, dataset_id, table_id)
     if is_target and isinstance(tree, DML) and stored.get("type") == "SNAPSHOT":
         raise BigQueryError(
             "invalidQuery",
@@ -94,6 +99,22 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
                 f"over column(s) '{partitioning.get('field', '_PARTITIONTIME')}' "
                 "that can be used for partition elimination",
             )
+
+
+def _as_of(milliseconds: int) -> exp.HistoricalData:
+    if milliseconds < 0:
+        milliseconds += int(time.time() * 1000)
+    moment = datetime.datetime.fromtimestamp(milliseconds / 1000, datetime.UTC)
+    timestamp = exp.cast(exp.Literal.string(moment.isoformat()), "TIMESTAMPTZ")
+    return exp.HistoricalData(this="AT", kind="TIMESTAMP", expression=timestamp)
+
+
+def decorator(tree: exp.Expression, context) -> exp.Expression:
+    for table in tree.find_all(exp.Table):
+        if match := DECORATOR.match(table.name):
+            table.set("this", exp.to_identifier(match[1]))
+            table.set("when", _as_of(int(match[2])))
+    return tree
 
 
 def qualify(tree: exp.Expression, context) -> exp.Expression:
@@ -198,5 +219,5 @@ def wildcard_table(node: exp.Expression, context) -> exp.Expression:
     return exp.Subquery(this=union, alias=alias)
 
 
-STATEMENT_RULES = [qualify]
+STATEMENT_RULES = [decorator, qualify]
 NODE_RULES = [system_variable, time_travel, wildcard_table]

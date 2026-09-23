@@ -10,6 +10,7 @@ KEYS = {
     "tables": ("project_id", "dataset_id", "table_id"),
     "routines": ("project_id", "dataset_id", "routine_id"),
     "row_access_policies": ("project_id", "dataset_id", "table_id", "policy_id"),
+    "indexes": ("project_id", "dataset_id", "table_id", "index_id"),
 }
 
 

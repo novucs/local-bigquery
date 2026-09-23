@@ -65,4 +65,7 @@ def record(tree: exp.Expression, project_id: str, dataset_id: str | None):
     }
     if (returns := tree.find(exp.ReturnsProperty)) and returns.this:
         resource["returnType"] = _type(returns.this)
+    for option in tree.find_all(exp.Property):
+        if option.name.lower() == "description":
+            resource["description"] = option.text("value")
     save(*reference, resource)

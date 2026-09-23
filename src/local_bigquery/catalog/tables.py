@@ -56,16 +56,31 @@ def _lookup(project_id: str, dataset_id: str, table_id: str) -> tuple[str, int] 
         "WHERE database_name = ? AND schema_name = ? AND view_name = ? AND NOT internal",
         list(physical(project_id, dataset_id, table_id)) * 2,
     )
+    stored = metadata.load("tables", project_id, dataset_id, table_id)
+    if expired(stored):
+        if rows:
+            database.execute(
+                f"DROP {rows[0][0]} IF EXISTS {name(project_id, dataset_id, table_id)}"
+            )
+        forget(project_id, dataset_id, table_id)
+        return None
     if rows:
         return rows[0]
-    if metadata.load("tables", project_id, dataset_id, table_id):
-        return "EMPTY", 0
-    return None
+    return ("EMPTY", 0) if stored else None
+
+
+def expired(stored: dict | None) -> bool:
+    expiration = (stored or {}).get("expirationTime")
+    return expiration is not None and int(expiration) <= int(metadata.now())
 
 
 def defaults(project_id: str, dataset_id: str, table_id: str) -> dict:
     now = metadata.now()
-    return {
+    dataset = metadata.load("datasets", project_id, dataset_id) or {}
+    expiration = dataset.get("defaultTableExpirationMs")
+    return (
+        {"expirationTime": str(int(now) + int(expiration))} if expiration else {}
+    ) | {
         "kind": "bigquery#table",
         "id": f"{project_id}:{dataset_id}.{table_id}",
         "selfLink": f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}/tables/{table_id}",
@@ -167,6 +182,8 @@ def list_(project_id: str, dataset_id: str) -> list[dict]:
     summaries = []
     for table_id, kind in sorted(rows):
         stored = metadata.load("tables", project_id, dataset_id, table_id)
+        if expired(stored):
+            continue
         resource = stored or defaults(project_id, dataset_id, table_id)
         summaries.append(
             {key: value for key, value in resource.items() if key not in DERIVED}
@@ -193,6 +210,7 @@ def _store(project_id: str, dataset_id: str, table_id: str, resource: dict) -> T
 
 def forget(project_id: str, dataset_id: str, table_id: str):
     metadata.delete("tables", project_id, dataset_id, table_id)
+    metadata.delete("indexes", project_id, dataset_id, table_id)
 
 
 def rename(project_id: str, dataset_id: str, table_id: str, new_id: str):
@@ -270,7 +288,11 @@ def update(
         else:
             _alter(project_id, dataset_id, table_id, fields)
     stored = metadata.load("tables", project_id, dataset_id, table_id) or current
-    identity = {key: current[key] for key in defaults(project_id, dataset_id, table_id)}
+    identity = {
+        key: current[key]
+        for key in defaults(project_id, dataset_id, table_id)
+        if key in current
+    }
     resource = identity | body if replace else metadata.merge(stored, body)
     return _store(
         project_id,
@@ -331,4 +353,4 @@ def delete(project_id: str, dataset_id: str, table_id: str):
         raise not_found("Table", f"{project_id}:{dataset_id}.{table_id}")
     if kind != "EMPTY":
         database.execute(f"DROP {kind} {name(project_id, dataset_id, table_id)}")
-    metadata.delete("tables", project_id, dataset_id, table_id)
+    forget(project_id, dataset_id, table_id)

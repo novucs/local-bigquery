@@ -38,6 +38,10 @@ class TableMacro(exp.Expression):
     arg_types = {"this": True}
 
 
+class AlterColumnOptions(exp.Expression):
+    arg_types = {"this": True, "expressions": True}
+
+
 def table_body(tree: exp.Expression) -> exp.Query | None:
     body = tree.expression
     if tree.meta.get("table_function") and isinstance(body, exp.Subquery):
@@ -83,6 +87,24 @@ class BigQueryDialect(BaseBigQuery):
             ):
                 raise self._signature(args)
             return super().validate_expression(expression, args)
+
+        def _parse_schema(self, this=None):
+            schema = super()._parse_schema(this)
+            if isinstance(schema, exp.Table) and (version := self._parse_version()):
+                schema.set("version", version)
+            return schema
+
+        def _parse_alter_table_alter(self) -> exp.Expression | None:
+            index = self._index
+            self._match(TokenType.COLUMN)
+            self._parse_exists()
+            column = self._parse_field(any_token=True)
+            if self._match_text_seq("SET", "OPTIONS"):
+                return AlterColumnOptions(
+                    this=column, expressions=self._parse_with_property()
+                )
+            self._retreat(index)
+            return super()._parse_alter_table_alter()
 
         def _signature(self, args: list) -> BigQueryError:
             token = self._calls[-1]
