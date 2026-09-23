@@ -122,6 +122,15 @@ CASES = [
         "SELECT JSON '1' = JSON '1'",
         error="not defined|No matching signature",
     ),
+    q(
+        """SELECT JSON_KEYS(PARSE_JSON('{"a": 1, "b": 2, "c": 3}'))""",
+        ["a", "b", "c"],
+        types="ARRAY<STRING>",
+    ),
+    q(
+        """SELECT ARRAY_LENGTH(JSON_KEYS(PARSE_JSON('{"a": 1, "b": 2}')))""",
+        2,
+    ),
 ]
 
 

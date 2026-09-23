@@ -95,6 +95,57 @@ CASES = [
         "SELECT CAST(1.5 AS STRING), CAST(1.0 AS STRING)",
         rows=[("1.5", "1")],
     ),
+    q(
+        "SELECT FARM_FINGERPRINT('hello')",
+        -5436999610281751320,
+        types="INT64",
+    ),
+    q(
+        "SELECT FARM_FINGERPRINT(CONCAT('seed-', '42'))",
+        -1445242963413924359,
+    ),
+    q(
+        "SELECT TO_BASE32(b'hello'), TO_BASE32(b'')",
+        rows=[("NBSWY3DP", "")],
+    ),
+    q(
+        "SELECT FROM_BASE32('JBSWY3DPEB3W64TMMQ======')",
+        b"Hello world",
+        types="BYTES",
+    ),
+    q(
+        "SELECT CODE_POINTS_TO_BYTES([65, 66, 67])",
+        b"ABC",
+        types="BYTES",
+    ),
+    q(
+        "SELECT CODE_POINTS_TO_BYTES(ARRAY<INT64>[])",
+        b"",
+    ),
+    q(
+        r"SELECT LENGTH(NORMALIZE('\u00e9', NFD)), LENGTH(NORMALIZE('e\u0301', NFC))",
+        rows=[(2, 1)],
+    ),
+    q("SELECT NORMALIZE('\uff21', NFKC)", "A"),
+    q(
+        "SELECT NORMALIZE_AND_CASEFOLD('Straße', NFC)",
+        "strasse",
+    ),
+    q(
+        "SELECT TO_HEX(SHA512('hello'))",
+        "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca7"
+        "2323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043",
+    ),
+    q("SELECT UPPER('groß')", "GROSS"),
+    q(
+        "SELECT COLLATE('Apple', 'binary') = COLLATE('apple', 'binary')",
+        error="Collation 'binary' in collate function is not supported",
+    ),
+    q(
+        "SELECT CONCAT(CAST(NULL AS STRING), 'x')",
+        None,
+        types="STRING",
+    ),
 ]
 
 

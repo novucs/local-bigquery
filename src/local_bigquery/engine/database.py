@@ -7,6 +7,7 @@ from collections.abc import Iterator
 import duckdb
 
 from local_bigquery.settings import settings
+from local_bigquery.sql import native
 from local_bigquery.sql.dialect import FUNCTIONS, MACRO
 
 EMULATOR_SCHEMA = """
@@ -46,19 +47,26 @@ CREATE TABLE IF NOT EXISTS emulator.jobs (
 );
 """
 _attach_lock = threading.Lock()
+_connect_lock = threading.Lock()
 
 
 def quote(*parts: str) -> str:
     return ".".join('"' + part.replace('"', '""') + '"' for part in parts)
 
 
-@functools.cache
 def connection() -> duckdb.DuckDBPyConnection:
+    with _connect_lock:
+        return _connect()
+
+
+@functools.cache
+def _connect() -> duckdb.DuckDBPyConnection:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(config={"TimeZone": "UTC"})
     con.execute(f"ATTACH '{settings.data_dir / 'emulator.duckdb'}' AS emulator")
     con.execute(EMULATOR_SCHEMA)
     con.execute("ATTACH ':memory:' AS bq")
+    native.register(con)
     for path in FUNCTIONS:
         con.execute(MACRO.sub(r"CREATE MACRO bq.main.\1", path.read_text()))
     for path in sorted(settings.data_dir.glob("*.ducklake")):
@@ -110,7 +118,7 @@ def execute(sql: str, params: list | None = None):
 
 
 def reset():
-    if connection.cache_info().currsize:
-        connection().close()
-        connection.cache_clear()
+    if _connect.cache_info().currsize:
+        _connect().close()
+        _connect.cache_clear()
     shutil.rmtree(settings.data_dir, ignore_errors=True)

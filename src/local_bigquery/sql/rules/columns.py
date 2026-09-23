@@ -6,6 +6,11 @@ def anonymous_columns(tree: exp.Expression, context) -> exp.Expression:
     while isinstance(select, exp.SetOperation):
         select = select.this
     if isinstance(select, exp.Select):
+        for expression in select.expressions:
+            if isinstance(expression, exp.Paren) and isinstance(
+                expression.this, exp.Column
+            ):
+                expression.replace(expression.this)
         anonymous = [
             expression
             for expression in select.expressions

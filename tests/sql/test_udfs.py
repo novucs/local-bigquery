@@ -77,6 +77,7 @@ CASES = [
         42,
         types="INT64",
     ),
+    q(js("x INT64", "INT64", "'return x + 1;'", "SELECT {f}(41)"), 411),
     q(
         js("s STRING", "INT64", "'return s;'", "SELECT {f}('9007199254740993')"),
         9007199254740993,

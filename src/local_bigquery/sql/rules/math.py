@@ -37,7 +37,15 @@ def _numeric(node: exp.Expression) -> exp.Expression:
     return exp.cast(node, exp.DataType.build(DECIMALS[Type.DECIMAL], dialect="duckdb"))
 
 
+def _constant_nonzero(node: exp.Expression) -> bool:
+    while isinstance(node, (exp.Cast, exp.Paren)):
+        node = node.this
+    return isinstance(node, exp.Literal) and node.is_number and float(node.this) != 0
+
+
 def _nonzero(node: exp.Binary, value: exp.Expression) -> exp.Expression:
+    if _constant_nonzero(node.expression):
+        return value
     left, right = node.this.copy(), node.expression.copy()
     message = exp.func(
         "concat",
@@ -77,7 +85,8 @@ def float_to_integer(node: exp.Expression, context) -> exp.Expression:
 
 def float_sign(node: exp.Expression, context) -> exp.Expression:
     if isinstance(node, exp.Sign) and _type(node.this) in FLOATS:
-        return exp.cast(node, exp.DataType.build("DOUBLE"))
+        nan = exp.If(this=exp.func("isnan", node.this.copy()), true=node.this.copy())
+        return exp.Case(ifs=[nan], default=exp.cast(node, exp.DataType.build("DOUBLE")))
     return node
 
 
