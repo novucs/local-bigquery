@@ -471,6 +471,49 @@ CASES = [
         "SELECT DATETIME(TIMESTAMP '2020-01-01 00:00:00+00', 'Etc/UTC')",
         datetime(2020, 1, 1),
     ),
+    q(
+        "SELECT EXTRACT(HOUR FROM TIMESTAMP '2024-06-15 12:00:00+00' AT TIME ZONE '-04:30')",
+        7,
+    ),
+    q(
+        "SELECT EXTRACT(HOUR FROM TIMESTAMP '2024-06-15 00:00:00+00' AT TIME ZONE '+05:45')",
+        5,
+    ),
+    q(
+        "SELECT DATE(TIMESTAMP '2024-06-15 20:00:00+00', '+05:45')",
+        date(2024, 6, 16),
+    ),
+    q(
+        "SELECT DATETIME(TIMESTAMP '2024-06-15 00:00:00+00', '-04:30')",
+        datetime(2024, 6, 14, 19, 30),
+    ),
+    q(
+        "SELECT TIME(TIMESTAMP '2024-06-15 00:00:00+00', '+05:45')",
+        time(5, 45),
+    ),
+    q(
+        "SELECT FORMAT_TIMESTAMP('%H:%M', TIMESTAMP '2024-06-15 00:00:00+00', '-04:30')",
+        "19:30",
+    ),
+    q(
+        "SELECT TIMESTAMP_TRUNC(TIMESTAMP '2024-06-15 20:00:00+00', DAY, '+05:45')",
+        utc(2024, 6, 15, 18, 15),
+    ),
+    q(
+        "SELECT TIME(TIMESTAMP '2024-01-15 12:30:45 UTC')",
+        time(12, 30, 45),
+        types="TIME",
+    ),
+    q("SELECT FORMAT_DATE('%Y-%m-%d', CAST(NULL AS DATE))", None, types="STRING"),
+    q(
+        "SELECT FORMAT_DATE('%Y-%m-%d', DATE '0001-01-01')",
+        "1-01-01",
+    ),
+    q(
+        "SELECT PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S %Z', '2024-01-15 12:00:00 UTC')",
+        utc(2024, 1, 15, 12),
+        types="TIMESTAMP",
+    ),
 ]
 
 

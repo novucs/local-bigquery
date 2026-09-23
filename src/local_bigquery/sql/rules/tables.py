@@ -1,4 +1,5 @@
 import functools
+import re
 
 import sqlglot
 from sqlglot import exp
@@ -7,6 +8,7 @@ from local_bigquery.catalog import metadata
 from local_bigquery.engine import database
 from local_bigquery.errors import BigQueryError
 
+DATASET_ID = re.compile(r"^[\w-]{1,1024}$")
 DML = exp.Insert | exp.Update | exp.Delete | exp.Merge | exp.TruncateTable
 
 
@@ -23,14 +25,35 @@ def _target(tree: exp.Expression) -> exp.Table | None:
 
 
 def _not_found(project_id: str, dataset_id: str, table_id: str) -> BigQueryError:
+    table = f"{project_id}:{dataset_id}.{table_id}"
+    if project_id not in database.projects():
+        return BigQueryError(
+            "accessDenied",
+            f"Access Denied: Table {table}: User does not have permission to query "
+            f"table {table}, or perhaps it does not exist.",
+        )
+    if not database.fetch(
+        "SELECT 1 FROM duckdb_schemas() WHERE database_name = ? AND schema_name = ?",
+        [project_id, dataset_id],
+    ):
+        return BigQueryError(
+            "notFound",
+            f"Not found: Dataset {project_id}:{dataset_id} was not found in location US",
+        )
     return BigQueryError(
-        "notFound",
-        f"Not found: Table {project_id}:{dataset_id}.{table_id} was not found in location US",
+        "notFound", f"Not found: Table {table} was not found in location US"
     )
 
 
 def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
     project_id, dataset_id, table_id = table.catalog, table.db, table.name
+    if not DATASET_ID.match(dataset_id):
+        raise BigQueryError(
+            "invalid",
+            f'Invalid dataset ID "{dataset_id}". Dataset IDs must be alphanumeric '
+            "(plus underscores and dashes) and must be at most 1024 characters long.",
+            f"{dataset_id}.{table_id}",
+        )
     kind = tree.args.get("kind")
     if is_target and (
         isinstance(tree, exp.Create)

@@ -148,7 +148,7 @@ def _statement(
     try:
         return _run(cur, tree, context, destination, config, dry_run, isolated)
     except duckdb.Error as error:
-        raise from_duckdb(error, context) from error
+        raise from_duckdb(error, context, tree) from error
 
 
 def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:

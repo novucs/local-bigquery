@@ -106,9 +106,15 @@ def submit(
 
 def _dry_run(project_id: str, configuration: dict) -> dict:
     with database.cursor() as cur:
-        statistics, _, _ = query.execute(
-            cur, project_id, None, configuration["query"], dry_run=True
-        )
+        try:
+            statistics, _, _ = query.execute(
+                cur, project_id, None, configuration["query"], dry_run=True
+            )
+        except Exception as exception:
+            error = from_exception(exception)
+            if error.location == "query":
+                error.location = "q"
+            raise error from exception
     job = _job(project_id, None, configuration)
     job["jobReference"].pop("jobId")
     return _done(job, {"query": statistics})
