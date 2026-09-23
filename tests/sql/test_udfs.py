@@ -37,7 +37,6 @@ CASES = [
         "SELECT f([1, 2]), f(['a'])",
         rows=[(1, "a")],
         types=("INT64", "STRING"),
-        xfail="ANY TYPE functions not supported",
     ),
     q(
         "CREATE TEMP FUNCTION f(a INT64) AS (STRUCT(a AS a, a * 2 AS b)); SELECT f(2)",
@@ -68,7 +67,6 @@ CASES = [
             "SELECT x, y, {f}(x, y) FROM t ORDER BY x",
         ),
         rows=[(1, 5, 5.0), (2, 10, 20.0), (3, 15, 45.0)],
-        crash="two-argument JS UDF crashes V8 (SIGTRAP)",
     ),
     q(
         js("s STRING", "STRING", "'return s.toUpperCase();'", "SELECT {f}('ab')"),
@@ -104,7 +102,6 @@ CASES = [
             "SELECT {f}(STRUCT(1.0, 'x'))",
         ),
         "x1",
-        xfail="JS UDF STRUCT arguments not supported",
     ),
     q(
         js(
@@ -114,17 +111,14 @@ CASES = [
             "SELECT {f}(2)",
         ),
         {"doubled": 4.0, "label": "n2"},
-        xfail="JS UDF STRUCT return not supported",
     ),
     q(
         js("x FLOAT64", "FLOAT64", "'return x === null ? -1 : x;'", "SELECT {f}(NULL)"),
         -1.0,
-        xfail="JS UDF skipped for NULL arguments",
     ),
     q(
         js("x FLOAT64", "FLOAT64", "'return null;'", "SELECT {f}(1)"),
         None,
-        xfail="JS UDF returning null fails",
     ),
     q(
         js(
@@ -178,7 +172,6 @@ def test_udfs(check, case):
     check(case)
 
 
-@pytest.mark.xfail(reason="JS UDF creates a V8 context per row")
 def test_js_udf_is_fast_over_many_rows(bq):
     start = time.monotonic()
     total = scalar(
@@ -230,7 +223,6 @@ def test_drop_function(bq, routine):
     run(bq, f"DROP FUNCTION IF EXISTS {routine}")
 
 
-@pytest.mark.xfail(reason="persistent JS functions not supported")
 def test_persistent_js_function(bq, routine):
     run(
         bq,
@@ -240,7 +232,6 @@ def test_persistent_js_function(bq, routine):
     assert scalar(bq, f"SELECT {routine}(2)") == 6.0
 
 
-@pytest.mark.xfail(reason="statementType is always SELECT")
 def test_function_ddl_statistics(bq, routine):
     job = bq.query(f"CREATE FUNCTION {routine}(x INT64) AS (x)")
     job.result()
@@ -255,7 +246,6 @@ def test_function_ddl_statistics(bq, routine):
     assert job.ddl_operation_performed == "SKIP"
 
 
-@pytest.mark.xfail(reason="CREATE TABLE FUNCTION not supported")
 def test_table_function(bq, routine):
     run(
         bq,
@@ -268,7 +258,6 @@ def test_table_function(bq, routine):
     assert list(run(bq, f"SELECT v FROM {routine}(NULL)")) == []
 
 
-@pytest.mark.xfail(reason="CREATE TABLE FUNCTION not supported")
 def test_table_function_joined_with_table(bq, dataset, routine):
     table = f"{dataset.dataset_id}.{unique('t')}"
     run(bq, f"CREATE TABLE {table} AS SELECT 2 AS v, 'two' AS name")
@@ -313,7 +302,6 @@ def test_drop_procedure(bq, routine):
         run(bq, f"CALL {routine}()")
 
 
-@pytest.mark.xfail(reason="temp JS functions leak between queries")
 def test_temp_functions_do_not_leak_between_queries(bq):
     define = "CREATE TEMP FUNCTION leak(x FLOAT64) RETURNS FLOAT64 LANGUAGE js AS {};"
     assert scalar(bq, define.format("'return x + 1;'") + " SELECT leak(1)") == 2.0

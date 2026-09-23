@@ -74,6 +74,20 @@ def _ddl(tree: exp.Expression, context: Context) -> dict:
         }
         found = tables.exists(*_reference(reference))
         key = "ddlTargetTable"
+    elif kind == "FUNCTION" and target is not None:
+        reference = {
+            "projectId": target.catalog or context.project_id,
+            "datasetId": target.db or context.dataset_id,
+            "routineId": target.name,
+        }
+        found = bool(
+            database.fetch(
+                "SELECT 1 FROM duckdb_functions() WHERE database_name = ? "
+                "AND schema_name = ? AND function_name = ?",
+                list(reference.values()),
+            )
+        )
+        key = "ddlTargetRoutine"
     else:
         return {}
     if isinstance(tree, exp.Drop) and not found and tree.args.get("exists"):
@@ -244,7 +258,7 @@ def _execute(
     children = []
     for tree in trees:
         if js.is_udf(tree):
-            js.bind(cur, tree)
+            js.bind(cur, tree, context)
         elif _temporary_function(tree):
             cur.execute(translate(tree, context)[0])
         else:

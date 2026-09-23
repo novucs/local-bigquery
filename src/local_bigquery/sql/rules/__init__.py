@@ -12,6 +12,7 @@ from local_bigquery.sql.rules import (
     query,
     safe,
     tables,
+    udfs,
 )
 
 MODULES = [
@@ -21,6 +22,7 @@ MODULES = [
     information_schema,
     dml,
     tables,
+    udfs,
     ddl,
     datetime,
     external,

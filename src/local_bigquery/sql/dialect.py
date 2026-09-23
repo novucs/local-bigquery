@@ -20,6 +20,10 @@ def _parser(name: str):
     return lambda args: macro(name, *args)
 
 
+class TableMacro(exp.Expression):
+    arg_types = {"this": True}
+
+
 class BigQueryDialect(BaseBigQuery):
     INVERSE_TIME_MAPPING = BaseBigQuery.INVERSE_TIME_MAPPING
 
@@ -38,4 +42,11 @@ class DuckDBDialect(BaseDuckDB):
     INVERSE_TIME_MAPPING = BaseDuckDB.INVERSE_TIME_MAPPING
 
     class Generator(BaseDuckDB.Generator):
-        TRANSFORMS = {**BaseDuckDB.Generator.TRANSFORMS}
+        TRANSFORMS = {
+            **BaseDuckDB.Generator.TRANSFORMS,
+            TableMacro: lambda self, e: f"TABLE {self.sql(e, 'this')}",
+        }
+        TYPE_MAPPING = {
+            **BaseDuckDB.Generator.TYPE_MAPPING,
+            exp.DataType.Type.GEOGRAPHY: "GEOMETRY",
+        }

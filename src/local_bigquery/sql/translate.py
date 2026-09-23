@@ -14,6 +14,7 @@ class Context:
     parameters: dict[str, str] = field(default_factory=dict)
     values: dict = field(default_factory=dict)
     temporary: set[str] = field(default_factory=set)
+    functions: dict[str, str] = field(default_factory=dict)
     attach_postgres: callable = None
     used: set[str] = field(default_factory=set)
     position: int = 0

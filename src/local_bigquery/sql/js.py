@@ -1,9 +1,22 @@
+import hashlib
 import inspect
+import json
+import threading
 
 import duckdb
+import pyarrow
+import sqlglot
 from duckdb.sqltypes import DuckDBPyType
 from py_mini_racer import MiniRacer
 from sqlglot import exp
+
+from local_bigquery.engine import database
+from local_bigquery.sql.dialect import BigQueryDialect, DuckDBDialect
+
+INTEGERS = {"tinyint", "smallint", "integer", "bigint", "hugeint"}
+_contexts: dict[str, tuple[MiniRacer, threading.Lock]] = {}
+_registered: set[tuple[int, str]] = set()
+_lock = threading.Lock()
 
 
 def is_udf(tree: exp.Expression) -> bool:
@@ -11,35 +24,100 @@ def is_udf(tree: exp.Expression) -> bool:
     return language is not None and language.name.lower() == "js"
 
 
-def _type(node: exp.Expression) -> DuckDBPyType:
-    try:
-        return DuckDBPyType(node.sql("duckdb"))
-    except duckdb.Error:
-        return DuckDBPyType("VARCHAR")
+def _type(node: exp.Expression | None) -> DuckDBPyType:
+    return DuckDBPyType(node.sql(dialect=DuckDBDialect) if node else "JSON")
 
 
-def bind(cur: duckdb.DuckDBPyConnection, tree: exp.Expression):
-    name = tree.find(exp.Table).name
-    params = [n for n in tree.find_all(exp.ColumnDef) if n.this]
-    names = ", ".join(p.name for p in params)
-    body = tree.expression.this
+def _convert(value, t: DuckDBPyType):
+    if value is None:
+        return None
+    if t.id in INTEGERS:
+        return int(value)
+    if t.id in ("double", "float"):
+        return float(value)
+    return value
 
-    def fn(*args):
-        ctx = MiniRacer()
-        ctx.eval(f"var f = function({names}) {{ {body} }}")
-        return ctx.call("f", *args)
 
-    fn.__name__ = name
-    fn.__signature__ = inspect.Signature(
-        [
-            inspect.Parameter(p.name, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-            for p in params
-        ]
+def _function(names: list[str], body: str, returns: DuckDBPyType):
+    source = f"(function({', '.join(names)}) {{ {body} }})"
+
+    def call(*arrays):
+        with _lock:
+            if source not in _contexts:
+                context = MiniRacer()
+                context.eval(f"var f = {source};")
+                context.eval("var batch = rows => rows.map(row => f.apply(null, row));")
+                _contexts[source] = context, threading.Lock()
+        context, lock = _contexts[source]
+        rows = json.loads(
+            json.dumps(list(zip(*(a.to_pylist() for a in arrays))), default=str)
+        )
+        with lock:
+            values = context.call("batch", rows)
+        return pyarrow.array([_convert(value, returns) for value in values])
+
+    call.__signature__ = inspect.Signature(
+        [inspect.Parameter(n, inspect.Parameter.POSITIONAL_OR_KEYWORD) for n in names]
     )
-    returns = tree.find(exp.ReturnsProperty)
-    cur.create_function(
-        name,
-        fn,
-        [_type(p.kind) for p in params],
-        _type(returns.this) if returns and returns.this else None,
+    return call
+
+
+def _params(tree: exp.Expression) -> list[exp.ColumnDef]:
+    return [p for p in tree.this.expressions if isinstance(p, exp.ColumnDef)]
+
+
+def register(tree: exp.Expression) -> str:
+    params, returns = _params(tree), tree.find(exp.ReturnsProperty)
+    body = tree.expression.name
+    signature = [p.sql() for p in params] + [returns.sql() if returns else "", body]
+    name = "js_" + hashlib.sha1("\n".join(signature).encode()).hexdigest()[:16]
+    connection = database.connection()
+    with _lock:
+        if (id(connection), name) not in _registered:
+            return_type = _type(returns.this if returns else None)
+            connection.create_function(
+                name,
+                _function([p.name for p in params], body, return_type),
+                [_type(p.kind) for p in params],
+                return_type,
+                type="arrow",
+                null_handling="special",
+            )
+            _registered.add((id(connection), name))
+    return name
+
+
+def restore():
+    connection = database.connection()
+    if (id(connection), "") in _registered:
+        return
+    for (definition,) in database.fetch("SELECT definition FROM emulator.js_functions"):
+        register(sqlglot.parse_one(definition, dialect=BigQueryDialect))
+    _registered.add((id(connection), ""))
+
+
+def bind(cur: duckdb.DuckDBPyConnection, tree: exp.Expression, context):
+    name = register(tree)
+    target = tree.this.this
+    if tree.find(exp.TemporaryProperty):
+        context.functions[target.name.casefold()] = (
+            name,
+            [p.kind for p in _params(tree)],
+        )
+        return
+    qualified = ".".join(
+        exp.to_identifier(part).sql(dialect=DuckDBDialect)
+        for part in (
+            target.catalog or context.project_id,
+            target.db or context.dataset_id,
+            target.name,
+        )
+    )
+    params = ", ".join(p.name for p in _params(tree))
+    create = "CREATE OR REPLACE MACRO" if tree.args.get("replace") else "CREATE MACRO"
+    exists = " IF NOT EXISTS" if tree.args.get("exists") else ""
+    cur.execute(f"{create}{exists} {qualified}({params}) AS {name}({params})")
+    database.execute(
+        "INSERT OR REPLACE INTO emulator.js_functions VALUES (?, ?)",
+        [name, tree.sql(dialect=BigQueryDialect)],
     )
