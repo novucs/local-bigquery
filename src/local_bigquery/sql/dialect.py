@@ -2,6 +2,7 @@ import pathlib
 import re
 
 from sqlglot import exp
+from sqlglot.tokens import TokenType
 from sqlglot.dialects.bigquery import BigQuery as BaseBigQuery
 from sqlglot.dialects.duckdb import DuckDB as BaseDuckDB
 
@@ -20,6 +21,17 @@ def _parser(name: str):
     return lambda args: macro(name, *args)
 
 
+def _table_function(name: str):
+    def parse(self) -> exp.Anonymous:
+        self._match(TokenType.TABLE)
+        arguments = [self._parse_table()]
+        while self._match(TokenType.COMMA):
+            arguments.append(self._parse_lambda())
+        return exp.Anonymous(this=name, expressions=arguments)
+
+    return parse
+
+
 class TableMacro(exp.Expression):
     arg_types = {"this": True}
 
@@ -28,6 +40,10 @@ class BigQueryDialect(BaseBigQuery):
     INVERSE_TIME_MAPPING = BaseBigQuery.INVERSE_TIME_MAPPING
 
     class Parser(BaseBigQuery.Parser):
+        FUNCTION_PARSERS = {
+            **BaseBigQuery.Parser.FUNCTION_PARSERS,
+            "RANGE_SESSIONIZE": _table_function("RANGE_SESSIONIZE"),
+        }
         FUNCTIONS = {
             **BaseBigQuery.Parser.FUNCTIONS,
             **{
