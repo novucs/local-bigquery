@@ -19,6 +19,7 @@ CLOSE = {TokenType.R_PAREN, TokenType.R_BRACKET, TokenType.R_BRACE}
 QUOTED = {TokenType.STRING, TokenType.IDENTIFIER}
 RAISE_MESSAGE = re.compile(r"(?is)^USING\s+MESSAGE\s*=\s*(.*)$")
 TABLE_FUNCTION = re.compile(r"(?is)^(\s*\w+(?:\s+OR\s+REPLACE)?\s+)TABLE\s+(FUNCTION)")
+AGGREGATE = re.compile(r"(?i)\bAGGREGATE\s+(?=FUNCTION\b)|\s+NOT\s+AGGREGATE\b")
 ALIASES = {"LEAVE": "BREAK", "ITERATE": "CONTINUE"}
 STATEMENTS = {"SQL", "TABLE_FUNCTION", "DROP_PROCEDURE"}
 LABELLED = {"LOOP", "WHILE", "REPEAT", "FOR", "BEGIN"}
@@ -117,6 +118,11 @@ class Parser:
         ):
             text = TABLE_FUNCTION.sub(r"\1\2", self.until(), count=1)
             return Statement("TABLE_FUNCTION", text)
+        if word == "CREATE" and any(
+            self.word(n) == "AGGREGATE" and self.word(n + 1) == "FUNCTION"
+            for n in range(1, 5)
+        ):
+            return self.aggregate()
         if word in ("BREAK", "LEAVE", "CONTINUE", "ITERATE", "RETURN"):
             self.i += 1
             label = self.word() if self.word() not in (";", None) else ""
@@ -125,6 +131,14 @@ class Parser:
         if parse := PARSERS.get(word):
             return parse(self)
         return Statement(word if word in ("DECLARE", "SET") else "SQL", self.until())
+
+    def aggregate(self) -> Statement:
+        text = self.until()
+        if re.search(r"(?i)\bLANGUAGE\s+js\b", text):
+            raise BigQueryError(
+                "invalidQuery", "JavaScript aggregate functions are not supported"
+            )
+        return Statement("SQL", AGGREGATE.sub("", text))
 
     def begin(self) -> Statement:
         self.take("BEGIN")

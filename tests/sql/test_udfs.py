@@ -162,6 +162,28 @@ CASES = [
         rows=[("hi", 2), ("lo", 1)],
     ),
     q(
+        "CREATE TEMP AGGREGATE FUNCTION f(x FLOAT64) RETURNS FLOAT64 AS (SUM(x) / COUNT(x)); "
+        "SELECT f(v) FROM UNNEST([1.0, 2.0, 6.0]) AS v",
+        3.0,
+        types="FLOAT64",
+    ),
+    q(
+        "CREATE TEMP AGGREGATE FUNCTION scaled_sum(x INT64, k INT64 NOT AGGREGATE) "
+        "AS (SUM(x) * k); SELECT g, scaled_sum(v, 10) FROM (SELECT 'a' AS g, 1 AS v "
+        "UNION ALL SELECT 'a', 2 UNION ALL SELECT 'b', 5) GROUP BY g ORDER BY g",
+        rows=[("a", 30), ("b", 50)],
+    ),
+    q(
+        "CREATE TEMP AGGREGATE FUNCTION f(x FLOAT64) RETURNS FLOAT64 LANGUAGE js AS "
+        "'export function initialState() { return {s: 0}; }"
+        " export function aggregate(state, x) { state.s += x; }"
+        " export function merge(state, other) { state.s += other.s; }"
+        " export function finalize(state) { return state.s; }'; "
+        "SELECT f(v) FROM UNNEST([1.0, 2.0]) AS v",
+        3.0,
+        xfail="JavaScript aggregate UDFs are not supported",
+    ),
+    q(
         "SELECT no_such_function(1)",
         error="Function not found",
     ),
@@ -225,6 +247,11 @@ def test_persistent_function_nested_arguments(bq, routine):
         "RETURNS FLOAT64 AS (ARRAY_LENGTH(a) + s.x)",
     )
     assert scalar(bq, f"SELECT {routine}([1, 2], STRUCT(0.5 AS x))") == 2.5
+
+
+def test_persistent_aggregate_function(bq, routine):
+    run(bq, f"CREATE AGGREGATE FUNCTION {routine}(x FLOAT64) AS (AVG(x) * 2)")
+    assert scalar(bq, f"SELECT {routine}(v) FROM UNNEST([1.0, 3.0]) AS v") == 4.0
 
 
 def test_persistent_function_or_replace(bq, routine):
