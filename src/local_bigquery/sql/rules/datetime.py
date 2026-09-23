@@ -9,7 +9,7 @@ WEEKDAYS = "SUNDAY MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY".split()
 TIMESTAMP_UNITS = {"MICROSECOND", "MILLISECOND", "SECOND", "MINUTE", "HOUR", "DAY"}
 INTERVAL_FIELDS = ["year", "month", "day", "hour", "minute", "second"]
 OFFSET = re.compile(r"^([+-])(\d{1,2})(?::?(\d{2}))?$")
-FORMAT_ELEMENTS = re.compile(r"(%E(?:\d|\*)S|%E4Y|%Ez|%Q|%s|%z|%R)")
+FORMAT_ELEMENTS = re.compile(r"(%E(?:\d|\*)S|%E4Y|%Ez|%Q|%s|%z|%R|%Y)")
 
 
 def call(name: str, *args) -> exp.Anonymous:
@@ -111,7 +111,7 @@ def _format(node: exp.TimeToStr) -> exp.Expression | None:
         if not piece:
             continue
         pieces.append(_element(piece, local, instant))
-    return _concat(pieces)
+    return exp.cast(_concat(pieces), "VARCHAR")
 
 
 def _element(piece: str, local: exp.Expression, instant: exp.Expression | None):
@@ -129,6 +129,8 @@ def _element(piece: str, local: exp.Expression, instant: exp.Expression | None):
     match piece:
         case "%Q":
             return exp.cast(call("quarter", local.copy()), "VARCHAR")
+        case "%Y":
+            return exp.cast(call("year", local.copy()), "VARCHAR")
         case "%E4Y":
             return call("lpad", exp.cast(call("year", local.copy()), "VARCHAR"), 4, "0")
         case "%Ez":
@@ -160,9 +162,8 @@ def _parse_timestamp(node: exp.StrToTime) -> exp.Expression:
     template = node.args.get("format")
     if isinstance(template, exp.Literal) and "%Ez" in template.this:
         template.replace(_node(template.this.replace("%Ez", "%z")))
-    if (
-        isinstance(node.args.get("format"), exp.Literal)
-        and "%z" in node.args["format"].this
+    if isinstance(node.args.get("format"), exp.Literal) and (
+        "%z" in node.args["format"].this or "%Z" in node.args["format"].this
     ):
         return None
     _around(node, lambda placeholder: from_local(placeholder, zone))
@@ -225,8 +226,31 @@ def datetime(tree: exp.Expression, context) -> exp.Expression:
     return tree
 
 
+def _local(node: exp.Expression, kind: str) -> exp.Expression:
+    instant = exp.cast(node.this, "TIMESTAMPTZ")
+    return exp.cast(to_local(instant, node.args["zone"]), kind)
+
+
+def _offset_zone(node: exp.Expression) -> bool:
+    return _offset_minutes(node.args.get("zone")) is not None
+
+
 def _rewrite(node: exp.Expression) -> exp.Expression | None:
     match node:
+        case exp.AtTimeZone() if _offset_zone(node):
+            return to_local(exp.cast(node.this, "TIMESTAMPTZ"), node.args["zone"])
+        case exp.Date() if _offset_zone(node):
+            return _local(node, "DATE")
+        case exp.Time() if _offset_zone(node):
+            return _local(node, "TIME")
+        case exp.TsOrDsToTime() if not isinstance(node.parent, exp.TimeToStr):
+            return exp.cast(exp.cast(node.this, "TIMESTAMP"), "TIME")
+        case exp.TimestampTrunc() if _offset_zone(node):
+            zone = node.args["zone"]
+            local = to_local(exp.cast(node.this, "TIMESTAMPTZ"), zone)
+            return from_local(
+                call("date_trunc", node.text("unit").lower(), local), zone
+            )
         case exp.Extract():
             return _extract(node)
         case exp.DateAdd() | exp.DateSub() | exp.DateFromUnixDate():

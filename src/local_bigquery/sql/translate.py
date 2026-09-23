@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import sqlglot
 from sqlglot import exp
 
+from local_bigquery.errors import syntax_error
 from local_bigquery.sql.dialect import BigQueryDialect, DuckDBDialect
 from local_bigquery.sql.rules import NODE_RULES, STATEMENT_RULES
 
@@ -23,7 +24,10 @@ class Context:
 
 
 def parse(sql: str) -> list[exp.Expression]:
-    return [tree for tree in sqlglot.parse(sql, dialect=BigQueryDialect) if tree]
+    try:
+        return [tree for tree in sqlglot.parse(sql, dialect=BigQueryDialect) if tree]
+    except sqlglot.errors.SqlglotError as error:
+        raise syntax_error(error, sql) from error
 
 
 def translate(tree: exp.Expression, context: Context) -> tuple[str, dict]:

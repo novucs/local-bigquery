@@ -9,7 +9,7 @@ from sqlglot import exp
 from sqlglot.tokens import TokenType
 
 from local_bigquery.catalog import routines
-from local_bigquery.errors import BigQueryError, from_exception
+from local_bigquery.errors import BigQueryError, from_exception, syntax_error
 from local_bigquery.sql.dialect import BigQueryDialect
 from local_bigquery.sql.rules.parameters import VALUE, read
 from local_bigquery.sql.translate import Context, parse, translate
@@ -253,7 +253,10 @@ PARSERS = {
 
 
 def parse_script(sql: str) -> list[Statement]:
-    return Parser(sql).block(set())
+    try:
+        return Parser(sql).block(set())
+    except sqlglot.errors.TokenError as error:
+        raise syntax_error(error, sql) from error
 
 
 def is_script(statements: list[Statement]) -> bool:

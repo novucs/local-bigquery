@@ -37,16 +37,23 @@ def _numeric(node: exp.Expression) -> exp.Expression:
     return exp.cast(node, exp.DataType.build(DECIMALS[Type.DECIMAL], dialect="duckdb"))
 
 
+def _number(node: exp.Expression) -> exp.Expression:
+    text = exp.cast(node, "VARCHAR")
+    return exp.func(
+        "regexp_replace", text, exp.Literal.string(r"\.0$"), exp.Literal.string("")
+    )
+
+
 def _nonzero(node: exp.Binary, value: exp.Expression) -> exp.Expression:
     left, right = node.this.copy(), node.expression.copy()
     message = exp.func(
         "concat",
         exp.Literal.string("division by zero: "),
-        left,
+        _number(left),
         exp.Literal.string(f" {OPERATORS[type(node)]} "),
-        right,
+        _number(right.copy()),
     )
-    zero = exp.EQ(this=right.copy(), expression=exp.Literal.number(0))
+    zero = exp.EQ(this=right, expression=exp.Literal.number(0))
     return exp.Case(
         ifs=[exp.If(this=zero, true=exp.func("error", message))], default=value
     )

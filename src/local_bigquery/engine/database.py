@@ -46,14 +46,20 @@ CREATE TABLE IF NOT EXISTS emulator.jobs (
 );
 """
 _attach_lock = threading.Lock()
+_connection_lock = threading.Lock()
 
 
 def quote(*parts: str) -> str:
     return ".".join('"' + part.replace('"', '""') + '"' for part in parts)
 
 
-@functools.cache
 def connection() -> duckdb.DuckDBPyConnection:
+    with _connection_lock:
+        return _connect()
+
+
+@functools.cache
+def _connect() -> duckdb.DuckDBPyConnection:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(config={"TimeZone": "UTC"})
     con.execute(f"ATTACH '{settings.data_dir / 'emulator.duckdb'}' AS emulator")
@@ -110,7 +116,7 @@ def execute(sql: str, params: list | None = None):
 
 
 def reset():
-    if connection.cache_info().currsize:
+    if _connect.cache_info().currsize:
         connection().close()
-        connection.cache_clear()
+        _connect.cache_clear()
     shutil.rmtree(settings.data_dir, ignore_errors=True)

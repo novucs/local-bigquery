@@ -23,7 +23,7 @@ class BigQueryError(Exception):
         super().__init__(message)
         self.reason = reason
         self.message = message
-        self.location = location
+        self.location = location or ("query" if reason == "invalidQuery" else None)
 
     @property
     def code(self) -> int:
@@ -62,6 +62,21 @@ def not_implemented(feature: str) -> BigQueryError:
 
 DUCKDB_ERRORS = [
     (
+        re.compile(r"Overflow in (?P<name>\w+) of"),
+        "invalidQuery",
+        "Integer Overflow",
+    ),
+    (
+        re.compile(r'invalid date field format: "(?P<name>[^"]*)"'),
+        "invalidQuery",
+        "Invalid date: '{name}'",
+    ),
+    (
+        re.compile(r"Unknown TimeZone '(?P<name>[^']*)'"),
+        "invalidQuery",
+        "Invalid time zone: {name}",
+    ),
+    (
         re.compile(r"More than one row returned by a (?P<name>subquery)"),
         "invalidQuery",
         "Scalar subquery produced more than one element",
@@ -81,7 +96,7 @@ DUCKDB_ERRORS = [
             r"(?:Scalar|Aggregate|Table) Function with name (?P<name>\S+) does not exist"
         ),
         "invalidQuery",
-        "Function not found: {name}",
+        "Function not found: {function_name} at [{function_position}]",
     ),
     (
         re.compile(r'Referenced column "(?P<name>[^"]+)" (?:was )?not found'),
@@ -129,7 +144,65 @@ def _position(message: str) -> tuple[int, int]:
     return int(match[1]), len(match[3]) - len(f"LINE {match[1]}: ") + 1
 
 
-def from_duckdb(error: Exception, context=None) -> BigQueryError:
+def _function(tree, name: str) -> tuple[str, str]:
+    for node in tree.find_all(sqlglot.exp.Anonymous) if tree is not None else []:
+        if node.name.casefold() != name.casefold() or "line" not in node.meta:
+            continue
+        column = node.meta["col"] - len(node.name) + 1
+        if isinstance(node.parent, sqlglot.exp.Dot):
+            path = node.parent.this
+            meta = next(iter(path.find_all(sqlglot.exp.Identifier))).meta
+            column = meta.get("col", 0) - (meta.get("end", 0) - meta.get("start", 0))
+            return (
+                f"{path.sql(dialect='bigquery')}.{node.name}",
+                f"{meta['line']}:{column}",
+            )
+        return node.name, f"{node.meta['line']}:{column}"
+    return name, "1:1"
+
+
+def _text_position(sql: str, offset: int) -> str:
+    line = sql.count("\n", 0, offset) + 1
+    return f"{line}:{offset - (sql.rfind(chr(10), 0, offset) + 1) + 1}"
+
+
+def syntax_error(error: Exception, sql: str) -> BigQueryError:
+    if isinstance(error, sqlglot.errors.TokenError):
+        quotes = [i for i, c in enumerate(sql) if c in "'\""]
+        offset = quotes[-1] if quotes else 0
+        return BigQueryError(
+            "invalidQuery",
+            f"Syntax error: Unclosed string literal at [{_text_position(sql, offset)}]",
+        )
+    if not isinstance(error, sqlglot.errors.ParseError) or not error.errors:
+        return BigQueryError("invalidQuery", f"Syntax error: {error}")
+    detail = error.errors[0]
+    first = sql.lstrip().split(None, 1)[0] if sql.strip() else ""
+    tokens = sqlglot.tokens.Tokenizer().tokenize(sql)
+    if tokens and tokens[0].token_type == sqlglot.tokens.TokenType.VAR:
+        offset = len(sql) - len(sql.lstrip())
+        return BigQueryError(
+            "invalidQuery",
+            f'Syntax error: Unexpected identifier "{first}" at '
+            f"[{_text_position(sql, offset)}]",
+        )
+    context = detail.get("start_context") or ""
+    previous = context.rstrip().rsplit(None, 1)[-1] if context.strip() else ""
+    column = detail["col"] - len(context) + len(context.rstrip()) - len(previous)
+    column -= len(detail.get("highlight") or "") - 1
+    if detail["description"] == "Expecting )" and previous.isalpha():
+        return BigQueryError(
+            "invalidQuery",
+            f'Syntax error: Expected "," but got keyword {previous.upper()} '
+            f"at [{detail['line']}:{column}]",
+        )
+    return BigQueryError(
+        "invalidQuery",
+        f"Syntax error: {detail['description']} at [{detail['line']}:{detail['col']}]",
+    )
+
+
+def from_duckdb(error: Exception, context=None, tree=None) -> BigQueryError:
     message = str(error)
     first = message.split("\n")[0]
     line, column = _position(message)
@@ -139,6 +212,7 @@ def from_duckdb(error: Exception, context=None) -> BigQueryError:
             table = name
             if context is not None and "." not in name:
                 table = f"{context.project_id}:{context.dataset_id}.{name}"
+            function_name, function_position = _function(tree, name)
             arguments = ", ".join(
                 ARGUMENT_TYPES.get(argument.split("(")[0], argument.split("(")[0])
                 for argument in (match.groupdict().get("arguments") or "").split(", ")
@@ -153,6 +227,8 @@ def from_duckdb(error: Exception, context=None) -> BigQueryError:
                     kind="function" if name[:1].isalpha() else "operator",
                     function=name.upper(),
                     arguments=arguments,
+                    function_name=function_name,
+                    function_position=function_position,
                 ),
             )
     if "already exists" in first:
