@@ -160,6 +160,7 @@ CASES = [
     ),
     q("SELECT SAFE.ARRAY_FIRST(ARRAY<INT64>[])", None),
     q("SELECT IFERROR(ERROR('a'), ERROR('b'))", error="b"),
+    q("""SELECT ERROR("it's 'quoted'!")""", error="it's 'quoted'!$"),
     q("SELECT 2 BETWEEN 1 AND 3, NULL BETWEEN 1 AND 3", rows=[(True, None)]),
     q(
         "SELECT NULL IS DISTINCT FROM NULL, 1 IS DISTINCT FROM NULL",
