@@ -26,6 +26,26 @@ CREATE MACRO _string(x) AS CASE
     ELSE _raise('The provided JSON input is not a string')
 END;
 
+CREATE MACRO _json_array(j) AS CASE
+    WHEN j IS NULL OR json_type(j) = 'NULL' THEN NULL
+    WHEN json_type(j) = 'ARRAY' THEN CAST(j AS JSON[])
+    ELSE _raise('The provided JSON input is not an array')
+END;
+
+CREATE MACRO int64_array(j) AS list_transform(bq.main._json_array(j), e -> bq.main.int64(e));
+
+CREATE MACRO float64_array(j) AS list_transform(bq.main._json_array(j), e -> bq.main.float64(e));
+
+CREATE MACRO bool_array(j) AS list_transform(bq.main._json_array(j), e -> bq.main.bool(e));
+
+CREATE MACRO string_array(j) AS list_transform(bq.main._json_array(j), e -> bq.main._string(e));
+
+CREATE MACRO json_flatten(j) AS CASE WHEN j IS NOT NULL THEN (
+    SELECT coalesce(list(value ORDER BY id), [])
+    FROM json_tree(j)
+    WHERE type <> 'ARRAY' AND regexp_full_match(fullkey, '\$(\[\d+\])*')
+) END;
+
 CREATE MACRO lax_int64(j) AS CASE
     WHEN json_type(j) = 'BOOLEAN' THEN j::BOOLEAN::BIGINT
     WHEN bq.main._json_number(j) THEN TRY_CAST(round(j::DOUBLE) AS BIGINT)
