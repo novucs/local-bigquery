@@ -37,5 +37,6 @@ def main(argv: list[str] | None = None):
     else:
         from local_bigquery.grpc import server
 
-        server.start(args.host, args.grpc_port)
+        grpc_server, _ = server.start(args.host, args.grpc_port)
         uvicorn.run("local_bigquery:app", host=args.host, port=args.port)
+        grpc_server.stop(None)
