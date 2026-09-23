@@ -7,7 +7,15 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from local_bigquery.api import datasets, jobs, models, projects, tables, uploads
+from local_bigquery.api import (
+    datasets,
+    jobs,
+    models,
+    projects,
+    routines,
+    tables,
+    uploads,
+)
 from local_bigquery.errors import BigQueryError, from_exception, not_implemented
 
 DISCOVERY = json.loads((pathlib.Path(__file__).parent / "discovery.json").read_text())
@@ -56,7 +64,7 @@ def stub(method_id: str):
     return handler
 
 
-for module in (projects, datasets, tables, jobs, models):
+for module in (projects, datasets, tables, jobs, models, routines):
     app.include_router(
         module.router, prefix=PREFIX, dependencies=[Depends(valid_project)]
     )

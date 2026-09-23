@@ -104,12 +104,33 @@ def qualify(tree: exp.Expression, context) -> exp.Expression:
     return tree
 
 
-def system_variable(node: exp.Expression, context) -> exp.Expression:
+def _system_name(node: exp.Expression) -> str | None:
     if isinstance(node, exp.Parameter) and isinstance(node.this, exp.Parameter):
-        values = {"project_id": context.project_id, "dataset_id": context.dataset_id}
-        if (name := node.this.name.lower()) in values:
-            return exp.Literal.string(values[name]) if values[name] else exp.null()
-    return node
+        return node.this.name.lower()
+    if isinstance(node, exp.Dot) and (prefix := _system_name(node.this)):
+        return f"{prefix}.{node.name.lower()}"
+    return None
+
+
+def system_variable(node: exp.Expression, context) -> exp.Expression:
+    if isinstance(node.parent, exp.Dot) and node.parent.this is node:
+        return node
+    if (name := _system_name(node)) is None:
+        return node
+    values = context.system | {
+        "project_id": context.project_id,
+        "dataset_id": context.dataset_id,
+    }
+    if name not in values:
+        return node
+    value = values[name]
+    if value is None:
+        return exp.null()
+    if isinstance(value, bool):
+        return exp.Boolean(this=value)
+    if isinstance(value, int):
+        return exp.Literal.number(value)
+    return exp.Literal.string(str(value))
 
 
 def time_travel(node: exp.Expression, context) -> exp.Expression:

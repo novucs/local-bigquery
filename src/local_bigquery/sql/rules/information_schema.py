@@ -5,6 +5,7 @@ import sqlglot
 from sqlglot import exp
 
 from local_bigquery.catalog import datasets, tables
+from local_bigquery.catalog import routines as catalog_routines
 from local_bigquery.engine import database
 from local_bigquery.engine.database import quote
 
@@ -261,7 +262,20 @@ def routines(project_id: str, dataset_id: str | None):
         "AND function_type IN ('macro', 'table_macro') AND NOT internal",
         [project_id, dataset_id, dataset_id],
     )
-    return columns, [list(row) + ["SQL", None] for row in rows]
+    stored = {
+        (r["routineReference"]["datasetId"], r["routineReference"]["routineId"]): r
+        for r in catalog_routines.list_(project_id, dataset_id)
+    }
+    functions = [
+        [*row, "SQL", stored.get(row[1:3], {}).get("returnType", {}).get("typeKind")]
+        for row in rows
+    ]
+    procedures = [
+        [project_id, *key, "PROCEDURE", "SQL", None]
+        for key, routine in stored.items()
+        if routine["routineType"] == "PROCEDURE"
+    ]
+    return columns, functions + procedures
 
 
 def legacy_tables(project_id: str, dataset_id: str | None):

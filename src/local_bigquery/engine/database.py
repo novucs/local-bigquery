@@ -24,6 +24,13 @@ CREATE TABLE IF NOT EXISTS emulator.tables (
     resource JSON NOT NULL,
     PRIMARY KEY (project_id, dataset_id, table_id)
 );
+CREATE TABLE IF NOT EXISTS emulator.routines (
+    project_id VARCHAR,
+    dataset_id VARCHAR,
+    routine_id VARCHAR,
+    resource JSON NOT NULL,
+    PRIMARY KEY (project_id, dataset_id, routine_id)
+);
 CREATE TABLE IF NOT EXISTS emulator.js_functions (
     name VARCHAR PRIMARY KEY,
     definition VARCHAR NOT NULL

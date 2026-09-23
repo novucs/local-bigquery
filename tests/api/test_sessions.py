@@ -43,7 +43,6 @@ def test_temp_table_persists(bq):
     assert in_session(bq, "SELECT x FROM t", session_id)[1] == [(1,)]
 
 
-@pytest.mark.xfail(reason="sessions not supported")
 def test_variables_persist(bq):
     session_id = new_session(bq)
     in_session(bq, "DECLARE x INT64 DEFAULT 5", session_id)
