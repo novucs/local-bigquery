@@ -23,12 +23,10 @@ CASES = [
     q(
         "SELECT [1, 2][OFFSET(5)]",
         error="out of bounds",
-        xfail="out-of-bounds OFFSET returns NULL",
     ),
     q(
         "SELECT [1, 2][ORDINAL(0)]",
         error="out of bounds",
-        xfail="out-of-bounds ORDINAL returns NULL",
     ),
     q("SELECT ARRAY_LENGTH([1, 2, 3]), ARRAY_LENGTH(ARRAY<INT64>[])", rows=[(3, 0)]),
     q("SELECT ARRAY_LENGTH(GENERATE_ARRAY(5, 1))", 0),
@@ -42,7 +40,6 @@ CASES = [
         "SELECT GENERATE_ARRAY(0, 1, 0.5)",
         [0.0, 0.5, 1.0],
         types="ARRAY<FLOAT64>",
-        xfail="GENERATE_ARRAY rejects FLOAT64 step",
     ),
     q(
         "SELECT GENERATE_DATE_ARRAY('2020-02-28', '2020-03-01')",
@@ -56,25 +53,21 @@ CASES = [
     q(
         "SELECT ARRAY_INCLUDES([1, 2], 2), ARRAY_INCLUDES([1, 2], 3)",
         rows=[(True, False)],
-        xfail="missing function",
     ),
     q(
         "SELECT ARRAY_FIRST(['a', 'b']), ARRAY_LAST(['a', 'b'])",
         rows=[("a", "b")],
-        xfail="missing function",
     ),
-    q("SELECT ARRAY_FIRST(ARRAY<INT64>[])", error="empty", xfail="missing function"),
+    q("SELECT ARRAY_FIRST(ARRAY<INT64>[])", error="empty"),
     q(
         "SELECT ARRAY_SLICE([1, 2, 3, 4, 5], 1, 3)",
         [2, 3, 4],
-        xfail="ARRAY_SLICE offsets treated as 1-based",
     ),
     q("SELECT ARRAY_SLICE([1, 2, 3, 4, 5], -3, -1)", [3, 4, 5]),
     q("SELECT x FROM UNNEST([3, 1, 2]) AS x ORDER BY x", rows=[(1,), (2,), (3,)]),
     q(
         "SELECT x, o FROM UNNEST(['a', 'b']) AS x WITH OFFSET AS o ORDER BY o",
         rows=[("a", 0), ("b", 1)],
-        xfail="WITH OFFSET is 1-based",
     ),
     q(
         "SELECT a, b FROM UNNEST(ARRAY<STRUCT<a INT64, b STRING>>[(1, 'x'), (2, 'y')]) ORDER BY a",
@@ -101,13 +94,11 @@ CASES = [
     q(
         "SELECT [1, NULL]",
         error="NULL element|null element",
-        xfail="NULL array elements not rejected",
     ),
-    q("SELECT [1] = [1]", error="not defined", xfail="array equality not rejected"),
+    q("SELECT [1] = [1]", error="not defined"),
     q(
         "SELECT [[1]]",
         error="Cannot construct array",
-        xfail="nested arrays not rejected",
     ),
     q(
         "SELECT [STRUCT('a' AS k, [1, 2] AS v)]",
@@ -124,12 +115,10 @@ CASES = [
         "SELECT STRUCT(1, 'x')",
         {"_field_1": 1, "_field_2": "x"},
         types="STRUCT<_field_1 INT64, _field_2 STRING>",
-        xfail="anonymous struct fields misnamed",
     ),
     q(
         "SELECT (1, 'x')",
         {"_field_1": 1, "_field_2": "x"},
-        xfail="tuple struct crashes schema mapping",
     ),
     q("SELECT STRUCT(1 AS a).a", 1),
     q("SELECT s.b.c FROM (SELECT STRUCT(STRUCT(5 AS c) AS b) AS s)", 5),
@@ -139,13 +128,11 @@ CASES = [
         "WITH t AS (SELECT STRUCT(1 AS a) AS s UNION ALL SELECT STRUCT(2)) "
         "SELECT s.a FROM t WHERE s.a > 1",
         2,
-        xfail="UNION of anonymous STRUCT loses field",
     ),
     q("SELECT STRUCT(1 AS a) = STRUCT(1 AS a)", True),
     q(
         "SELECT STRUCT(1, 2) < STRUCT(1, 3)",
         error="not defined|No matching signature",
-        xfail="struct ordering not rejected",
     ),
 ]
 

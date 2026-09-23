@@ -67,7 +67,6 @@ def test_division_by_zero(bq):
     assert "division by zero" in info.value.message
 
 
-@pytest.mark.xfail(reason="NULL array elements are returned")
 def test_null_array_element(bq):
     with fails(BadRequest, "invalidQuery"):
         run(bq, "SELECT [1, NULL]")

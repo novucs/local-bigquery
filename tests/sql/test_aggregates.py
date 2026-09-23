@@ -34,7 +34,6 @@ CASES = [
     q(
         "SELECT COUNTIF(x > 1) FROM UNNEST(ARRAY<INT64>[]) AS x",
         0,
-        xfail="COUNTIF over empty input returns NULL",
     ),
     q(
         "SELECT SUM(x) FROM UNNEST([1, 2, 3]) AS x",
@@ -48,14 +47,14 @@ CASES = [
         "SELECT SUM(x) FROM UNNEST([NUMERIC '1.1', NUMERIC '2.2']) AS x",
         Decimal("3.3"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
+        xfail="NUMERIC literal typed DECIMAL(18,3)",
     ),
     q("SELECT AVG(x) FROM UNNEST([1, 2]) AS x", 1.5, types="FLOAT64"),
     q(
         "SELECT AVG(x) FROM UNNEST([NUMERIC '1', NUMERIC '2']) AS x",
         Decimal("1.5"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
+        xfail="AVG of NUMERIC returns FLOAT64",
     ),
     q("SELECT AVG(x) FROM UNNEST(ARRAY<INT64>[]) AS x", None),
     q("SELECT MIN(x), MAX(x) FROM UNNEST(['b', 'a', 'c']) AS x", rows=[("a", "c")]),
@@ -79,7 +78,6 @@ CASES = [
     q(
         "SELECT ARRAY_AGG(x ORDER BY x DESC LIMIT 2) FROM UNNEST([3, 1, 2]) AS x",
         [3, 2],
-        xfail="ARRAY_AGG LIMIT unsupported",
     ),
     q(
         "SELECT ARRAY_AGG(x IGNORE NULLS ORDER BY x) FROM UNNEST([2, NULL, 1]) AS x",
@@ -93,7 +91,6 @@ CASES = [
     q(
         "SELECT ARRAY_AGG(x) FROM UNNEST([1, NULL]) AS x",
         error="(?i)null element",
-        xfail="NULL array elements not rejected",
     ),
     q(
         "SELECT ARRAY_CONCAT_AGG(a ORDER BY a[OFFSET(0)]) "
@@ -108,7 +105,6 @@ CASES = [
     q(
         "SELECT STRING_AGG(x, ',' ORDER BY x LIMIT 2) FROM UNNEST(['c', 'a', 'b']) AS x",
         "a,b",
-        xfail="STRING_AGG LIMIT unsupported",
     ),
     q(
         "SELECT STRING_AGG(DISTINCT x, ',' ORDER BY x) FROM UNNEST(['a', 'a', 'b']) AS x",
@@ -120,7 +116,6 @@ CASES = [
         "SELECT STRING_AGG(x, b'-' ORDER BY x) FROM UNNEST([b'a', b'b']) AS x",
         b"a-b",
         types="BYTES",
-        xfail="STRING_AGG over BYTES unsupported",
     ),
     q(
         "SELECT LOGICAL_AND(x), LOGICAL_OR(x) FROM UNNEST([TRUE, FALSE, NULL]) AS x",
@@ -147,33 +142,28 @@ CASES = [
     q(
         "SELECT APPROX_QUANTILES(x, 2) FROM UNNEST([1, 1, 1, 4, 5, 6, 7, 8, 9, 10]) AS x",
         [1, 5, 10],
-        xfail="APPROX_QUANTILES picks upper median",
     ),
     q(
         "SELECT APPROX_TOP_COUNT(x, 2) "
         "FROM UNNEST(['apple', 'apple', 'pear', 'pear', 'pear', 'banana']) AS x",
         [{"value": "pear", "count": 3}, {"value": "apple", "count": 2}],
         types="ARRAY<STRUCT<value STRING, count INT64>>",
-        xfail="returns values without counts",
     ),
     q(
         "SELECT APPROX_TOP_SUM(x, w, 2) FROM (SELECT 'apple' AS x, 3 AS w UNION ALL "
         "SELECT 'pear', 2 UNION ALL SELECT 'apple', 0 UNION ALL SELECT 'banana', 5 "
         "UNION ALL SELECT 'pear', 4)",
         [{"value": "pear", "sum": 6}, {"value": "banana", "sum": 5}],
-        xfail="missing function",
     ),
     q(
         "SELECT HLL_COUNT.EXTRACT(HLL_COUNT.INIT(x)) FROM UNNEST([1, 2, 2, 3]) AS x",
         3,
-        xfail="missing function",
     ),
     q(
         "SELECT HLL_COUNT.MERGE(s) FROM ("
         "SELECT HLL_COUNT.INIT(x) AS s FROM UNNEST([1, 2]) AS x UNION ALL "
         "SELECT HLL_COUNT.INIT(x) FROM UNNEST([2, 3]) AS x)",
         3,
-        xfail="missing function",
     ),
     q(
         "SELECT g, SUM(v) FROM t GROUP BY g ORDER BY g",

@@ -16,6 +16,16 @@ class Page:
     next_token: str | None
 
 
+def _without_null_elements(expression: str, column: str, t) -> str:
+    if t.id not in ("list", "array"):
+        return expression
+    message = f"Array cannot have a null element; error in writing field {column}"
+    return (
+        f"CASE WHEN list_bool_or(list_transform({expression}, e -> e IS NULL)) "
+        f"THEN error('{message.replace("'", "''")}') ELSE {expression} END"
+    )
+
+
 def materialise(
     cur: duckdb.DuckDBPyConnection,
     query: str,
@@ -27,7 +37,7 @@ def materialise(
     relation = cur.sql(query, params=params)
     positions = [f"c{index}" for index in range(len(relation.columns))]
     columns = ", ".join(
-        f"{types.cast(position, t)} AS {quote(column)}"
+        f"{_without_null_elements(types.cast(position, t), column, t)} AS {quote(column)}"
         for position, column, t in zip(positions, relation.columns, relation.types)
     )
     select = f"SELECT {columns} FROM ({query}) AS q({', '.join(positions)})"

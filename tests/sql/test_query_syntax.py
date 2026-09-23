@@ -52,7 +52,6 @@ CASES = [
     q(
         "SELECT (SELECT id FROM r)",
         error="(?i)more than one element",
-        xfail="scalar subquery error wording differs",
     ),
     q("SELECT ARRAY(SELECT id FROM r WHERE id IS NOT NULL ORDER BY id)", [1, 3]),
     q("SELECT EXISTS (SELECT 1 FROM r WHERE FALSE)", False),
@@ -73,7 +72,6 @@ CASES = [
         "SELECT * FROM (SELECT 1 AS a, 2 AS b UNION ALL CORRESPONDING "
         "SELECT 3 AS b, 4 AS a) ORDER BY a",
         rows=[(1, 2), (4, 3)],
-        xfail="CORRESPONDING transpiled to invalid SQL",
     ),
     q(
         "SELECT * FROM (SELECT 1 AS a, 2 AS b UNION ALL BY NAME SELECT 3 AS b, 4 AS a) "
@@ -89,7 +87,6 @@ CASES = [
         "SELECT * FROM (SELECT 1 AS id, 10 AS q1, 20 AS q2) "
         "UNPIVOT (sales FOR quarter IN (q1, q2)) ORDER BY quarter",
         rows=[(1, 10, "q1"), (1, 20, "q2")],
-        xfail="UNPIVOT value and name columns swapped",
     ),
     q("SELECT * EXCEPT (b) FROM (SELECT 1 AS a, 2 AS b, 3 AS c)", rows=[(1, 3)]),
     q("SELECT * REPLACE (b * 10 AS b) FROM (SELECT 1 AS a, 2 AS b)", rows=[(1, 20)]),
@@ -161,7 +158,6 @@ CASES = [
     q(
         "SELECT 1 AS a, 2 AS a",
         error="(?i)duplicate column names",
-        xfail="duplicate column names not rejected",
     ),
 ]
 
