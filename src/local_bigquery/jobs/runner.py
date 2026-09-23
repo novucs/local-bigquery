@@ -1,4 +1,5 @@
 import concurrent.futures
+import contextvars
 import contextlib
 import os
 import re
@@ -96,7 +97,10 @@ def submit(
     )
     job = store.save(_job(project_id, job_id, configuration))
     running = _running[(project_id, job_id)] = Running()
-    running.future = _executor.submit(_execute, job, job_type, session, running, upload)
+    context = contextvars.copy_context()
+    running.future = _executor.submit(
+        context.run, _execute, job, job_type, session, running, upload
+    )
     return job
 
 

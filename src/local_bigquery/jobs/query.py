@@ -4,7 +4,7 @@ import re
 import duckdb
 from sqlglot import exp
 
-from local_bigquery.catalog import datasets, routines, tables
+from local_bigquery.catalog import datasets, row_access, routines, tables
 from local_bigquery.catalog import ddl as catalog_ddl
 from local_bigquery.engine import database, types
 from local_bigquery.engine.database import quote
@@ -152,6 +152,16 @@ def _statement(
 
 
 def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
+    if isinstance(tree, exp.Command) and (
+        policy := row_access.ddl(
+            tree.text("expression").strip(),
+            tree.text("this").upper(),
+            context.project_id,
+            context.dataset_id,
+            dry_run,
+        )
+    ):
+        return policy
     statistics = {"statementType": statement_type(tree)}
     if isinstance(tree, DDL):
         statistics |= _ddl(tree, context)

@@ -31,6 +31,14 @@ CREATE TABLE IF NOT EXISTS emulator.routines (
     resource JSON NOT NULL,
     PRIMARY KEY (project_id, dataset_id, routine_id)
 );
+CREATE TABLE IF NOT EXISTS emulator.row_access_policies (
+    project_id VARCHAR,
+    dataset_id VARCHAR,
+    table_id VARCHAR,
+    policy_id VARCHAR,
+    resource JSON NOT NULL,
+    PRIMARY KEY (project_id, dataset_id, table_id, policy_id)
+);
 CREATE TABLE IF NOT EXISTS emulator.js_functions (
     name VARCHAR PRIMARY KEY,
     definition VARCHAR NOT NULL

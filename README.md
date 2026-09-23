@@ -13,6 +13,8 @@ Uses [SQLGlot](https://github.com/tobymao/sqlglot) for translation, and [DuckDB]
   scripting and procedures, SQL/JavaScript UDFs and table functions,
   `INFORMATION_SCHEMA`, wildcard tables, time travel, snapshots and clones,
   `GEOGRAPHY`, `RANGE`, `EXPORT DATA` and `EXTERNAL_QUERY` against Postgres.
+- **Row access policies** filter rows for the caller named by the `X-Bqemu-Caller` and
+  `X-Bqemu-Groups` headers (default `CALLER=user:local-bigquery@localhost`).
 - **Known gaps** are the strict `xfail` cases in [`tests/`](tests), each with its reason.
 
 ## Usage
