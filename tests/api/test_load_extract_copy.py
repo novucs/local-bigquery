@@ -1,9 +1,12 @@
 import datetime
+import gzip
 import io
+import json
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 from google.api_core.exceptions import BadRequest, Conflict, NotFound
 from google.cloud import bigquery
 
@@ -186,3 +189,75 @@ def test_copy_write_empty_rejects_non_empty_table(bq, dataset):
 def test_copy_missing_source(bq, dataset):
     with fails(NotFound, "notFound"):
         bq.copy_table(table_id(dataset), table_id(dataset)).result()
+
+
+@pytest.fixture
+def local(request, tmp_path):
+    if request.config.getoption("--endpoint"):
+        pytest.skip("extract to file:// needs the in-process emulator")
+    return tmp_path
+
+
+def extract(bq, table, uri, **config):
+    job_config = bigquery.ExtractJobConfig(**config)
+    return bq.extract_table(table, uri, job_config=job_config).result()
+
+
+def test_extract_csv_with_header(bq, dataset, local):
+    job = extract(bq, ctas(bq, dataset, 1), f"file://{local}/out.csv")
+    assert job.state == "DONE"
+    assert (local / "out.csv").read_text().splitlines() == ["x", "1"]
+
+
+def test_extract_compressed_csv(bq, dataset, local):
+    extract(
+        bq,
+        ctas(bq, dataset, 1),
+        f"file://{local}/out.csv.gz",
+        compression=bigquery.Compression.GZIP,
+        print_header=False,
+    )
+    assert gzip.decompress((local / "out.csv.gz").read_bytes()) == b"1\n"
+
+
+def test_extract_newline_delimited_json(bq, dataset, local):
+    extract(
+        bq,
+        ctas(bq, dataset, 1, 2),
+        f"file://{local}/out.json",
+        destination_format=bigquery.DestinationFormat.NEWLINE_DELIMITED_JSON,
+    )
+    lines = (local / "out.json").read_text().splitlines()
+    assert sorted(json.loads(line)["x"] for line in lines) == [1, 2]
+
+
+def test_extract_parquet(bq, dataset, local):
+    extract(
+        bq,
+        ctas(bq, dataset, 1, 2),
+        f"file://{local}/out.parquet",
+        destination_format=bigquery.DestinationFormat.PARQUET,
+    )
+    assert sorted(pq.read_table(local / "out.parquet")["x"].to_pylist()) == [1, 2]
+
+
+def test_extract_wildcard_uri(bq, dataset, local):
+    extract(bq, ctas(bq, dataset, 1), f"file://{local}/part-*.csv")
+    assert [p.name for p in local.iterdir()] == ["part-000000000000.csv"]
+
+
+def test_extract_missing_table(bq, dataset, local):
+    with fails(NotFound, "notFound"):
+        extract(
+            bq, f"{dataset.dataset_id}.{unique('missing')}", f"file://{local}/x.csv"
+        )
+
+
+def test_export_data_statement(bq, dataset, local):
+    run(
+        bq,
+        f"EXPORT DATA OPTIONS (uri = 'file://{local}/export-*.csv', format = 'CSV', "
+        "overwrite = true, header = true) AS SELECT 1 AS x",
+    )
+    exported = next(local.iterdir()).read_text().splitlines()
+    assert exported == ["x", "1"]

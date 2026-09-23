@@ -1,4 +1,5 @@
 import duckdb
+from sqlglot import exp
 
 from local_bigquery.catalog import tables
 from local_bigquery.errors import BigQueryError
@@ -6,17 +7,24 @@ from local_bigquery.jobs.storage import literal, path
 
 FORMATS = {
     "CSV": "csv",
+    "JSON": "json",
     "NEWLINE_DELIMITED_JSON": "json",
     "PARQUET": "parquet",
     "AVRO": "avro",
 }
+EXPORT_OPTIONS = {
+    "uri": "destinationUri",
+    "format": "destinationFormat",
+    "header": "printHeader",
+    "field_delimiter": "fieldDelimiter",
+    "compression": "compression",
+}
 
 
-def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
-    source = config["sourceTable"]
-    reference = (source["projectId"], source["datasetId"], source["tableId"])
-    tables.load(*reference)
-    kind = config.get("destinationFormat") or "CSV"
+def write(
+    cur: duckdb.DuckDBPyConnection, query: str, params: dict, config: dict
+) -> list[str]:
+    kind = (config.get("destinationFormat") or "CSV").upper()
     if kind not in FORMATS:
         raise BigQueryError("invalid", f"Unsupported destination format: {kind}")
     options = [f"FORMAT {FORMATS[kind]}"]
@@ -31,7 +39,25 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
     for uri in uris:
         target = path(cur, uri.replace("*", "000000000000"))
         cur.execute(
-            f"COPY (SELECT * FROM {tables.name(*reference)}) "
-            f"TO {literal(target)} ({', '.join(options)})"
+            f"COPY ({query}) TO {literal(target)} ({', '.join(options)})", params
         )
-    return {"destinationUriFileCounts": ["1" for _ in uris], "inputBytes": "0"}
+    return ["1" for _ in uris]
+
+
+def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
+    source = config["sourceTable"]
+    reference = (source["projectId"], source["datasetId"], source["tableId"])
+    tables.load(*reference)
+    counts = write(cur, f"SELECT * FROM {tables.name(*reference)}", {}, config)
+    return {"destinationUriFileCounts": counts, "inputBytes": "0"}
+
+
+def export_config(tree: exp.Export) -> dict:
+    config = {}
+    for option in tree.args["options"].expressions:
+        if isinstance(option, exp.FileFormatProperty):
+            config["destinationFormat"] = option.this.name
+        elif key := EXPORT_OPTIONS.get(option.name.lower()):
+            value = option.args["value"]
+            config[key] = value.this if isinstance(value, exp.Boolean) else value.name
+    return config

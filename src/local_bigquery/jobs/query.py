@@ -8,7 +8,7 @@ from local_bigquery.catalog import ddl as catalog_ddl
 from local_bigquery.engine import database, types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import from_duckdb
-from local_bigquery.jobs import merge
+from local_bigquery.jobs import extract, merge
 from local_bigquery.sql import js, params
 from local_bigquery.sql.dialect import DuckDBDialect
 from local_bigquery.sql.rules import ddl
@@ -20,6 +20,7 @@ STATEMENT_TYPES = {
     exp.Delete: "DELETE",
     exp.Merge: "MERGE",
     exp.TruncateTable: "TRUNCATE_TABLE",
+    exp.Export: "EXPORT_DATA",
 }
 DML_COUNTS = {
     exp.Insert: "insertedRowCount",
@@ -152,6 +153,11 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
         statistics |= _ddl(tree, context)
     if isinstance(tree, exp.Merge) and not dry_run:
         return statistics | merge.run(cur, tree, context)
+    if isinstance(tree, exp.Export):
+        sql, bound = translate(tree.this, context)
+        if not dry_run:
+            extract.write(cur, sql, bound, extract.export_config(tree))
+        return statistics
     parts = ddl.split(tree)
     if dry_run:
         for part in parts:
