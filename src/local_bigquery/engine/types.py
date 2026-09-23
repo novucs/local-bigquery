@@ -76,6 +76,20 @@ def duckdb_type(field: TableFieldSchema) -> str:
     return f"{name}[]" if field.mode == "REPEATED" else name
 
 
+def bigquery_type(field: TableFieldSchema) -> str:
+    kind = {"INTEGER": "INT64", "FLOAT": "FLOAT64", "BOOLEAN": "BOOL"}.get(
+        field.type, field.type
+    )
+    if kind in ("RECORD", "STRUCT"):
+        members = ", ".join(
+            f"`{f.name}` {bigquery_type(f)}" for f in field.fields or []
+        )
+        kind = f"STRUCT<{members}>"
+    elif kind == "RANGE":
+        kind = f"RANGE<{field.rangeElementType.type}>"
+    return f"ARRAY<{kind}>" if field.mode == "REPEATED" else kind
+
+
 def column(field: TableFieldSchema, nested: bool = False) -> str:
     sql = f"{quote(field.name)} {duckdb_type(field)}"
     return sql if nested or field.mode != "REQUIRED" else f"{sql} NOT NULL"

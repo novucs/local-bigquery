@@ -1,5 +1,4 @@
 from sqlglot import exp
-from sqlglot.optimizer.annotate_types import annotate_types
 
 from local_bigquery.sql.dialect import macro
 
@@ -8,13 +7,6 @@ DECIMALS = {Type.DECIMAL: "DECIMAL(38, 9)", Type.BIGDECIMAL: "DECIMAL(38, 18)"}
 FLOATS = {Type.DOUBLE, Type.FLOAT}
 SHIFTS = {exp.BitwiseLeftShift: "_shift_left", exp.BitwiseRightShift: "_shift_right"}
 OPERATORS = {exp.Div: "/", exp.IntDiv: "DIV", exp.Mod: "MOD"}
-
-
-def annotate(tree: exp.Expression, context) -> exp.Expression:
-    try:
-        return annotate_types(tree, dialect="bigquery")
-    except Exception:
-        return tree
 
 
 def _type(node: exp.Expression) -> exp.DataType.Type | None:
@@ -94,5 +86,4 @@ def shift(node: exp.Expression, context) -> exp.Expression:
     return node
 
 
-STATEMENT_RULES = [annotate]
 NODE_RULES = [decimal_type, division, float_to_integer, float_sign, shift]

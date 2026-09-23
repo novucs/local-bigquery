@@ -16,6 +16,7 @@ from local_bigquery.sql.rules import (
     safe,
     strings,
     tables,
+    typing,
     udfs,
 )
 
@@ -32,6 +33,7 @@ MODULES = [
     ddl,
     datetime,
     external,
+    typing,
     math,
     parameters,
     literals,

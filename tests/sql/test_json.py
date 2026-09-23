@@ -34,7 +34,6 @@ CASES = [
     q(
         "SELECT TO_JSON_STRING(STRUCT(DATE '2020-01-02' AS d, b'ab' AS b))",
         '{"d":"2020-01-02","b":"YWI="}',
-        xfail="BYTES not base64 encoded",
     ),
     q("""SELECT JSON_VALUE('{"a": {"b": 1}}', '$.a.b')""", "1", types="STRING"),
     q("""SELECT JSON_VALUE('{"a": {"b": 1}}', '$.a')""", None),
@@ -69,7 +68,6 @@ CASES = [
     q(
         """SELECT j.xs[1] FROM (SELECT JSON '{"xs": [10, 20]}' AS j)""",
         20,
-        xfail="JSON array subscript is 1-based",
     ),
     q("""SELECT j.missing IS NULL FROM (SELECT JSON '{"a": 1}' AS j)""", True),
     q(
