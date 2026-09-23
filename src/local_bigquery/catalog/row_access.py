@@ -1,5 +1,4 @@
 import contextvars
-import functools
 import re
 
 from local_bigquery.catalog import metadata, tables
@@ -44,7 +43,6 @@ def _label(project_id: str, dataset_id: str, table_id: str, policy_id: str) -> s
     return f"{project_id}:{dataset_id}.{table_id}.{policy_id}"
 
 
-@functools.cache
 def secured() -> frozenset[tuple[str, str, str]]:
     rows = fetch(
         "SELECT DISTINCT project_id, dataset_id, table_id FROM emulator.row_access_policies"
@@ -85,7 +83,6 @@ def save(
         "creationTime": (current or {}).get("creationTime", now),
         "lastModifiedTime": now,
     }
-    secured.cache_clear()
     return metadata.save("row_access_policies", resource, *keys)
 
 
@@ -95,7 +92,6 @@ def delete(project_id: str, dataset_id: str, table_id: str, *policy_ids: str):
     for policy_id in policy_ids or [None]:
         keys = [project_id, dataset_id, table_id] + ([policy_id] if policy_id else [])
         metadata.delete("row_access_policies", *keys)
-    secured.cache_clear()
 
 
 def predicate(project_id: str, dataset_id: str, table_id: str) -> str | None:

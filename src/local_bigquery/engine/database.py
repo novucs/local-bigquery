@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS emulator.jobs (
 );
 """
 _attach_lock = threading.Lock()
+_attached: set[str] = set()
+_writers: dict[tuple[str, ...], threading.Lock] = {}
 _connection_lock = threading.Lock()
 
 
@@ -81,9 +83,10 @@ def _connect() -> duckdb.DuckDBPyConnection:
     native.register(con)
     for path in FUNCTIONS:
         con.execute(MACRO.sub(r"CREATE MACRO bq.main.\1", path.read_text()))
-    for path in sorted(settings.data_dir.glob("*.ducklake")):
-        _attach(con, path.stem)
-    _attach(con, settings.default_project_id)
+    for project_id in {p.stem for p in settings.data_dir.glob("*.ducklake")} | {
+        settings.default_project_id
+    }:
+        _attach(con, project_id)
     default = quote(settings.default_project_id, settings.default_dataset_id)
     con.execute(f"CREATE SCHEMA IF NOT EXISTS {default}")
     return con
@@ -91,23 +94,36 @@ def _connect() -> duckdb.DuckDBPyConnection:
 
 def _attach(con: duckdb.DuckDBPyConnection, project_id: str):
     path = settings.data_dir / project_id
-    con.execute(
-        f"ATTACH IF NOT EXISTS 'ducklake:{path}.ducklake' AS {quote(project_id)} "
-        f"(DATA_PATH '{path}/')"
-    )
+    source = f"'ducklake:{path}.ducklake' AS {{}} (DATA_PATH '{path}/')"
+    if not path.with_name(f"{path.name}.ducklake").exists():
+        with duckdb.connect() as scratch:
+            scratch.execute(f"ATTACH {source.format('fresh')}")
+    con.execute(f"ATTACH IF NOT EXISTS {source.format(quote(project_id))}")
+    _attached.add(project_id)
 
 
 def attach(project_id: str):
+    if project_id in _attached:
+        return
+    with _attach_lock, cursor() as cur:
+        _attach(cur, project_id)
+
+
+@contextlib.contextmanager
+def writing(*table: str) -> Iterator[None]:
+    key = tuple(part.casefold() for part in table)
     with _attach_lock:
-        _attach(connection(), project_id)
+        lock = _writers.setdefault(key, threading.Lock())
+    with lock:
+        yield
 
 
 def projects() -> list[str]:
-    rows = connection().sql(
+    rows = fetch(
         "SELECT database_name FROM duckdb_databases() WHERE type = 'ducklake' "
         "ORDER BY database_name"
     )
-    return [name for (name,) in rows.fetchall()]
+    return [name for (name,) in rows]
 
 
 @contextlib.contextmanager
@@ -133,4 +149,5 @@ def reset():
     if _connect.cache_info().currsize:
         connection().close()
         _connect.cache_clear()
+        _attached.clear()
     shutil.rmtree(settings.data_dir, ignore_errors=True)

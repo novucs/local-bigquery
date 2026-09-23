@@ -117,6 +117,17 @@ def _ddl(tree: exp.Expression, context: Context) -> dict:
     return {"ddlOperationPerformed": operation, key: reference}
 
 
+def _target(tree: exp.Expression, context: Context) -> tuple[str, str, str]:
+    table = tree.find(exp.Table)
+    if table is None:
+        return ("",)
+    return (
+        table.catalog or context.project_id,
+        table.db or context.dataset_id or "",
+        table.name,
+    )
+
+
 def _reference(table: dict) -> tuple[str, str, str]:
     return table["projectId"], table["datasetId"], table["tableId"]
 
@@ -154,7 +165,10 @@ def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated
     create = config.get("createDisposition")
     relation = cur.sql(sql, params=bound)
     layout = _layout(relation, config, write)
-    with database.cursor() if isolated else contextlib.nullcontext(cur) as writer:
+    with (
+        database.writing(*reference),
+        database.cursor() if isolated else contextlib.nullcontext(cur) as writer,
+    ):
         if write == "WRITE_APPEND" and tables.exists(*reference):
             options = config.get("schemaUpdateOptions")
             tables.evolve(
@@ -252,7 +266,8 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
     if isinstance(tree, DDL):
         statistics |= _ddl(tree, context)
     if isinstance(tree, exp.Merge) and not dry_run:
-        return statistics | merge.run(cur, tree, context)
+        with database.writing(*_target(tree, context)):
+            return statistics | merge.run(cur, tree, context)
     if isinstance(tree, exp.Export):
         sql, bound = translate(tree.this, context)
         if not dry_run:
@@ -287,7 +302,8 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
         if destination is not None:
             _write(cur, sql, bound, destination, config, isolated)
         elif type(part) in STATEMENT_TYPES:
-            (count,) = cur.execute(sql, bound).fetchone()
+            with database.writing(*_target(part, context)):
+                (count,) = cur.execute(sql, bound).fetchone()
             statistics["numDmlAffectedRows"] = str(count)
             if key := DML_COUNTS.get(type(part)):
                 statistics["dmlStats"] = {key: str(count)}
