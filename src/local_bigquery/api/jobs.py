@@ -94,13 +94,14 @@ def cancel_job(project_id: str, job_id: str) -> JobCancelResponse:
     return JobCancelResponse(kind="bigquery#jobCancelResponse", job=job)
 
 
-@router.delete("/projects/{project_id}/jobs/{job_id}/delete", status_code=204)
-def delete_job(project_id: str, job_id: str):
+@router.delete("/projects/{project_id}/jobs/{job_id}/delete")
+def delete_job(project_id: str, job_id: str) -> dict:
     job = runner.get(project_id, job_id)
     destination = job["configuration"].get("query", {}).get("destinationTable")
     if destination and destination["datasetId"] == tables.RESULTS:
         tables.delete(project_id, tables.RESULTS, job_id)
     store.delete(project_id, job_id)
+    return {}
 
 
 @router.post("/projects/{project_id}/queries")

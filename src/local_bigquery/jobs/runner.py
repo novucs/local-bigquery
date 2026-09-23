@@ -88,6 +88,8 @@ def submit(
     if job_type is None:
         raise BigQueryError("invalid", "Job configuration must specify a job type")
     configuration = configuration | {"jobType": job_type.upper()}
+    if job_type == "load":
+        load.validate(configuration["load"])
     if job_type == "query" and configuration.get("dryRun"):
         return _dry_run(project_id, configuration)
     if store.load(project_id, job_id):

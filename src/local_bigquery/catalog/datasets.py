@@ -27,6 +27,12 @@ def _defaults(project_id: str, dataset_id: str) -> dict:
         "datasetReference": {"projectId": project_id, "datasetId": dataset_id},
         "location": "US",
         "type": "DEFAULT",
+        "maxTimeTravelHours": "168",
+        "access": [
+            {"role": "WRITER", "specialGroup": "projectWriters"},
+            {"role": "OWNER", "specialGroup": "projectOwners"},
+            {"role": "READER", "specialGroup": "projectReaders"},
+        ],
         "creationTime": now,
         "lastModifiedTime": now,
     }

@@ -64,8 +64,9 @@ def test_abort_session(bq):
 
 
 def test_unknown_session(bq):
-    with fails(BadRequest, "invalid"):
+    with fails(BadRequest, "invalid") as info:
         in_session(bq, "SELECT 1", "not-a-session")
+    assert "Invalid input session id." in str(info.value)
 
 
 def test_transaction_spans_jobs(bq, dataset):

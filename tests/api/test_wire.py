@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import requests
 
@@ -193,3 +195,106 @@ def test_get_query_results_page_tokens(api):
 
 def test_query_response_kind(api):
     assert jobs_query(api, "SELECT 1")["kind"] == "bigquery#queryResponse"
+
+
+def test_job_delete_returns_empty_object(api):
+    job_id = insert_job(api, "SELECT 1")["jobReference"]["jobId"]
+    response = api("DELETE", f"/jobs/{job_id}/delete")
+    assert (response.status_code, response.json()) == (200, {})
+
+
+def test_dataset_defaults(api, dataset):
+    body = api("GET", f"/datasets/{dataset.dataset_id}").json()
+    assert body["maxTimeTravelHours"] == "168"
+    assert {entry["role"] for entry in body["access"]} == {"OWNER", "WRITER", "READER"}
+
+
+def test_table_byte_counters(api, dataset):
+    jobs_query(api, f"CREATE TABLE {dataset.dataset_id}.counters (a INT64)")
+    body = api("GET", f"/datasets/{dataset.dataset_id}/tables/counters").json()
+    for key in (
+        "numLongTermBytes",
+        "numTotalLogicalBytes",
+        "numActiveLogicalBytes",
+        "numLongTermLogicalBytes",
+    ):
+        assert body[key] == "0"
+
+
+def test_insert_all_conversion_error(api, dataset):
+    jobs_query(api, f"CREATE TABLE {dataset.dataset_id}.numbers (n INT64)")
+    rows = [{"json": {"n": 1}}, {"json": {"n": "not-a-number"}}]
+    body = api(
+        "POST",
+        f"/datasets/{dataset.dataset_id}/tables/numbers/insertAll",
+        json={"skipInvalidRows": True, "rows": rows},
+    ).json()
+    assert body["insertErrors"] == [
+        {
+            "index": 1,
+            "errors": [
+                {
+                    "reason": "invalid",
+                    "location": "n",
+                    "debugInfo": "",
+                    "message": "Cannot convert value to integer (bad value): not-a-number",
+                }
+            ],
+        }
+    ]
+
+
+@pytest.fixture(scope="module")
+def upload(endpoint, project):
+    if endpoint == "google":
+        pytest.skip("raw REST tests need an unauthenticated endpoint")
+    base = f"{endpoint}/upload/bigquery/v2/projects/{project}/jobs"
+
+    def call(method, params, **kwargs):
+        return requests.request(method, base, params=params, timeout=5, **kwargs)
+
+    return call
+
+
+def load_config(dataset, **load) -> dict:
+    table = {"datasetId": dataset.dataset_id, "tableId": unique("uploaded")}
+    return {"configuration": {"load": {"destinationTable": table} | load}}
+
+
+def multipart(metadata: str, data: bytes) -> tuple[dict, bytes]:
+    boundary = "wire-boundary"
+    body = (
+        (
+            f"--{boundary}\r\nContent-Type: application/json\r\n\r\n{metadata}\r\n"
+            f"--{boundary}\r\nContent-Type: text/csv\r\n\r\n"
+        ).encode()
+        + data
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
+    return {"Content-Type": f'multipart/related; boundary="{boundary}"'}, body
+
+
+def test_resumable_upload_id_and_status_probe(upload, dataset):
+    started = upload("POST", {"uploadType": "resumable"}, json=load_config(dataset))
+    upload_id = started.headers["X-GUploader-UploadID"]
+    headers = {"Content-Range": "bytes 0-9/100", "Content-Type": "text/csv"}
+    upload("PUT", {"upload_id": upload_id}, headers=headers, data=b"x\n1\n2\n3\n4\n")
+    probe = upload(
+        "PUT", {"upload_id": upload_id}, headers={"Content-Range": "bytes */100"}
+    )
+    assert (probe.status_code, probe.headers["Range"]) == (308, "bytes=0-9")
+
+
+def test_multipart_invalid_metadata(upload):
+    headers, body = multipart("{not json", b"x\n1\n")
+    response = upload("POST", {"uploadType": "multipart"}, headers=headers, data=body)
+    assert response.status_code == 400
+    assert response.json()["error"]["status"] == "INVALID_ARGUMENT"
+
+
+def test_multipart_unknown_source_format(upload, dataset):
+    metadata = json.dumps(load_config(dataset, sourceFormat="BOGUS"))
+    headers, body = multipart(metadata, b"x\n1\n")
+    response = upload("POST", {"uploadType": "multipart"}, headers=headers, data=body)
+    assert response.status_code == 400
+    assert response.json()["error"]["status"] == "INVALID_ARGUMENT"

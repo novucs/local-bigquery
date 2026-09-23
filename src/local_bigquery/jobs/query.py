@@ -1,3 +1,4 @@
+import contextlib
 import json
 import re
 
@@ -120,11 +121,9 @@ def _reference(table: dict) -> tuple[str, str, str]:
     return table["projectId"], table["datasetId"], table["tableId"]
 
 
-def _layout(cur, sql: str, bound: dict, config: dict) -> dict:
+def _layout(relation: duckdb.DuckDBPyRelation, config: dict, write: str) -> dict:
     layout = {key: config[key] for key in LAYOUT if config.get(key)}
-    if not layout:
-        return layout
-    columns = {name.casefold() for name in cur.sql(sql, params=bound).columns}
+    columns = {name.casefold() for name in relation.columns}
     partitioning = (
         layout.get("timePartitioning") or layout.get("rangePartitioning") or {}
     )
@@ -140,6 +139,12 @@ def _layout(cur, sql: str, bound: dict, config: dict) -> dict:
                 "The field specified for clustering cannot be found in the schema. "
                 f"Invalid field: {field}",
             )
+    if config.get("schemaUpdateOptions") and write != "WRITE_APPEND":
+        raise BigQueryError(
+            "invalid",
+            "Schema update options should only be specified with WRITE_APPEND "
+            "disposition, or with WRITE_TRUNCATE disposition on a table partition.",
+        )
     return layout
 
 
@@ -147,12 +152,17 @@ def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated
     reference = _reference(destination)
     write = config.get("writeDisposition") or "WRITE_EMPTY"
     create = config.get("createDisposition")
-    layout = _layout(cur, sql, bound, config)
-    if not isolated:
-        tables.write(cur, sql, bound, reference, write, create)
-    else:
-        with database.cursor() as writer:
-            tables.write(cur, sql, bound, reference, write, create, writer)
+    relation = cur.sql(sql, params=bound)
+    layout = _layout(relation, config, write)
+    with database.cursor() if isolated else contextlib.nullcontext(cur) as writer:
+        if write == "WRITE_APPEND" and tables.exists(*reference):
+            options = config.get("schemaUpdateOptions")
+            tables.evolve(
+                writer, reference, relation, options, "Invalid schema update. "
+            )
+        tables.write(
+            cur, sql, bound, reference, write, create, writer if isolated else None
+        )
     if layout:
         stored = metadata.load("tables", *reference) or tables.defaults(*reference)
         tables.record(*reference, stored | layout)
@@ -246,7 +256,12 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
     if isinstance(tree, exp.Export):
         sql, bound = translate(tree.this, context)
         if not dry_run:
-            extract.write(cur, sql, bound, extract.export_config(tree))
+            rows = extract.write(cur, sql, bound, extract.export_config(tree))
+            statistics["exportDataStatistics"] = {
+                "fileCount": "1",
+                "rowCount": str(rows),
+            }
+            statistics |= {"transferredBytes": "0", "totalPartitionsProcessed": "0"}
         return statistics
     parts = ddl.split(tree)
     if dry_run:

@@ -248,6 +248,97 @@ def test_destination_create_never_missing_table(bq, dataset):
         )
 
 
+APPEND = bigquery.WriteDisposition.WRITE_APPEND
+TRUNCATE = bigquery.WriteDisposition.WRITE_TRUNCATE
+ADDITION = bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION
+
+
+@pytest.fixture
+def seeded(bq, dataset):
+    destination = f"{bq.project}.{dataset.dataset_id}.{unique('seeded')}"
+    run(bq, f"CREATE TABLE `{destination}` AS SELECT 1 AS a, 'seed' AS b")
+    return destination
+
+
+def test_destination_append_adds_fields(bq, seeded):
+    run_job(
+        bq,
+        "SELECT 2 AS a, 'second' AS b, FALSE AS c",
+        destination=seeded,
+        write_disposition=APPEND,
+        schema_update_options=[ADDITION],
+    )
+    rows = run(bq, f"SELECT a, b, c FROM `{seeded}` ORDER BY a")
+    assert [tuple(r.values()) for r in rows] == [
+        (1, "seed", None),
+        (2, "second", False),
+    ]
+
+
+def test_destination_append_new_field_needs_option(bq, seeded):
+    with fails(BadRequest, "invalid") as info:
+        run_job(bq, "SELECT 'x' AS shape", destination=seeded, write_disposition=APPEND)
+    assert "Invalid schema update. Cannot add fields (field: shape)" in str(info.value)
+
+
+def test_destination_schema_update_options_need_append(bq, seeded):
+    with fails(BadRequest, "invalid") as info:
+        run_job(
+            bq,
+            "SELECT 1 AS a",
+            destination=seeded,
+            write_disposition=TRUNCATE,
+            schema_update_options=[ADDITION],
+        )
+    assert "Schema update options should only be specified with WRITE_APPEND" in str(
+        info.value
+    )
+
+
+def test_destination_partitioning_field_must_exist(bq, dataset):
+    destination = f"{bq.project}.{dataset.dataset_id}.{unique('part')}"
+    with fails(BadRequest, "invalid") as info:
+        run_job(
+            bq,
+            "SELECT 1 AS id",
+            destination=destination,
+            time_partitioning=bigquery.TimePartitioning(field="missing"),
+        )
+    assert "The field specified for partitioning cannot be found" in str(info.value)
+
+
+def test_destination_clustering_field_must_exist(bq, dataset):
+    destination = f"{bq.project}.{dataset.dataset_id}.{unique('cluster')}"
+    with fails(BadRequest, "invalid") as info:
+        run_job(
+            bq, "SELECT 1 AS id", destination=destination, clustering_fields=["missing"]
+        )
+    assert "Invalid field: missing" in str(info.value)
+
+
+def test_destination_partitioning_and_clustering_recorded(bq, dataset):
+    destination = f"{bq.project}.{dataset.dataset_id}.{unique('part')}"
+    run_job(
+        bq,
+        "SELECT DATE '2020-01-01' AS day, 'k' AS key",
+        destination=destination,
+        time_partitioning=bigquery.TimePartitioning(field="day"),
+        clustering_fields=["key"],
+    )
+    table = bq.get_table(destination)
+    assert (table.time_partitioning.field, table.clustering_fields) == ("day", ["key"])
+
+
+@pytest.mark.xfail(reason="legacy SQL is not supported")
+def test_legacy_sql(bq):
+    rows = run(
+        bq,
+        "SELECT INTEGER(1) AS n",
+        bigquery.QueryJobConfig(use_legacy_sql=True),
+    )
+    assert [tuple(r.values()) for r in rows] == [(1,)]
+
+
 def test_result_total_rows(bq):
     assert run_job(bq, ROWS_25).result().total_rows == 25
 

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     default_dataset_id: str = Field("local")
     caller: str = Field("user:local-bigquery@localhost")
     postgres_connection_id: str = Field("us.default")
+    gcs_local_root: Path | None = Field(None)
     postgres_uri: str = Field("postgresql://postgres:example@db:5432/postgres")
 
 
