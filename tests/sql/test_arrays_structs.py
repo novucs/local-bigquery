@@ -60,6 +60,44 @@ CASES = [
     ),
     q("SELECT ARRAY_FIRST(ARRAY<INT64>[])", error="empty"),
     q(
+        "SELECT ARRAY_INCLUDES_ANY([1, 2, 3], [3, 4]), ARRAY_INCLUDES_ANY([1, 2], [5]), "
+        "ARRAY_INCLUDES_ANY(NULL, [1])",
+        rows=[(True, False, None)],
+    ),
+    q(
+        "SELECT ARRAY_INCLUDES_ALL([1, 2, 3], [2, 3]), ARRAY_INCLUDES_ALL([1, 2], [1, 5]), "
+        "ARRAY_INCLUDES_ALL([1], ARRAY<INT64>[])",
+        rows=[(True, False, True)],
+    ),
+    q(
+        "SELECT ARRAY_IS_DISTINCT([1, 1, 2]), ARRAY_IS_DISTINCT([1, 2, 3]), "
+        "ARRAY_IS_DISTINCT(ARRAY<INT64>[]), ARRAY_IS_DISTINCT([1, NULL, NULL]), "
+        "ARRAY_IS_DISTINCT([1, NULL]), ARRAY_IS_DISTINCT(CAST(NULL AS ARRAY<INT64>))",
+        rows=[(False, True, True, False, True, None)],
+    ),
+    q("SELECT ARRAY_AVG([1, 2, 3, 6])", 3.0, types="FLOAT64"),
+    q(
+        "SELECT ARRAY_OFFSET([10, 20, 20], 20), ARRAY_OFFSET([10], 30), "
+        "ARRAY_OFFSET([10, 20, 30], e -> e > 15)",
+        rows=[(1, None, 1)],
+    ),
+    q("SELECT ARRAY_OFFSETS(['a', 'b', 'a'], 'a')", [0, 2]),
+    q(
+        "SELECT ARRAY_FIND([10, 20, 30], e -> e > 15), ARRAY_FIND(['a', 'b'], 'b')",
+        rows=[(20, "b")],
+    ),
+    q(
+        "SELECT ARRAY_FIND_ALL([1, 2, 3], e -> e > 1), ARRAY_FIND_ALL([1, 2, 1], 1)",
+        rows=[([2, 3], [1, 1])],
+    ),
+    q(
+        "SELECT ARRAY_FILTER([1, 2, 3], e -> e > 1), "
+        "ARRAY_TRANSFORM([1, 2], (e, i) -> e * 10 + i), "
+        "ARRAY_FILTER([0, 1, 5], (e, i) -> e = i)",
+        rows=[([2, 3], [10, 21], [0, 1])],
+    ),
+    q("SELECT DOT_PRODUCT([1.0, 2.0], [3.0, 4.0])", 11.0, types="FLOAT64"),
+    q(
         "SELECT ARRAY_SLICE([1, 2, 3, 4, 5], 1, 3)",
         [2, 3, 4],
     ),

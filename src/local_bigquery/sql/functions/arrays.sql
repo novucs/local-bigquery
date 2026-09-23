@@ -21,3 +21,31 @@ CREATE MACRO _array_at(a, i, base) AS CASE
     WHEN i - base >= len(a) THEN _raise('Array index ' || i || ' is out of bounds (overflow)')
     ELSE a[i - base + 1]
 END;
+
+CREATE MACRO array_includes_any(a, b) AS
+    CASE WHEN a IS NOT NULL AND b IS NOT NULL THEN list_has_any(a, b) END;
+
+CREATE MACRO array_includes_all(a, b) AS
+    CASE WHEN a IS NOT NULL AND b IS NOT NULL THEN list_has_all(a, b) END;
+
+CREATE MACRO array_is_distinct(a) AS len(list_distinct(list_transform(a, e -> [e]))) = len(a);
+
+CREATE MACRO array_avg(a) AS list_avg(a);
+
+CREATE MACRO dot_product(a, b) AS list_dot_product(CAST(a AS DOUBLE[]), CAST(b AS DOUBLE[]));
+
+CREATE MACRO _array_offsets(matches) AS
+    list_filter(range(len(matches)), i -> coalesce(matches[i + 1], false));
+
+CREATE MACRO _array_pick(offsets, mode) AS offsets[CASE upper(mode) WHEN 'LAST' THEN -1 ELSE 1 END];
+
+CREATE MACRO array_offsets(a, matches) AS bq.main._array_offsets(matches);
+
+CREATE MACRO array_offset(a, matches) AS bq.main._array_offsets(matches)[1],
+    (a, matches, mode) AS bq.main._array_pick(bq.main._array_offsets(matches), mode);
+
+CREATE MACRO array_find(a, matches) AS a[bq.main._array_offsets(matches)[1] + 1],
+    (a, matches, mode) AS a[bq.main._array_pick(bq.main._array_offsets(matches), mode) + 1];
+
+CREATE MACRO array_find_all(a, matches) AS
+    list_transform(bq.main._array_offsets(matches), i -> a[i + 1]);
