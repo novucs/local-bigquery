@@ -7,7 +7,7 @@ from local_bigquery.errors import BigQueryError
 def parameter(node: exp.Expression, context) -> exp.Expression:
     if isinstance(node, exp.Parameter):
         name = node.name
-    elif isinstance(node, exp.Placeholder):
+    elif isinstance(node, exp.Placeholder) and node.name in ("", "?"):
         name, context.position = f"p{context.position}", context.position + 1
     else:
         return node
