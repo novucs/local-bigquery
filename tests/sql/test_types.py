@@ -143,33 +143,27 @@ CASES = [
         "SELECT RANGE<DATE> '[2020-01-01, 2020-02-01)'",
         {"start": datetime.date(2020, 1, 1), "end": datetime.date(2020, 2, 1)},
         types="RANGE",
-        xfail="RANGE unsupported",
     ),
     q(
         "SELECT RANGE<DATE> '[UNBOUNDED, 2020-02-01)'",
         {"start": None, "end": datetime.date(2020, 2, 1)},
-        xfail="RANGE unsupported",
     ),
     q(
         "SELECT RANGE(DATE '2020-01-01', NULL)",
         {"start": datetime.date(2020, 1, 1), "end": None},
-        xfail="RANGE unsupported",
     ),
     q(
         "SELECT RANGE_START(RANGE<DATE> '[2020-01-01, 2020-02-01)')",
         datetime.date(2020, 1, 1),
-        xfail="RANGE unsupported",
     ),
     q(
         "SELECT RANGE_CONTAINS(RANGE<DATE> '[2020-01-01, 2020-02-01)', DATE '2020-02-01')",
         False,
-        xfail="RANGE unsupported",
     ),
     q(
         "SELECT RANGE_OVERLAPS(RANGE<DATE> '[2020-01-01, 2020-02-01)', "
         "RANGE<DATE> '[2020-01-15, 2020-03-01)')",
         True,
-        xfail="RANGE unsupported",
     ),
     q("SELECT CAST('123' AS INT64)", 123),
     q("SELECT CAST('abc' AS INT64)", error="invalidQuery"),

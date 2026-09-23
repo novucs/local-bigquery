@@ -11,6 +11,7 @@ from local_bigquery.sql.rules import (
     math,
     parameters,
     query,
+    ranges,
     safe,
     strings,
     tables,
@@ -19,6 +20,7 @@ from local_bigquery.sql.rules import (
 
 MODULES = [
     columns,
+    ranges,
     query,
     arrays,
     information_schema,

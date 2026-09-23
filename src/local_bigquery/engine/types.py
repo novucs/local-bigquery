@@ -54,9 +54,18 @@ SCALARS = {
 }
 
 
+RANGE_FIELDS = ("__range_start", "__range_end")
+
+
+def range_type(element: str) -> str:
+    return f"STRUCT({', '.join(f'{name} {element}' for name in RANGE_FIELDS)})"
+
+
 def duckdb_type(field: TableFieldSchema) -> str:
     kind = (field.type or "STRING").upper()
-    if kind in ("RECORD", "STRUCT"):
+    if kind == "RANGE":
+        name = range_type(TO_DUCKDB[field.rangeElementType.type.upper()])
+    elif kind in ("RECORD", "STRUCT"):
         name = (
             f"STRUCT({', '.join(column(f, nested=True) for f in field.fields or [])})"
         )
@@ -89,6 +98,12 @@ def _element(t: DuckDBPyType) -> DuckDBPyType | None:
     return t.children[0][1] if t.id in ("list", "array") else None
 
 
+def _range(t: DuckDBPyType) -> DuckDBPyType | None:
+    if t.id == "struct" and tuple(name for name, _ in t.children) == RANGE_FIELDS:
+        return t.children[0][1]
+    return None
+
+
 def _children(t: DuckDBPyType) -> list[tuple[str, DuckDBPyType]]:
     return [(n or f"_field_{i + 1}", c) for i, (n, c) in enumerate(t.children)]
 
@@ -97,6 +112,13 @@ def field(name: str, t: DuckDBPyType, required: bool = False) -> TableFieldSchem
     if element := _element(t):
         return field(name, element).model_copy(update={"mode": "REPEATED"})
     mode = "REQUIRED" if required else "NULLABLE"
+    if element := _range(t):
+        return TableFieldSchema(
+            name=name,
+            type="RANGE",
+            mode=mode,
+            rangeElementType={"type": _scalar(element)[0]},
+        )
     if t.id == "struct":
         fields = [field(child, child_type) for child, child_type in _children(t)]
         return TableFieldSchema(name=name, type="RECORD", mode=mode, fields=fields)
@@ -106,6 +128,8 @@ def field(name: str, t: DuckDBPyType, required: bool = False) -> TableFieldSchem
 def normalised(t: DuckDBPyType) -> str:
     if element := _element(t):
         return f"{normalised(element)}[]"
+    if element := _range(t):
+        return range_type(normalised(element))
     if t.id == "struct":
         return f"STRUCT({', '.join(f'{quote(n)} {normalised(c)}' for n, c in _children(t))})"
     return _scalar(t)[1]
@@ -129,6 +153,12 @@ def _encode(x: str, t: DuckDBPyType, int64: bool, names: itertools.count) -> str
         var = f"e{next(names)}"
         cell = _encode(var, element, int64, names)
         return f"coalesce(list_transform({x}, {var} -> {{'v': to_json({cell})}}), [])"
+    if element := _range(t):
+        start, end = (
+            f"coalesce({_encode(f'{x}.{name}', element, int64, names)}, 'UNBOUNDED')"
+            for name in RANGE_FIELDS
+        )
+        return f"CASE WHEN {x} IS NULL THEN NULL ELSE '[' || {start} || ', ' || {end} || ')' END"
     if t.id == "struct":
         cells = ", ".join(
             f"{{'v': to_json({_encode(f'{x}.{quote(n)}', c, int64, names)})}}"
