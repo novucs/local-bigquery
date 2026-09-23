@@ -1,4 +1,6 @@
+import datetime
 import itertools
+import re
 
 import duckdb
 from sqlglot import exp
@@ -15,6 +17,20 @@ FLOATS = {Type.DOUBLE, Type.FLOAT}
 BYTES = {Type.BINARY, Type.VARBINARY}
 BITWISE = (exp.BitwiseAnd, exp.BitwiseOr, exp.BitwiseXor)
 TO_JSON = {"bq.main.to_json_string", "bq.main.to_json"}
+COMPARISONS = {
+    exp.EQ: "=",
+    exp.NEQ: "!=",
+    exp.LT: "<",
+    exp.LTE: "<=",
+    exp.GT: ">",
+    exp.GTE: ">=",
+}
+FAMILIES = [
+    exp.DataType.TEXT_TYPES,
+    exp.DataType.REAL_TYPES | exp.DataType.INTEGER_TYPES,
+    {Type.BOOLEAN},
+    BYTES,
+]
 
 
 def _schema(tree: exp.Expression) -> dict:
@@ -120,6 +136,63 @@ def literal_coercion(node: exp.Expression, context) -> exp.Expression:
     return node
 
 
+def _family(datatype: exp.DataType | None) -> int | None:
+    kind = datatype.this if datatype else None
+    return next((i for i, family in enumerate(FAMILIES) if kind in family), None)
+
+
+def comparable(node: exp.Expression, context) -> exp.Expression:
+    operator = COMPARISONS.get(type(node))
+    if operator is None:
+        return node
+    left, right = node.this.type, node.expression.type
+    families = {_family(left), _family(right)}
+    if None in families or len(families) == 1:
+        return node
+    arguments = ", ".join(t.sql(dialect="bigquery") for t in (left, right))
+    raise BigQueryError(
+        "invalidQuery",
+        f"No matching signature for operator {operator} for argument types: "
+        f"{arguments}",
+    )
+
+
+def _date_literal(node: exp.Literal) -> exp.Expression:
+    match = re.fullmatch(r"\s*(\d{1,4})-(\d{1,2})-(\d{1,2})\s*", node.this)
+    try:
+        valid = match and datetime.date(*map(int, match.groups()))
+    except ValueError:
+        valid = None
+    if not valid:
+        meta = node.meta
+        column = meta.get("col", 0) - (meta.get("end", 0) - meta.get("start", 0))
+        raise BigQueryError(
+            "invalidQuery",
+            f'Could not cast literal "{node.this}" to type DATE '
+            f"at [{meta.get('line', 1)}:{column}]",
+        )
+    return exp.cast(node, Type.DATE)
+
+
+def date_arithmetic(node: exp.Expression, context) -> exp.Expression:
+    if not isinstance(node, (exp.Add, exp.Sub)):
+        return node
+    sides = [("this", "expression"), ("expression", "this")]
+    for date_key, days_key in sides if isinstance(node, exp.Add) else sides[:1]:
+        date, days = node.args[date_key], node.args[days_key]
+        if not _is(days.type, exp.DataType.INTEGER_TYPES):
+            continue
+        if isinstance(date, exp.Literal) and date.is_string:
+            date = _date_literal(date)
+        elif not _is(date.type, {Type.DATE}):
+            continue
+        node.set(date_key, date)
+        node.set(days_key, exp.cast(days, Type.INT))
+        node.type = exp.DataType.build("DATE")
+        return node
+    return node
+
+
 def average(node: exp.Expression, context) -> exp.Expression:
     if isinstance(node, exp.Avg) and not isinstance(node.parent, exp.Window):
         target = _decimal(node)
@@ -219,6 +292,8 @@ def bitwise_bytes(node: exp.Expression, context) -> exp.Expression:
 
 STATEMENT_RULES = [annotate]
 NODE_RULES = [
+    comparable,
+    date_arithmetic,
     literal_coercion,
     average,
     nan_first,

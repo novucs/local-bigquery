@@ -102,29 +102,20 @@ def _projection(tree: exp.Expression) -> exp.Select | None:
 
 def duplicate_columns(tree: exp.Expression, context) -> exp.Expression:
     select = _projection(tree)
-    if select is None:
+    if not isinstance(tree, exp.Create) or select is None:
         return tree
     seen = set()
     for expression in select.expressions:
         name = expression.alias_or_name
         if isinstance(expression, exp.Star) or not name:
             continue
-        if name.casefold() in seen and isinstance(tree, exp.Create):
+        if name.casefold() in seen:
             raise BigQueryError(
                 "invalidQuery",
                 "Duplicate column names in the result are not supported. "
                 f"Found duplicate(s): {name}",
             )
-        unique, suffix = name, 0
-        while unique.casefold() in seen:
-            suffix += 1
-            unique = f"{name}_{suffix}"
-        if unique != name:
-            target = (
-                expression.this if isinstance(expression, exp.Alias) else expression
-            )
-            expression.replace(exp.alias_(target.copy(), unique))
-        seen.add(unique.casefold())
+        seen.add(name.casefold())
     return tree
 
 

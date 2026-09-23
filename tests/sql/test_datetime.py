@@ -152,6 +152,15 @@ CASES = [
         rows=[(date(2020, 4, 1), date(2020, 1, 15))],
     ),
     q("SELECT DATE_ADD(CAST(NULL AS DATE), INTERVAL 1 DAY)", None),
+    q("SELECT DATE '2024-02-28' + 2", date(2024, 3, 1), types="DATE"),
+    q("SELECT 2 + DATE '2024-02-28'", date(2024, 3, 1), types="DATE"),
+    q("SELECT DATE '2024-03-01' - 1", date(2024, 2, 29), types="DATE"),
+    q(
+        "SELECT d - n FROM (SELECT DATE '2024-03-01' AS d, CAST(2 AS INT64) AS n)",
+        date(2024, 2, 28),
+    ),
+    q("SELECT '2024-02-28' + 2", date(2024, 3, 1), types="DATE"),
+    q("SELECT 'a' + 1", error=r'Could not cast literal "a" to type DATE at \[1:8\]'),
     q(
         "SELECT DATE '2020-01-01' + INTERVAL 1 DAY",
         datetime(2020, 1, 2),

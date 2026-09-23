@@ -138,6 +138,32 @@ def query_error(bq, sql, **config) -> tuple[dict, str]:
             r"Syntax error: Unclosed string literal at \[1:8\]",
         ),
         (
+            "SELECT CONCAT() AS c",
+            r"No matching signature for function CONCAT with no arguments at \[1:8\]",
+        ),
+        ("SELECT\n  concat() AS c", r"function CONCAT with no arguments at \[2:3\]"),
+        ("SELECT SAFE.SUBSTR('hello')", r"No matching signature for function SUBSTR"),
+        ("SELECT IF(TRUE)", r"No matching signature for function IF at \[1:8\]"),
+        ("SELECT UPPER('a', 'b')", r"No matching signature for function UPPER"),
+        ("SELECT DATE_ADD(1)", r"No matching signature for function DATE_ADD"),
+        (
+            "SELECT REGEXP_EXTRACT('a')",
+            r"No matching signature for function REGEXP_EXTRACT",
+        ),
+        (
+            "SELECT 'a' = 1",
+            r"No matching signature for operator = for argument types: STRING, INT64",
+        ),
+        (
+            "SELECT 1.5 < 'a'",
+            r"No matching signature for operator < for argument types: FLOAT64, STRING",
+        ),
+        (
+            "SELECT a.k FROM (SELECT 'x' AS k) AS a JOIN (SELECT 1 AS k) AS b "
+            "ON a.k = b.k",
+            r"No matching signature for operator = for argument types: STRING, INT64",
+        ),
+        (
             "SELECT NO_SUCH_FUNCTION(1)",
             r"Function not found: NO_SUCH_FUNCTION at \[1:8\]",
         ),

@@ -58,14 +58,14 @@ services:
       DATA_DIR: /data
       DEFAULT_PROJECT_ID: local
       DEFAULT_DATASET_ID: local
-      INTERNAL_PROJECT_ID: internal
-      INTERNAL_DATASET_ID: internal
       # Support for external connections to Postgres, requires an available Postgres instance.
       # SELECT * FROM EXTERNAL_QUERY('us.default', 'SELECT 1');
       POSTGRES_CONNECTION_ID: us.default
       POSTGRES_URI: postgresql://postgres:example@db:5432/postgres
-      # Serve gs://<bucket>/<path> for loads, extracts and EXPORT DATA from a local directory.
-      GCS_LOCAL_ROOT: /data/gcs
+      # gs://<bucket>/<path> in loads, extracts and EXPORT DATA is served from GCS_LOCAL_ROOT,
+      # else a storage emulator such as fake-gcs-server, else $DATA_DIR/gcs.
+      # GCS_LOCAL_ROOT: /data/gcs
+      # STORAGE_EMULATOR_HOST: http://gcs:4443
     volumes:
       - bigquery_data:/data
 ```

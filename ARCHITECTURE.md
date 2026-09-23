@@ -81,7 +81,9 @@ getQueryResults / tabledata.list
 - `EXTERNAL_QUERY` rewrites to `postgres_query()` over lazily attached, isolated
   Postgres connections, one per connection id.
 - Loads, extracts and `EXPORT DATA` use DuckDB readers and `COPY TO`, against
-  local paths, upload endpoints or `gs://` through httpfs.
+  local paths and upload endpoints. `gs://` maps to a local directory, or to
+  `STORAGE_EMULATOR_HOST`: reads through httpfs, writes staged then uploaded via
+  the JSON API, since emulators rarely implement the XML API httpfs writes with.
 - Storage Read/Write reuse the `google-cloud-bigquery-storage` message types and
   stream DuckDB Arrow batches.
 

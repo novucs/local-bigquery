@@ -179,3 +179,20 @@ def test_legacy_tables_meta(bq, dataset):
         f"FROM {dataset.dataset_id}.__TABLES__ "
         "WHERE table_id IN ('t', 'v') ORDER BY table_id",
     ) == [("t", 0, 1), ("v", 0, 2)]
+
+
+@pytest.mark.parametrize(
+    "view, where",
+    [
+        ("INFORMATION_SCHEMA.TABLES", "table_name = 'x' AND creation_time IS NOT NULL"),
+        ("INFORMATION_SCHEMA.COLUMNS", "table_name = 'x' AND ordinal_position > 0"),
+        ("INFORMATION_SCHEMA.PARTITIONS", "table_name = 'x' AND total_rows > 0"),
+        ("INFORMATION_SCHEMA.ROUTINES", "routine_name = 'x'"),
+        ("INFORMATION_SCHEMA.TABLE_OPTIONS", "option_name = 'x'"),
+        ("__TABLES__", "table_id = 'x' AND row_count > 0"),
+    ],
+)
+def test_empty_views_keep_column_types(bq, view, where):
+    dataset_id = unique("empty")
+    bq.create_dataset(dataset_id)
+    assert rows(bq, f"SELECT * FROM {dataset_id}.{view} WHERE {where}") == []

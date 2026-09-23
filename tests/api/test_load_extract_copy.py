@@ -2,6 +2,9 @@ import datetime
 import gzip
 import io
 import json
+import threading
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pandas as pd
 import pyarrow as pa
@@ -275,34 +278,78 @@ def test_export_data_statistics(bq, local):
 
 
 @pytest.fixture
-def bucket(local, monkeypatch):
+def bucket(request, monkeypatch):
+    if request.config.getoption("--endpoint"):
+        pytest.skip("inspects the emulator's data directory")
     from local_bigquery.settings import settings
 
-    monkeypatch.setattr(settings, "gcs_local_root", local)
-    return local / "bucket"
+    monkeypatch.setattr(settings, "gcs_local_root", None)
+    monkeypatch.setattr(settings, "storage_emulator_host", None)
+    return settings.data_dir / "gcs" / unique("bucket")
 
 
-def test_extract_to_gcs_local_root(bq, dataset, bucket):
-    extract(bq, ctas(bq, dataset, 1), "gs://bucket/out/data.csv")
+def test_extract_to_gcs(bq, dataset, bucket):
+    extract(bq, ctas(bq, dataset, 1), f"gs://{bucket.name}/out/data.csv")
     assert (bucket / "out" / "data.csv").read_text().splitlines() == ["x", "1"]
 
 
-def test_load_from_gcs_local_root(bq, dataset, bucket):
-    bucket.mkdir()
+def test_load_from_gcs(bq, dataset, bucket):
+    bucket.mkdir(parents=True)
     (bucket / "in.csv").write_text("x\n1\n2\n")
     table = table_id(dataset)
     config = bigquery.LoadJobConfig(schema=X, skip_leading_rows=1)
-    bq.load_table_from_uri("gs://bucket/in.csv", table, job_config=config).result()
+    bq.load_table_from_uri(
+        f"gs://{bucket.name}/in.csv", table, job_config=config
+    ).result()
     assert select(bq, table) == [(1,), (2,)]
 
 
-def test_export_data_to_gcs_local_root(bq, bucket):
+def test_export_data_to_gcs(bq, bucket):
     run(
         bq,
-        "EXPORT DATA OPTIONS (uri = 'gs://bucket/export/*.csv', format = 'CSV', "
-        "overwrite = true) AS SELECT 1 AS x",
+        f"EXPORT DATA OPTIONS (uri = 'gs://{bucket.name}/export/*.csv', "
+        "format = 'CSV', overwrite = true) AS SELECT 1 AS x",
     )
     assert [p.read_text() for p in (bucket / "export").iterdir()] == ["x\n1\n"]
+
+
+@pytest.fixture
+def storage_emulator(request, monkeypatch):
+    if request.config.getoption("--endpoint"):
+        pytest.skip("points the emulator at a fake storage endpoint")
+    from local_bigquery.settings import settings
+
+    uploads = {}
+
+    class Uploads(BaseHTTPRequestHandler):
+        def do_POST(self):
+            url = urllib.parse.urlsplit(self.path)
+            bucket = url.path.split("/b/")[1].split("/")[0]
+            name = urllib.parse.parse_qs(url.query)["name"][0]
+            length = int(self.headers["Content-Length"])
+            uploads[f"{bucket}/{name}"] = self.rfile.read(length)
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Uploads)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    host = f"127.0.0.1:{server.server_port}"
+    monkeypatch.setattr(settings, "gcs_local_root", None)
+    monkeypatch.setattr(settings, "storage_emulator_host", host)
+    yield uploads
+    server.shutdown()
+
+
+def test_export_data_uploads_to_storage_emulator(bq, storage_emulator):
+    run(
+        bq,
+        "EXPORT DATA OPTIONS (uri = 'gs://bkt/export/*.csv', format = 'CSV') "
+        "AS SELECT 1 AS x",
+    )
+    assert storage_emulator == {"bkt/export/000000000000.csv": b"x\n1\n"}
 
 
 def test_export_data_requires_uri(bq):

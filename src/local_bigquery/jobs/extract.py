@@ -3,7 +3,7 @@ from sqlglot import exp
 
 from local_bigquery.catalog import tables
 from local_bigquery.errors import BigQueryError
-from local_bigquery.jobs.storage import literal, path
+from local_bigquery.jobs.storage import literal, written
 
 FORMATS = {
     "CSV": "csv",
@@ -38,10 +38,10 @@ def write(
     uris = config.get("destinationUris") or [config.get("destinationUri")]
     rows = 0
     for uri in uris:
-        target = path(cur, uri.replace("*", "000000000000"))
-        (rows,) = cur.execute(
-            f"COPY ({query}) TO {literal(target)} ({', '.join(options)})", params
-        ).fetchone()
+        with written(uri.replace("*", "000000000000")) as target:
+            (rows,) = cur.execute(
+                f"COPY ({query}) TO {literal(target)} ({', '.join(options)})", params
+            ).fetchone()
     return rows
 
 

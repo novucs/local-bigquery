@@ -186,15 +186,22 @@ def test_columns_are_named_after_references(bq, dataset):
     assert names(bq, dataset, sql) == ["x", "a"]
 
 
-def test_duplicate_columns_are_suffixed(bq, dataset):
-    sql = "SELECT x.a, y.a, 3 AS a FROM (SELECT 1 AS a) AS x, (SELECT 2 AS a) AS y"
-    assert names(bq, dataset, sql) == ["a", "a_1", "a_2"]
-
-
 def test_parenthesised_column_keeps_its_name(bq, dataset):
     assert names(bq, dataset, "SELECT DISTINCT(x) FROM UNNEST([1]) AS x") == ["x"]
 
 
-def test_duplicate_columns_get_suffixes(bq, dataset):
-    sql = "SELECT a.x, b.x, a.x FROM l AS a, l AS b LIMIT 1"
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT a.x, b.x, a.x FROM l AS a, l AS b LIMIT 1",
+        "SELECT a.x, b.x, 3 AS x FROM (SELECT 1 AS x) AS a, (SELECT 2 AS x) AS b",
+    ],
+)
+def test_duplicate_columns_get_suffixes(bq, dataset, sql):
     assert names(bq, dataset, sql) == ["x", "x_1", "x_2"]
+
+
+@pytest.mark.parametrize("prefix", ["", "SELECT 0; "])
+def test_star_join_suffixes_duplicate_columns(bq, dataset, prefix):
+    sql = f"{prefix}SELECT * FROM l AS a JOIN l AS b ON a.id = b.id LIMIT 1"
+    assert names(bq, dataset, sql) == ["id", "x", "id_1", "x_1"]

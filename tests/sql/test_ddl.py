@@ -375,7 +375,17 @@ def test_destination_layout_is_recorded(bq, dataset):
     assert (table.time_partitioning.field, table.clustering_fields) == ("d", ["k"])
 
 
-def test_create_table_as_select_rejects_duplicate_columns(bq, table):
+@pytest.mark.parametrize(
+    "select",
+    [
+        "SELECT 1 AS a, 2 AS a",
+        pytest.param(
+            "SELECT * FROM (SELECT 1 AS a), (SELECT 2 AS a)",
+            marks=pytest.mark.xfail(reason="DuckDB suffixes star-expanded duplicates"),
+        ),
+    ],
+)
+def test_create_table_as_select_rejects_duplicate_columns(bq, table, select):
     with fails(BadRequest, "invalidQuery") as info:
-        run(bq, f"CREATE TABLE {table} AS SELECT 1 AS a, 2 AS a")
+        run(bq, f"CREATE TABLE {table} AS {select}")
     assert "Duplicate column names" in info.value.message

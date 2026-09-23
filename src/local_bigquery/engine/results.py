@@ -26,6 +26,18 @@ def _without_null_elements(expression: str, column: str, t) -> str:
     )
 
 
+def unique(names: list[str]) -> list[str]:
+    seen, result = set(), []
+    for name in names:
+        candidate, suffix = name, 0
+        while candidate.casefold() in seen:
+            suffix += 1
+            candidate = f"{name}_{suffix}"
+        seen.add(candidate.casefold())
+        result.append(candidate)
+    return result
+
+
 def materialise(
     cur: duckdb.DuckDBPyConnection,
     query: str,
@@ -38,7 +50,9 @@ def materialise(
     positions = [f"c{index}" for index in range(len(relation.columns))]
     columns = ", ".join(
         f"{_without_null_elements(types.cast(position, t), column, t)} AS {quote(column)}"
-        for position, column, t in zip(positions, relation.columns, relation.types)
+        for position, column, t in zip(
+            positions, unique(relation.columns), relation.types
+        )
     )
     select = f"SELECT {columns} FROM ({query}) AS q({', '.join(positions)})"
     statement = (

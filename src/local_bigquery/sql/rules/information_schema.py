@@ -93,8 +93,8 @@ def schemata(project_id: str, dataset_id: str | None):
         "catalog_name",
         "schema_name",
         "location",
-        "creation_time",
-        "last_modified_time",
+        "creation_time TIMESTAMP",
+        "last_modified_time TIMESTAMP",
     ]
     rows = [
         [
@@ -115,7 +115,7 @@ def table_list(project_id: str, dataset_id: str | None):
         "table_type",
         "is_insertable_into",
         "is_typed",
-        "creation_time",
+        "creation_time TIMESTAMP",
     ]
     rows = [
         _identity(t)
@@ -145,14 +145,14 @@ def column_list(project_id: str, dataset_id: str | None):
     columns = [
         *IDENTITY,
         "column_name",
-        "ordinal_position",
+        "ordinal_position INT64",
         "is_nullable",
         "data_type",
         "is_generated",
         "is_hidden",
         "is_system_defined",
         "is_partitioning_column",
-        "clustering_ordinal_position",
+        "clustering_ordinal_position INT64",
     ]
     rows = [
         _identity(t)
@@ -239,7 +239,7 @@ def _partitions(table: dict) -> list[tuple[str | None, int]]:
 
 
 def partitions(project_id: str, dataset_id: str | None):
-    columns = [*IDENTITY, "partition_id", "total_rows", "storage_tier"]
+    columns = [*IDENTITY, "partition_id", "total_rows INT64", "storage_tier"]
     rows = [
         _identity(t) + [partition_id, total_rows, "ACTIVE"]
         for t in _tables(project_id, dataset_id)
@@ -285,11 +285,11 @@ def legacy_tables(project_id: str, dataset_id: str | None):
         "project_id",
         "dataset_id",
         "table_id",
-        "creation_time",
-        "last_modified_time",
-        "row_count",
-        "size_bytes",
-        "type",
+        "creation_time INT64",
+        "last_modified_time INT64",
+        "row_count INT64",
+        "size_bytes INT64",
+        "type INT64",
     ]
     rows = [
         _identity(t)
@@ -323,14 +323,25 @@ def _literal(value) -> exp.Expression:
 
 
 def _values(columns: list[str], rows: list[list]) -> exp.Expression:
-    if not rows:
-        return exp.select(*(exp.alias_(exp.null(), c) for c in columns)).where(
-            exp.false()
+    specs = [column.partition(" ") for column in columns]
+    names = [name for name, _, _ in specs]
+    source = (
+        exp.values(
+            [tuple(map(_literal, row)) for row in rows], alias="v", columns=names
         )
-    values = exp.values(
-        [tuple(map(_literal, row)) for row in rows], alias="v", columns=columns
+        if rows
+        else exp.select(*(exp.alias_(exp.null(), name) for name in names))
+        .where(exp.false())
+        .subquery("v")
     )
-    return exp.select("*").from_(values)
+    return exp.select(
+        *(
+            exp.alias_(
+                exp.cast(exp.column(name), kind or "STRING", dialect="bigquery"), name
+            )
+            for name, _, kind in specs
+        )
+    ).from_(source)
 
 
 def _view(table: exp.Table) -> tuple[str, str, str | None] | None:
