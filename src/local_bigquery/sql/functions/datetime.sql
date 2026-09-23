@@ -52,3 +52,6 @@ CREATE MACRO _offset(seconds, separator, minutes) AS
 CREATE MACRO _timestamp_string(ts, local) AS
     strftime(local, '%Y-%m-%d %H:%M:%S') || bq.main._fraction(microsecond(local))
     || bq.main._offset(CAST(epoch(local) - epoch(ts) AS BIGINT), ':', false);
+
+CREATE MACRO _seconds(ts, digits) AS strftime(ts, '%S') || CASE WHEN digits = 0 THEN ''
+    ELSE '.' || left(lpad(CAST(microsecond(ts) % 1000000 AS VARCHAR), 6, '0'), digits) END;

@@ -5,15 +5,7 @@ from sqlglot import exp
 from local_bigquery.errors import BigQueryError
 from local_bigquery.sql.dialect import macro
 
-WEEKDAYS = [
-    "SUNDAY",
-    "MONDAY",
-    "TUESDAY",
-    "WEDNESDAY",
-    "THURSDAY",
-    "FRIDAY",
-    "SATURDAY",
-]
+WEEKDAYS = "SUNDAY MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY".split()
 TIMESTAMP_UNITS = {"MICROSECOND", "MILLISECOND", "SECOND", "MINUTE", "HOUR", "DAY"}
 INTERVAL_FIELDS = ["year", "month", "day", "hour", "minute", "second"]
 OFFSET = re.compile(r"^([+-])(\d{1,2})(?::?(\d{2}))?$")
@@ -149,28 +141,8 @@ def _element(piece: str, local: exp.Expression, instant: exp.Expression | None):
         case "%R":
             return exp.TimeToStr(this=local.copy(), format=_node("%H:%M"))
     if match := re.fullmatch(r"%E(\d|\*)S", piece):
-        digits = 6 if match[1] == "*" else int(match[1])
-        seconds = exp.TimeToStr(this=local.copy(), format=_node("%S"))
-        if not digits:
-            return seconds
-        fraction = call(
-            "left",
-            call(
-                "lpad",
-                exp.cast(
-                    exp.Mod(
-                        this=call("microsecond", local.copy()),
-                        expression=_node(1000000),
-                    ),
-                    "VARCHAR",
-                ),
-                6,
-                "0",
-            ),
-            digits,
-        )
-        return exp.DPipe(
-            this=exp.DPipe(this=seconds, expression=_node(".")), expression=fraction
+        return macro(
+            "_seconds", local.copy(), _node(6 if match[1] == "*" else int(match[1]))
         )
     return exp.TimeToStr(this=local.copy(), format=_node(piece))
 

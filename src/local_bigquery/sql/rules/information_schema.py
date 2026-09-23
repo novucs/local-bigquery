@@ -15,6 +15,7 @@ TABLE_TYPES = {
     "MATERIALIZED_VIEW": "MATERIALIZED VIEW",
     "SNAPSHOT": "SNAPSHOT",
 }
+IDENTITY = ("table_catalog", "table_schema", "table_name")
 STANDARD_TYPES = {"INTEGER": "INT64", "FLOAT": "FLOAT64", "BOOLEAN": "BOOL"}
 PARTITION_FORMATS = {"HOUR": "%Y%m%d%H", "DAY": "%Y%m%d", "MONTH": "%Y%m", "YEAR": "%Y"}
 JOBS = """
@@ -103,13 +104,7 @@ def schemata(project_id: str, dataset_id: str | None):
 
 
 def table_list(project_id: str, dataset_id: str | None):
-    columns = [
-        "table_catalog",
-        "table_schema",
-        "table_name",
-        "table_type",
-        "creation_time",
-    ]
+    columns = [*IDENTITY, "table_type", "creation_time"]
     rows = [
         _identity(t)
         + [TABLE_TYPES.get(t["type"], t["type"]), _timestamp(t.get("creationTime"))]
@@ -119,15 +114,7 @@ def table_list(project_id: str, dataset_id: str | None):
 
 
 def column_list(project_id: str, dataset_id: str | None):
-    columns = [
-        "table_catalog",
-        "table_schema",
-        "table_name",
-        "column_name",
-        "ordinal_position",
-        "is_nullable",
-        "data_type",
-    ]
+    columns = [*IDENTITY, "column_name", "ordinal_position", "is_nullable", "data_type"]
     rows = [
         _identity(t)
         + [
@@ -143,15 +130,7 @@ def column_list(project_id: str, dataset_id: str | None):
 
 
 def column_field_paths(project_id: str, dataset_id: str | None):
-    columns = [
-        "table_catalog",
-        "table_schema",
-        "table_name",
-        "column_name",
-        "field_path",
-        "data_type",
-        "description",
-    ]
+    columns = [*IDENTITY, "column_name", "field_path", "data_type", "description"]
     rows = [
         _identity(t) + [path.split(".")[0], path, _type(f), f.get("description")]
         for t in _tables(project_id, dataset_id)
@@ -161,14 +140,7 @@ def column_field_paths(project_id: str, dataset_id: str | None):
 
 
 def views(project_id: str, dataset_id: str | None):
-    columns = [
-        "table_catalog",
-        "table_schema",
-        "table_name",
-        "view_definition",
-        "check_option",
-        "use_standard_sql",
-    ]
+    columns = [*IDENTITY, "view_definition", "check_option", "use_standard_sql"]
     rows = [
         _identity(t) + [t["view"]["query"], None, "YES"]
         for t in _tables(project_id, dataset_id)
@@ -201,14 +173,7 @@ def _options(table: dict) -> list[tuple[str, str, str]]:
 
 
 def table_options(project_id: str, dataset_id: str | None):
-    columns = [
-        "table_catalog",
-        "table_schema",
-        "table_name",
-        "option_name",
-        "option_type",
-        "option_value",
-    ]
+    columns = [*IDENTITY, "option_name", "option_type", "option_value"]
     rows = [
         _identity(t) + list(option)
         for t in _tables(project_id, dataset_id)
@@ -230,14 +195,7 @@ def _partitions(table: dict) -> list[tuple[str | None, int]]:
 
 
 def partitions(project_id: str, dataset_id: str | None):
-    columns = [
-        "table_catalog",
-        "table_schema",
-        "table_name",
-        "partition_id",
-        "total_rows",
-        "storage_tier",
-    ]
+    columns = [*IDENTITY, "partition_id", "total_rows", "storage_tier"]
     rows = [
         _identity(t) + [partition_id, total_rows, "ACTIVE"]
         for t in _tables(project_id, dataset_id)
