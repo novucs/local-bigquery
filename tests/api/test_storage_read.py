@@ -21,15 +21,25 @@ def path(table: str) -> str:
     )
 
 
-def session(bqstorage, table: str, streams: int = 1, **options) -> types.ReadSession:
+def session(
+    bqstorage,
+    table: str,
+    streams: int = 1,
+    data_format=types.DataFormat.ARROW,
+    preferred: int = 0,
+    **options,
+) -> types.ReadSession:
     return bqstorage.create_read_session(
-        parent=f"projects/{bigquery.TableReference.from_string(table).project}",
-        read_session=types.ReadSession(
-            table=path(table),
-            data_format=types.DataFormat.ARROW,
-            read_options=types.ReadSession.TableReadOptions(**options),
-        ),
-        max_stream_count=streams,
+        types.CreateReadSessionRequest(
+            parent=f"projects/{bigquery.TableReference.from_string(table).project}",
+            read_session=types.ReadSession(
+                table=path(table),
+                data_format=data_format,
+                read_options=types.ReadSession.TableReadOptions(**options),
+            ),
+            max_stream_count=streams,
+            preferred_min_stream_count=preferred,
+        )
     )
 
 
@@ -41,6 +51,15 @@ def read(bqstorage, read_session, stream=None, offset=0) -> list[dict]:
         for row in bqstorage.read_rows(s.name, offset=offset)
         .to_arrow(read_session)
         .to_pylist()
+    ]
+
+
+def avro(bqstorage, table: str, streams: int = 1, **options) -> list[dict]:
+    read_session = session(bqstorage, table, streams, types.DataFormat.AVRO, **options)
+    return [
+        row
+        for stream in read_session.streams
+        for row in bqstorage.read_rows(stream.name).rows(read_session)
     ]
 
 
@@ -164,13 +183,77 @@ def test_read_from_offset(bqstorage, numbers):
     assert len(read(bqstorage, read_session, stream, offset=4)) == 6
 
 
+@pytest.mark.xfail(reason="small tables are split into several streams")
+def test_small_table_reads_as_one_stream(bqstorage, numbers):
+    assert len(session(bqstorage, numbers, streams=4).streams) == 1
+    assert len(session(bqstorage, numbers, streams=4, preferred=2).streams) == 1
+
+
+@pytest.mark.xfail(reason="read sessions omit their expiry")
+def test_session_expires_in_the_future(bqstorage, numbers):
+    expires = session(bqstorage, numbers).expire_time
+    assert expires > datetime.datetime.now(UTC)
+
+
+@pytest.mark.xfail(reason="read responses omit stats and set batch row counts")
+def test_read_rows_response_fields(bqstorage, numbers):
+    stream = session(bqstorage, numbers).streams[0]
+    response = next(iter(bqstorage.read_rows(stream.name)))
+    assert response.row_count == 10
+    assert response.arrow_record_batch.row_count == 0
+    assert types.ReadRowsResponse.pb(response).stats.HasField("progress")
+
+
 @pytest.mark.xfail(reason="AVRO read sessions not supported")
-def test_avro_format(bqstorage, numbers):
-    read_session = bqstorage.create_read_session(
-        parent=f"projects/{bigquery.TableReference.from_string(numbers).project}",
-        read_session=types.ReadSession(
-            table=path(numbers), data_format=types.DataFormat.AVRO
-        ),
-        max_stream_count=1,
+def test_avro_rows(bqstorage, numbers):
+    assert xs(avro(bqstorage, numbers)) == list(range(1, 11))
+
+
+@pytest.mark.xfail(reason="AVRO read sessions not supported")
+def test_avro_every_type(bq, bqstorage, dataset):
+    table = f"{dataset.project}.{dataset.dataset_id}.{unique('avro')}"
+    run(
+        bq,
+        f"CREATE TABLE `{table}` AS SELECT 42 AS i, 3.5 AS f, 'hello' AS s, "
+        "TRUE AS b, NUMERIC '123.456789012' AS n, DATE '2026-05-20' AS d, "
+        "TIMESTAMP '2026-05-20 12:34:56+00' AS ts, TIME '01:02:03' AS t, "
+        "b'ab' AS bytes, STRUCT(10 AS x, 20 AS y) AS point, ['a', 'b'] AS tags, "
+        "CAST(NULL AS STRING) AS nothing",
     )
-    assert xs(read(bqstorage, read_session)) == list(range(1, 11))
+    assert avro(bqstorage, table) == [
+        {
+            "i": 42,
+            "f": 3.5,
+            "s": "hello",
+            "b": True,
+            "n": Decimal("123.456789012"),
+            "d": datetime.date(2026, 5, 20),
+            "ts": datetime.datetime(2026, 5, 20, 12, 34, 56, tzinfo=UTC),
+            "t": datetime.time(1, 2, 3),
+            "bytes": b"ab",
+            "point": {"x": 10, "y": 20},
+            "tags": ["a", "b"],
+            "nothing": None,
+        }
+    ]
+
+
+@pytest.mark.xfail(reason="AVRO read sessions not supported")
+def test_avro_selected_fields(bqstorage, numbers):
+    rows = avro(bqstorage, numbers, selected_fields=["s"])
+    assert sorted(row["s"] for row in rows) == sorted(str(x) for x in range(1, 11))
+    assert {tuple(row) for row in rows} == {("s",)}
+
+
+@pytest.mark.xfail(reason="AVRO read sessions not supported")
+def test_avro_split_read_stream(bqstorage, numbers):
+    read_session = session(bqstorage, numbers, data_format=types.DataFormat.AVRO)
+    split = bqstorage.split_read_stream(
+        types.SplitReadStreamRequest(name=read_session.streams[0].name, fraction=0.5)
+    )
+    rows = [
+        row
+        for stream in (split.primary_stream, split.remainder_stream)
+        for row in bqstorage.read_rows(stream.name).rows(read_session)
+    ]
+    assert xs(rows) == list(range(1, 11))
