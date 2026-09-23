@@ -45,7 +45,33 @@ def unnest_offsets(tree: exp.Expression, context) -> exp.Expression:
     return tree
 
 
+def _named(fields: list[exp.Expression]) -> bool:
+    return bool(fields) and all(isinstance(f, exp.PropertyEQ) for f in fields)
+
+
 def anonymous_structs(tree: exp.Expression, context) -> exp.Expression:
+    for array in list(tree.find_all(exp.Array)):
+        first, *rest = array.expressions or [None]
+        if not isinstance(first, exp.Struct) or not _named(first.expressions):
+            continue
+        names = [field.this for field in first.expressions]
+        for element in rest:
+            values = (
+                element.expressions
+                if isinstance(element, exp.Tuple | exp.Struct)
+                else []
+            )
+            if len(values) == len(names) and not _named(values):
+                fields = [
+                    exp.PropertyEQ(this=name.copy(), expression=value.copy())
+                    for name, value in zip(names, values)
+                ]
+                element.replace(exp.Struct(expressions=fields))
+        unnest = array.parent
+        if isinstance(unnest, exp.Unnest) and isinstance(
+            unnest.parent, exp.From | exp.Join
+        ):
+            unnest.set("explode_array", True)
     for struct in list(tree.find_all(exp.Struct)):
         if isinstance(struct.parent, exp.Cast):
             continue

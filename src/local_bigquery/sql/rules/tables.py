@@ -221,7 +221,9 @@ def wildcard_table(node: exp.Expression, context) -> exp.Expression:
             if isinstance(star, exp.Star) and not star.args.get("except_"):
                 star.set("except_", [exp.column("_TABLE_SUFFIX")])
     union = functools.reduce(lambda left, right: left.union(right), selects)
-    alias = node.args.get("alias") or exp.TableAlias(this=exp.to_identifier(prefix))
+    alias = node.args.get("alias") or exp.TableAlias(
+        this=exp.to_identifier(prefix or node.name, quoted=True)
+    )
     return exp.Subquery(this=union, alias=alias)
 
 

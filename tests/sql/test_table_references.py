@@ -34,6 +34,7 @@ CASES = [
         rows=[(1,), (2,), (3,), (4,)],
     ),
     q("SELECT id FROM `events_2020*` ORDER BY id", rows=[(1,), (2,), (3,)]),
+    q("SELECT _TABLE_SUFFIX FROM `*` WHERE id = 4", "events_2021"),
     q("SELECT COUNT(*) FROM `events_*` WHERE _TABLE_SUFFIX = '20200102'", 2),
     q(
         "SELECT COUNT(*) FROM `events_*` "

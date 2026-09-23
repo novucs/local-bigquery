@@ -10,6 +10,10 @@ CASES = [
     q("SELECT ARRAY<STRING>['a']", ["a"], types="ARRAY<STRING>"),
     q("SELECT ARRAY<INT64>[]", []),
     q(
+        "SELECT g, v FROM UNNEST([STRUCT('a' AS g, 1 AS v), ('b', 2)]) ORDER BY v",
+        rows=[("a", 1), ("b", 2)],
+    ),
+    q(
         "SELECT CAST(NULL AS ARRAY<INT64>)",
         [],
     ),
