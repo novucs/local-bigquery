@@ -557,7 +557,7 @@ class Interpreter:
         variables, outputs = {}, []
         for argument, (expression, _) in zip(routine["arguments"], statement.items):
             kind = exp.DataType.build(
-                argument["dataType"]["typeKind"], dialect=BigQueryDialect
+                routines.sql_type(argument["dataType"]), dialect=BigQueryDialect
             )
             name = argument["name"].lower()
             variables[name] = self.store(exp.cast(self.expression(expression), kind))
@@ -603,9 +603,9 @@ class Interpreter:
             mode = "IN"
             if parts[0].upper() in ("IN", "OUT", "INOUT"):
                 mode = parts.pop(0).upper()
-            kind = " ".join(parts[1:]).upper()
+            kind = exp.DataType.build(" ".join(parts[1:]), dialect=BigQueryDialect)
             arguments.append(
-                {"name": parts[0], "mode": mode, "dataType": {"typeKind": kind}}
+                {"name": parts[0], "mode": mode, "dataType": routines.data_type(kind)}
             )
         routines.save(
             project_id,

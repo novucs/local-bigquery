@@ -222,6 +222,45 @@ def test_table_byte_counters(api, dataset):
         assert body[key] == "0"
 
 
+def test_get_table_selected_fields(api, dataset):
+    table = f"/datasets/{dataset.dataset_id}/tables/selected"
+    jobs_query(
+        api,
+        f"CREATE TABLE {dataset.dataset_id}.selected "
+        "(a INT64, b STRING, r STRUCT<x INT64, y INT64>)",
+    )
+    body = api("GET", table, params={"selectedFields": "b,R.y"}).json()
+    assert body["schema"]["fields"] == [
+        {"name": "b", "type": "STRING", "mode": "NULLABLE"},
+        {
+            "name": "r",
+            "type": "RECORD",
+            "mode": "NULLABLE",
+            "fields": [{"name": "y", "type": "INTEGER", "mode": "NULLABLE"}],
+        },
+    ]
+
+
+def test_get_table_basic_view(api, dataset):
+    table = f"/datasets/{dataset.dataset_id}/tables/basic"
+    jobs_query(api, f"CREATE TABLE {dataset.dataset_id}.basic (a INT64)")
+    body = api("GET", table, params={"view": "BASIC"}).json()
+    assert "schema" in body and "numRows" not in body and "numBytes" not in body
+    assert "numRows" in api("GET", table, params={"view": "FULL"}).json()
+
+
+@pytest.mark.xfail(
+    reason="datasets.undelete needs dropped schemas restored from DuckLake history"
+)
+def test_undelete_dataset(api):
+    dataset_id = unique("undelete")
+    api("POST", "/datasets", json={"datasetReference": {"datasetId": dataset_id}})
+    assert api("DELETE", f"/datasets/{dataset_id}").status_code == 204
+    response = api("POST", f"/datasets/{dataset_id}:undelete", json={})
+    assert response.status_code == 200, response.text
+    assert api("GET", f"/datasets/{dataset_id}").status_code == 200
+
+
 def test_insert_all_conversion_error(api, dataset):
     jobs_query(api, f"CREATE TABLE {dataset.dataset_id}.numbers (n INT64)")
     rows = [{"json": {"n": 1}}, {"json": {"n": "not-a-number"}}]

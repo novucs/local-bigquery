@@ -6,7 +6,7 @@ from sqlglot.tokens import TokenType
 from sqlglot.dialects.bigquery import BigQuery as BaseBigQuery
 from sqlglot.dialects.duckdb import DuckDB as BaseDuckDB
 
-from local_bigquery.errors import BigQueryError
+from local_bigquery.errors import BigQueryError, not_implemented
 
 FUNCTIONS = sorted((pathlib.Path(__file__).parent / "functions").glob("*.sql"))
 MACRO = re.compile(r"CREATE\s+(?:OR\s+REPLACE\s+)?MACRO\s+(\w+)", re.IGNORECASE)
@@ -69,6 +69,10 @@ class BigQueryDialect(BaseBigQuery):
             self._calls = []
 
         def _parse_function_call(self, *args, **kwargs):
+            if self._model_call():
+                qualified = self._prev and self._prev.token_type == TokenType.DOT
+                prefix = f"{self._tokens[self._index - 2].text}." if qualified else ""
+                raise not_implemented(f"{prefix}{self._curr.text}".upper())
             self._calls.append(self._curr)
             try:
                 return super()._parse_function_call(*args, **kwargs)
@@ -76,6 +80,15 @@ class BigQueryDialect(BaseBigQuery):
                 raise self._signature([None]) from error
             finally:
                 self._calls.pop()
+
+        def _model_call(self) -> bool:
+            tokens = self._tokens[self._index + 1 : self._index + 4]
+            return (
+                len(tokens) == 3
+                and tokens[0].token_type == TokenType.L_PAREN
+                and tokens[1].text.upper() == "MODEL"
+                and tokens[2].token_type in (TokenType.VAR, TokenType.IDENTIFIER)
+            )
 
         def validate_expression(self, expression, args=None):
             if args is not None and (

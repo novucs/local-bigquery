@@ -257,27 +257,18 @@ def routines(project_id: str, dataset_id: str | None):
         "routine_body",
         "data_type",
     ]
-    rows = database.fetch(
-        "SELECT DISTINCT database_name, schema_name, function_name, "
-        "CASE WHEN function_type = 'table_macro' THEN 'TABLE FUNCTION' ELSE 'FUNCTION' END "
-        "FROM duckdb_functions() WHERE database_name = ? AND (? IS NULL OR schema_name = ?) "
-        "AND function_type IN ('macro', 'table_macro') AND NOT internal",
-        [project_id, dataset_id, dataset_id],
-    )
-    stored = {
-        (r["routineReference"]["datasetId"], r["routineReference"]["routineId"]): r
+    rows = [
+        [
+            project_id,
+            r["routineReference"]["datasetId"],
+            r["routineReference"]["routineId"],
+            catalog_routines.ROUTINE_TYPES[r["routineType"]],
+            "EXTERNAL" if r.get("language") == "JAVASCRIPT" else "SQL",
+            catalog_routines.sql_type(r["returnType"]) if "returnType" in r else None,
+        ]
         for r in catalog_routines.list_(project_id, dataset_id)
-    }
-    functions = [
-        [*row, "SQL", stored.get(row[1:3], {}).get("returnType", {}).get("typeKind")]
-        for row in rows
     ]
-    procedures = [
-        [project_id, *key, "PROCEDURE", "SQL", None]
-        for key, routine in stored.items()
-        if routine["routineType"] == "PROCEDURE"
-    ]
-    return columns, functions + procedures
+    return columns, rows
 
 
 def legacy_tables(project_id: str, dataset_id: str | None):
