@@ -326,7 +326,31 @@ CASES = [
         "+05:30 +0530",
     ),
     q(
-        "SELECT FORMAT_TIMESTAMP('%Z', TIMESTAMP '2020-01-05 10:00:00+00', "
+        "SELECT ARRAY(SELECT DATE_BUCKET(d, INTERVAL 2 DAY) FROM UNNEST("
+        "GENERATE_DATE_ARRAY('1949-12-29', '1950-01-03')) AS d ORDER BY d)",
+        [date(1949, 12, 28), date(1949, 12, 30), date(1949, 12, 30)]
+        + [date(1950, 1, 1), date(1950, 1, 1), date(1950, 1, 3)],
+        types="ARRAY<DATE>",
+    ),
+    q(
+        "SELECT DATE_BUCKET(DATE '2000-12-20', INTERVAL 7 DAY, DATE '2000-12-24'), "
+        "DATE_BUCKET(DATE '2000-12-31', INTERVAL 7 DAY, DATE '2000-12-24')",
+        rows=[(date(2000, 12, 17), date(2000, 12, 31))],
+    ),
+    q(
+        "SELECT DATETIME_BUCKET(DATETIME '1949-12-30 13:00:00', INTERVAL 12 HOUR)",
+        datetime(1949, 12, 30, 12),
+        types="DATETIME",
+    ),
+    q(
+        "SELECT TIMESTAMP_BUCKET(TIMESTAMP '1949-12-30 13:00:00+00', INTERVAL 12 HOUR), "
+        "TIMESTAMP_BUCKET(TIMESTAMP '2000-12-20 01:00:00+00', INTERVAL 7 DAY, "
+        "TIMESTAMP '2000-12-22 12:00:00+00')",
+        rows=[(utc(1949, 12, 30, 12), utc(2000, 12, 15, 12))],
+        types=("TIMESTAMP", "TIMESTAMP"),
+    ),
+    q(
+        "SELECT FORMAT_TIMESTAMP('%Z',TIMESTAMP '2020-01-05 10:00:00+00', "
         "'America/New_York'), FORMAT_TIMESTAMP('%H %Z', TIMESTAMP '2020-07-05 10:00:00+00', "
         "'America/New_York'), FORMAT_TIMESTAMP('%Z', TIMESTAMP '2020-01-05 10:00:00+00')",
         rows=[("EST", "06 EDT", "UTC")],

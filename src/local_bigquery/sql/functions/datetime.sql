@@ -55,3 +55,14 @@ CREATE MACRO _timestamp_string(ts, local) AS
 
 CREATE MACRO _seconds(ts, digits) AS strftime(ts, '%S') || CASE WHEN digits = 0 THEN ''
     ELSE '.' || left(lpad(CAST(microsecond(ts) % 1000000 AS VARCHAR), 6, '0'), digits) END;
+
+CREATE MACRO date_bucket(d, width) AS time_bucket(width, d, DATE '1950-01-01'),
+    (d, width, origin) AS time_bucket(width, d, origin);
+
+CREATE MACRO datetime_bucket(d, width) AS time_bucket(width, d, TIMESTAMP '1950-01-01'),
+    (d, width, origin) AS time_bucket(width, d, origin);
+
+CREATE MACRO timestamp_bucket(ts, width) AS
+    timezone('UTC', time_bucket(width, timezone('UTC', ts), TIMESTAMP '1950-01-01')),
+    (ts, width, origin) AS
+    timezone('UTC', time_bucket(width, timezone('UTC', ts), timezone('UTC', origin)));
