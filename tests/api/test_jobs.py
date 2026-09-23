@@ -9,7 +9,7 @@ from google.api_core.exceptions import (
 )
 from google.cloud import bigquery
 
-from tests.cases import FAST_RETRY, fails, run, run_job, unique
+from tests.cases import FAST_RETRY, fails, rows, run, run_job, unique
 
 ROWS_25 = "SELECT x FROM UNNEST(GENERATE_ARRAY(1, 25)) AS x ORDER BY x"
 
@@ -392,3 +392,11 @@ def test_failed_query_is_done_job_with_error(bq):
 def test_query_and_wait_failure(bq):
     with fails(BadRequest, "invalidQuery"):
         run(bq, "SELECT nope")
+
+
+def test_anonymous_destination_is_queryable(bq):
+    job = run_job(bq, "SELECT 1 AS x")
+    table = job.destination
+    assert rows(
+        bq, f"SELECT x FROM `{table.project}.{table.dataset_id}.{table.table_id}`"
+    ) == [(1,)]

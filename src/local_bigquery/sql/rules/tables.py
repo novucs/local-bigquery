@@ -4,7 +4,7 @@ import re
 import sqlglot
 from sqlglot import exp
 
-from local_bigquery.catalog import metadata
+from local_bigquery.catalog import metadata, tables
 from local_bigquery.engine import database
 from local_bigquery.errors import BigQueryError
 
@@ -117,12 +117,13 @@ def qualify(tree: exp.Expression, context) -> exp.Expression:
             continue
         if not table.db and context.dataset_id is None:
             continue
-        table.set(
-            "catalog",
-            exp.to_identifier(table.catalog or context.project_id, quoted=True),
+        path = tables.physical(
+            table.catalog or context.project_id,
+            table.db or context.dataset_id,
+            table.name,
         )
-        table.set("db", exp.to_identifier(table.db or context.dataset_id, quoted=True))
-        table.set("this", exp.to_identifier(table.name, quoted=True))
+        for key, part in zip(("catalog", "db", "this"), path):
+            table.set(key, exp.to_identifier(part, quoted=True))
         _check(tree, table, table is target)
     return tree
 

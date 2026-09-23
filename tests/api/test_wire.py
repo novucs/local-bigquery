@@ -1,3 +1,4 @@
+import gzip
 import json
 
 import pytest
@@ -257,7 +258,11 @@ def upload(endpoint, project):
 
 
 def load_config(dataset, **load) -> dict:
-    table = {"datasetId": dataset.dataset_id, "tableId": unique("uploaded")}
+    table = {
+        "projectId": dataset.project,
+        "datasetId": dataset.dataset_id,
+        "tableId": unique("uploaded"),
+    }
     return {"configuration": {"load": {"destinationTable": table} | load}}
 
 
@@ -285,6 +290,28 @@ def test_resumable_upload_id_and_status_probe(upload, dataset):
     assert (probe.status_code, probe.headers["Range"]) == (308, "bytes=0-9")
 
 
+def test_resumable_upload_of_unknown_size(bq, upload, dataset):
+    config = load_config(
+        dataset,
+        sourceFormat="CSV",
+        skipLeadingRows=1,
+        schema={"fields": [{"name": "x", "type": "INTEGER"}]},
+    )
+    started = upload("POST", {"uploadType": "resumable"}, json=config)
+    params = {"upload_id": started.headers["X-GUploader-UploadID"]}
+    chunk = upload(
+        "PUT", params, headers={"Content-Range": "bytes 0-3/*"}, data=b"x\n1\n"
+    )
+    assert (chunk.status_code, chunk.headers["Range"]) == (308, "bytes=0-3")
+    status = upload("PUT", params, headers={"Content-Range": "bytes */*"})
+    assert (status.status_code, status.headers["Range"]) == (308, "bytes=0-3")
+    last = upload("PUT", params, headers={"Content-Range": "bytes 4-5/6"}, data=b"2\n")
+    assert last.json()["status"] == {"state": "DONE"}, last.json()
+    table = config["configuration"]["load"]["destinationTable"]
+    sql = f"SELECT x FROM {table['datasetId']}.{table['tableId']} ORDER BY x"
+    assert [tuple(row.values()) for row in bq.query_and_wait(sql)] == [(1,), (2,)]
+
+
 def test_multipart_invalid_metadata(upload):
     headers, body = multipart("{not json", b"x\n1\n")
     response = upload("POST", {"uploadType": "multipart"}, headers=headers, data=body)
@@ -298,3 +325,12 @@ def test_multipart_unknown_source_format(upload, dataset):
     response = upload("POST", {"uploadType": "multipart"}, headers=headers, data=body)
     assert response.status_code == 400
     assert response.json()["error"]["status"] == "INVALID_ARGUMENT"
+
+
+def test_gzip_request_body(api):
+    dataset_id = unique("gz")
+    body = json.dumps({"datasetReference": {"datasetId": dataset_id}}).encode()
+    headers = {"Content-Encoding": "gzip", "Content-Type": "application/json"}
+    response = api("POST", "/datasets", data=gzip.compress(body), headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["datasetReference"]["datasetId"] == dataset_id

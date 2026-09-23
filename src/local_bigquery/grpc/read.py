@@ -100,10 +100,13 @@ def _column(name: str, t, data_format) -> str:
 def _query(path: str, options, data_format) -> tuple[str, list[TableFieldSchema]]:
     project_id, dataset_id, table_id = table(path)
     tables.load(project_id, dataset_id, table_id)
-    source = tables.name(project_id, dataset_id, table_id)
+    sql = f"SELECT * FROM `{project_id}.{dataset_id}.{table_id}`"
+    if options.row_restriction:
+        sql += f" WHERE {options.row_restriction}"
+    source, _ = translate(parse(sql)[0], Context(project_id, dataset_id))
     selected = {field.casefold() for field in options.selected_fields}
     with database.cursor() as cur:
-        relation = cur.sql(f"SELECT * FROM {source} LIMIT 0")
+        relation = cur.sql(f"SELECT * FROM ({source}) LIMIT 0")
         chosen = [
             (name, t)
             for name, t in zip(relation.columns, relation.types)
@@ -111,15 +114,7 @@ def _query(path: str, options, data_format) -> tuple[str, list[TableFieldSchema]
         ]
     fields = [engine_types.field(name, t) for name, t in chosen]
     columns = ", ".join(_column(name, t, data_format) for name, t in chosen)
-    if not options.row_restriction:
-        return f"SELECT {columns} FROM {source}", fields
-    context = Context(project_id, dataset_id, temporary={"__read"})
-    tree = parse(f"SELECT * FROM __read WHERE {options.row_restriction}")[0]
-    filtered, _ = translate(tree, context)
-    query = (
-        f"WITH __read AS (SELECT * FROM {source}) SELECT {columns} FROM ({filtered})"
-    )
-    return query, fields
+    return f"SELECT {columns} FROM ({source})", fields
 
 
 def _stream(name: str, stream: Stream) -> types.ReadStream:

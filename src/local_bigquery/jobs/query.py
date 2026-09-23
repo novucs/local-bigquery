@@ -82,7 +82,7 @@ def _ddl(tree: exp.Expression, context: Context) -> dict:
             "datasetId": target.db or context.dataset_id,
             "tableId": target.name,
         }
-        found = tables.exists(*_reference(reference))
+        found = tables.exists(*tables.reference(reference))
         key = "ddlTargetTable"
     elif kind == "FUNCTION" and target is not None:
         reference = {
@@ -128,10 +128,6 @@ def _target(tree: exp.Expression, context: Context) -> tuple[str, str, str]:
     )
 
 
-def _reference(table: dict) -> tuple[str, str, str]:
-    return table["projectId"], table["datasetId"], table["tableId"]
-
-
 def _layout(relation: duckdb.DuckDBPyRelation, config: dict, write: str) -> dict:
     layout = {key: config[key] for key in LAYOUT if config.get(key)}
     columns = {name.casefold() for name in relation.columns}
@@ -160,7 +156,7 @@ def _layout(relation: duckdb.DuckDBPyRelation, config: dict, write: str) -> dict
 
 
 def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated: bool):
-    reference = _reference(destination)
+    reference = tables.reference(destination)
     write = config.get("writeDisposition") or "WRITE_EMPTY"
     create = config.get("createDisposition")
     relation = cur.sql(sql, params=bound)
@@ -215,7 +211,7 @@ def _result_schema(cur, tree, context, statistics: dict, dry_run: bool) -> list 
     if isinstance(tree, exp.Create) and target:
         if dry_run or statistics.get("ddlOperationPerformed") == "SKIP":
             return _declared_schema(cur, tree, context)
-        return tables.load(*_reference(target))["schema"]["fields"]
+        return tables.load(*tables.reference(target))["schema"]["fields"]
     if dry_run and type(tree) in DML_COUNTS:
         table = tree.find(exp.Table)
         reference = (

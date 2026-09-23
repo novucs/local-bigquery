@@ -25,6 +25,15 @@ RESULTS = "_results"
 INGESTION_TIME = "_PARTITIONTIME"
 
 
+def reference(table: dict) -> tuple[str, str, str]:
+    try:
+        return table["projectId"], table["datasetId"], table["tableId"]
+    except KeyError as error:
+        raise BigQueryError(
+            "invalid", f"Required parameter is missing: {error.args[0]}"
+        ) from None
+
+
 def physical(project_id: str, dataset_id: str, table_id: str) -> tuple[str, str, str]:
     if dataset_id == RESULTS:
         return "emulator", RESULTS, f"{project_id}:{table_id}"

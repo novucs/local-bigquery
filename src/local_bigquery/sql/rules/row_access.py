@@ -82,4 +82,12 @@ def row_access_policies(tree: exp.Expression, context) -> exp.Expression:
     return _secure(tree, context) if row_access.secured() else tree
 
 
+def session_user(node: exp.Expression, context) -> exp.Expression:
+    if not isinstance(node, exp.SessionUser | exp.CurrentUser):
+        return node
+    principal = row_access.members()[0]
+    return exp.Literal.string(principal.split(":", 1)[-1])
+
+
 STATEMENT_RULES = [row_access_policies]
+NODE_RULES = [session_user]

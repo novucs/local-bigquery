@@ -1,6 +1,8 @@
 import datetime
+import decimal
 import uuid
 
+import pyarrow as pa
 import pytest
 from google.api_core.exceptions import InvalidArgument, NotFound, OutOfRange
 from google.cloud.bigquery_storage_v1 import types, writer
@@ -89,6 +91,60 @@ def test_append_rows_stream_helper(bq, bqwrite, table):
     stream.send(types.AppendRowsRequest(proto_rows=data)).result()
     stream.close()
     assert select(bq, table) == [(7, None)]
+
+
+def test_arrow_rows(bq, bqwrite, dataset):
+    table_id = unique("arrow")
+    run(
+        bq,
+        f"CREATE TABLE {dataset.dataset_id}.{table_id} "
+        "(x INT64, s STRING, ts TIMESTAMP, d DATE, b BYTES, n NUMERIC)",
+    )
+    arrow = pa.schema(
+        [
+            ("x", pa.int64()),
+            ("s", pa.string()),
+            ("ts", pa.timestamp("us", tz="UTC")),
+            ("d", pa.date32()),
+            ("b", pa.binary()),
+            ("n", pa.decimal128(38, 9)),
+        ]
+    )
+    moment = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+    values = [
+        [1],
+        ["a"],
+        [moment],
+        [moment.date()],
+        [b"\x01"],
+        [decimal.Decimal("1.5")],
+    ]
+    batch = pa.record_batch(values, schema=arrow)
+    name = f"projects/{dataset.project}/datasets/{dataset.dataset_id}/tables/{table_id}"
+    requests = [
+        types.AppendRowsRequest(
+            write_stream=f"{name}/streams/_default",
+            arrow_rows=types.AppendRowsRequest.ArrowData(
+                writer_schema=types.ArrowSchema(
+                    serialized_schema=arrow.serialize().to_pybytes()
+                ),
+                rows=types.ArrowRecordBatch(
+                    serialized_record_batch=batch.serialize().to_pybytes()
+                ),
+            ),
+        ),
+        types.AppendRowsRequest(
+            arrow_rows=types.AppendRowsRequest.ArrowData(
+                rows=types.ArrowRecordBatch(
+                    serialized_record_batch=batch.serialize().to_pybytes()
+                )
+            )
+        ),
+    ]
+    responses = list(bqwrite.append_rows(iter(requests)))
+    assert [response.error.code for response in responses] == [0, 0]
+    expected = (1, "a", moment, moment.date(), b"\x01", decimal.Decimal("1.5"))
+    assert rows(bq, f"SELECT * FROM {dataset.dataset_id}.{table_id}") == [expected] * 2
 
 
 def test_timestamps_are_epoch_micros(bq, bqwrite, dataset):

@@ -63,9 +63,16 @@ def materialise(
     if writer is None:
         cur.execute(f"{statement} {select}", params)
         return
-    writer.register("result", cur.sql(select, params=params).to_arrow_reader())
+    result = cur.sql(select, params=params)
+    typed = ", ".join(
+        f"CAST({quote(column)} AS {t}) AS {quote(column)}"
+        if "JSON" in str(t)
+        else quote(column)
+        for column, t in zip(result.columns, result.types)
+    )
+    writer.register("result", result.to_arrow_reader())
     try:
-        writer.execute(f"{statement} SELECT * FROM result")
+        writer.execute(f"{statement} SELECT {typed} FROM result")
     finally:
         writer.unregister("result")
 

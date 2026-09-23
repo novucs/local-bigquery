@@ -1,3 +1,4 @@
+import gzip
 import json
 import logging
 import pathlib
@@ -39,6 +40,34 @@ async def handle_error(request: Request, error: Exception) -> JSONResponse:
 
 for error_type in (BigQueryError, RequestValidationError):
     app.add_exception_handler(error_type, handle_error)
+
+
+class GzipRequests:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        headers = dict(scope.get("headers", []))
+        if scope["type"] != "http" or headers.get(b"content-encoding") != b"gzip":
+            return await self.app(scope, receive, send)
+        body, more = b"", True
+        while more:
+            message = await receive()
+            body += message.get("body", b"")
+            more = message.get("more_body", False)
+        body = gzip.decompress(body)
+        headers.pop(b"content-encoding")
+        headers[b"content-length"] = str(len(body)).encode()
+        messages = iter([{"type": "http.request", "body": body}])
+
+        async def replay():
+            return next(messages, None) or await receive()
+
+        scope = {**scope, "headers": list(headers.items())}
+        await self.app(scope, replay, send)
+
+
+app.add_middleware(GzipRequests)
 
 
 @app.middleware("http")

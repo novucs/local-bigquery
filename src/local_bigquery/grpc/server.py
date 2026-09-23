@@ -1,9 +1,11 @@
 import concurrent.futures
+import contextlib
 import functools
 
 import grpc
 from google.cloud.bigquery_storage_v1 import types
 
+from local_bigquery.catalog import row_access
 from local_bigquery.errors import from_exception
 from local_bigquery.grpc import read, write
 
@@ -24,11 +26,25 @@ def _abort(context: grpc.ServicerContext, error: Exception):
     context.abort(CODES.get(error.reason, grpc.StatusCode.INTERNAL), error.message)
 
 
+@contextlib.contextmanager
+def _caller(context: grpc.ServicerContext):
+    metadata = dict(context.invocation_metadata())
+    identity = row_access.identify(
+        metadata.get("x-bqemu-caller"), metadata.get("x-bqemu-groups")
+    )
+    token = row_access.caller.set(identity)
+    try:
+        yield
+    finally:
+        row_access.caller.reset(token)
+
+
 def _unary(function, request_type, response_type):
     @functools.wraps(function)
     def handler(request, context):
         try:
-            return function(request)
+            with _caller(context):
+                return function(request)
         except Exception as error:
             _abort(context, error)
 
@@ -41,7 +57,8 @@ def _streaming(function, request_type, response_type, bidirectional=False):
     @functools.wraps(function)
     def handler(request, context):
         try:
-            yield from function(request)
+            with _caller(context):
+                yield from function(request)
         except Exception as error:
             _abort(context, error)
 

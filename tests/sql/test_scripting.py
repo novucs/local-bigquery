@@ -30,6 +30,10 @@ CASES = [
     ),
     q("SELECT 1; SELECT 2", 2),
     q(
+        "SELECT 1; SELECT JSON '1' AS j, [JSON '2'] AS a, STRUCT(JSON '3' AS k) AS s",
+        types=("JSON", "ARRAY<JSON>", "STRUCT<k JSON>"),
+    ),
+    q(
         "DECLARE x INT64 DEFAULT 1; CREATE TEMP TABLE t AS SELECT x",
         rows=[],
     ),

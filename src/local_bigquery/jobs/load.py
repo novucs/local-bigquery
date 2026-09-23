@@ -70,8 +70,7 @@ def _projection(config: dict, fields: list[TableFieldSchema]) -> tuple[str, str]
 
 
 def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
-    target = config["destinationTable"]
-    reference = (target["projectId"], target["datasetId"], target["tableId"])
+    reference = tables.reference(config["destinationTable"])
     datasets.load(*reference[:2])
     uris = config.get("sourceUris") or []
     sources = [upload] if upload else [path(cur, uri) for uri in uris]

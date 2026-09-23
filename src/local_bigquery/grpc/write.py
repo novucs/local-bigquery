@@ -1,8 +1,11 @@
+import base64
 import datetime
+import decimal
 import uuid
 from dataclasses import dataclass, field
 
 import grpc
+import pyarrow as pa
 from google.cloud.bigquery_storage_v1 import types
 from google.protobuf import (
     descriptor_pb2,
@@ -200,24 +203,55 @@ def _append(
     return response
 
 
+def _plain(value):
+    match value:
+        case dict():
+            return {key: _plain(item) for key, item in value.items()}
+        case list():
+            return [_plain(item) for item in value]
+        case bytes():
+            return base64.b64encode(value).decode()
+        case decimal.Decimal():
+            return str(value)
+        case datetime.date() | datetime.time():
+            return value.isoformat()
+    return value
+
+
+def _decoder(request: types.AppendRowsRequest):
+    if "arrow_rows" in request:
+        if serialized := request.arrow_rows.writer_schema.serialized_schema:
+            schema = pa.ipc.read_schema(pa.py_buffer(serialized))
+            return lambda request, fields: [
+                _plain(row)
+                for row in pa.ipc.read_record_batch(
+                    pa.py_buffer(request.arrow_rows.rows.serialized_record_batch),
+                    schema,
+                ).to_pylist()
+            ]
+        return None
+    descriptor = request.proto_rows.writer_schema.proto_descriptor
+    if not descriptor.name:
+        return None
+    message = _message_class(descriptor)
+    return lambda request, fields: [
+        _row(
+            fields,
+            json_format.MessageToDict(
+                message.FromString(serialized), preserving_proto_field_name=True
+            ),
+        )
+        for serialized in request.proto_rows.rows.serialized_rows
+    ]
+
+
 def append(requests):
-    name, message = None, None
+    name, decode = None, None
     for request in requests:
         name = request.write_stream or name
         stream = _stream(name)
-        data = request.proto_rows
-        if data.writer_schema.proto_descriptor.name:
-            message = _message_class(data.writer_schema.proto_descriptor)
-        fields = tables.columns(*stream.table)
-        rows = [
-            _row(
-                fields,
-                json_format.MessageToDict(
-                    message.FromString(serialized), preserving_proto_field_name=True
-                ),
-            )
-            for serialized in data.rows.serialized_rows
-        ]
+        decode = _decoder(request) or decode
+        rows = decode(request, tables.columns(*stream.table))
         offset = request.offset if "offset" in request else None
         yield _append(stream, rows, offset)
 

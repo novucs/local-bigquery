@@ -68,7 +68,8 @@ async def upload_chunk(project_id: str, upload_id: str, request: Request):
         file.write(await request.body())
         size = file.tell()
     match = CONTENT_RANGE.match(request.headers.get("content-range", ""))
-    if match and match[1] != "*" and int(match[1]) > size:
-        return Response(status_code=308, headers={"Range": f"bytes=0-{size - 1}"})
+    if match and (match[1] == "*" or int(match[1]) > size):
+        received = {"Range": f"bytes=0-{size - 1}"} if size else {}
+        return Response(status_code=308, headers=received)
     _, body = _resumable.pop(upload_id)
     return await run_in_threadpool(_start, project_id, body, _file(upload_id))

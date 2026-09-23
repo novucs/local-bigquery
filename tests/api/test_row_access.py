@@ -4,6 +4,7 @@ from google.api_core.client_options import ClientOptions
 from google.api_core.exceptions import Conflict, NotFound
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery
+from google.cloud.bigquery_storage_v1 import types
 
 from tests.cases import fails, run, run_job, unique
 
@@ -246,3 +247,35 @@ def test_information_schema_row_access_policies_not_found(bq, orders):
             bq,
             f"SELECT * FROM {orders.split('.')[0]}.INFORMATION_SCHEMA.ROW_ACCESS_POLICIES",
         )
+
+
+def test_storage_read_applies_policies(bq, bqstorage, caller, orders, project):
+    policy(bq, orders, "us_only", [ALICE], "country = 'US'")
+    dataset_id, table_id = orders.split(".")
+    table = f"projects/{project}/datasets/{dataset_id}/tables/{table_id}"
+
+    def read_ids(member: str) -> list[int]:
+        session = bqstorage.create_read_session(
+            parent=f"projects/{project}",
+            read_session=types.ReadSession(
+                table=table, data_format=types.DataFormat.ARROW
+            ),
+            max_stream_count=1,
+            metadata=[("x-bqemu-caller", member)],
+        )
+        if not session.streams:
+            return []
+        rows = bqstorage.read_rows(session.streams[0].name).to_arrow(session)
+        return sorted(rows["id"].to_pylist())
+
+    assert read_ids(ALICE) == [1, 2]
+    assert read_ids("user:bob@example.com") == []
+
+
+def test_session_user_is_the_caller(bq, caller, orders):
+    assert ids(caller(ALICE), "SELECT SESSION_USER()") == ["alice@example.com"]
+    predicate = "country = IF(SESSION_USER() = 'alice@example.com', 'US', 'EU')"
+    policy(bq, orders, "by_user", ["allUsers"], predicate)
+    sql = f"SELECT id FROM {orders} ORDER BY id"
+    assert ids(caller(ALICE), sql) == [1, 2]
+    assert ids(caller("user:bob@example.com"), sql) == [3]
