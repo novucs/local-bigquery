@@ -67,6 +67,18 @@ class BigQueryDialect(BaseBigQuery):
         def reset(self):
             super().reset()
             self._calls = []
+            self._type = None
+
+        def _parse_types(self, *args, **kwargs):
+            self._type = super()._parse_types(*args, **kwargs)
+            return self._type
+
+        def _parse_cast(self, *args, **kwargs):
+            cast = super()._parse_cast(*args, **kwargs)
+            local = (exp.DataType.Type.TIMESTAMP, exp.DataType.Type.TIME)
+            if isinstance(cast, exp.StrToTime) and self._type.is_type(*local):
+                return exp.cast(exp.cast(cast, "TIMESTAMP"), self._type)
+            return cast
 
         def _parse_function_call(self, *args, **kwargs):
             self._calls.append(self._curr)
