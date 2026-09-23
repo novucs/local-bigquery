@@ -30,7 +30,6 @@ CASES = [
         "SELECT COUNTIF(x > 1) FROM UNNEST([1, 2, 3, NULL]) AS x",
         2,
         types="INT64",
-        xfail="COUNTIF reported as INT128",
     ),
     q(
         "SELECT COUNTIF(x > 1) FROM UNNEST(ARRAY<INT64>[]) AS x",
@@ -41,7 +40,6 @@ CASES = [
         "SELECT SUM(x) FROM UNNEST([1, 2, 3]) AS x",
         6,
         types="INT64",
-        xfail="SUM of INT64 reported as INT128",
     ),
     q("SELECT SUM(x) FROM UNNEST(ARRAY<INT64>[]) AS x", None),
     q("SELECT SUM(x) FROM UNNEST([CAST(NULL AS INT64)]) AS x", None),
@@ -91,7 +89,6 @@ CASES = [
     q(
         "SELECT ARRAY_AGG(x) FROM UNNEST(ARRAY<INT64>[]) AS x",
         [],
-        xfail="NULL array not encoded as empty",
     ),
     q(
         "SELECT ARRAY_AGG(x) FROM UNNEST([1, NULL]) AS x",
@@ -181,7 +178,6 @@ CASES = [
     q(
         "SELECT g, SUM(v) FROM t GROUP BY g ORDER BY g",
         rows=[("a", 3), ("b", 3), ("c", None)],
-        xfail="SUM of INT64 reported as INT128",
     ),
     q(
         "SELECT g, COUNT(*), COUNT(v) FROM t GROUP BY 1 ORDER BY 1",
@@ -194,21 +190,18 @@ CASES = [
     q(
         "SELECT g, SUM(v) AS s FROM t GROUP BY ALL ORDER BY g",
         rows=[("a", 3), ("b", 3), ("c", None)],
-        xfail="SUM of INT64 reported as INT128",
     ),
     q("SELECT g FROM t GROUP BY g HAVING COUNT(v) = 2", "a"),
     q("SELECT g FROM t GROUP BY g HAVING COUNT(*) > 10", rows=[]),
     q(
         "SELECT SUM(CASE WHEN g = 'a' THEN v ELSE 0 END) FROM t",
         3,
-        xfail="SUM of INT64 reported as INT128",
     ),
     q("SELECT COUNT(*) FROM t WHERE FALSE", 0),
     q("SELECT COUNT(*) FROM t WHERE FALSE GROUP BY g", rows=[]),
     q(
         "SELECT g, SUM(v) FROM t WHERE g != 'c' GROUP BY ROLLUP (g) ORDER BY g NULLS LAST",
         rows=[("a", 3), ("b", 3), (None, 6)],
-        xfail="SUM of INT64 reported as INT128",
     ),
     q(
         "SELECT g, GROUPING(g) FROM t WHERE g != 'c' GROUP BY ROLLUP (g) ORDER BY 2, 1",

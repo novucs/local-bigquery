@@ -11,7 +11,7 @@ STATUSES = {
     "accessDenied": (403, "PERMISSION_DENIED"),
     "notFound": (404, "NOT_FOUND"),
     "duplicate": (409, "ALREADY_EXISTS"),
-    "failedPrecondition": (412, "FAILED_PRECONDITION"),
+    "conditionNotMet": (412, "FAILED_PRECONDITION"),
     "notImplemented": (501, "UNIMPLEMENTED"),
     "dontRetry": (500, "INTERNAL"),
 }
@@ -60,7 +60,7 @@ def not_implemented(feature: str) -> BigQueryError:
 
 
 def from_exception(error: Exception) -> BigQueryError:
-    message = str(error)
+    message = str(error).split("\n\nLINE ")[0]
     match error:
         case BigQueryError():
             return error

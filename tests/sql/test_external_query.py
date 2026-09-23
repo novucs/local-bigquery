@@ -93,7 +93,6 @@ CASES = [
             "BYTES",
             "STRING",
         ),
-        xfail="NUMERIC and DATETIME reported as FLOAT64 and TIMESTAMP",
     ),
     q(
         "SELECT * FROM EXTERNAL_QUERY('us.default', 'SELECT jsb FROM types')",

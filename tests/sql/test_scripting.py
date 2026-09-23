@@ -198,7 +198,6 @@ CASES = [
         "CREATE TEMP TABLE t AS SELECT 1 AS v; INSERT INTO t VALUES (2); "
         "SELECT SUM(v) FROM t",
         3,
-        xfail="SUM of INT64 reported as INT128",
     ),
 ]
 

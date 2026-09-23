@@ -12,7 +12,6 @@ CASES = [
     q(
         "SELECT CAST(NULL AS ARRAY<INT64>)",
         [],
-        xfail="NULL array returned as null, not []",
     ),
     q("SELECT ARRAY(SELECT x * 2 FROM UNNEST([1, 2]) AS x ORDER BY x)", [2, 4]),
     q("SELECT ARRAY(SELECT DISTINCT x FROM UNNEST([3, 1, 3]) AS x ORDER BY x)", [1, 3]),

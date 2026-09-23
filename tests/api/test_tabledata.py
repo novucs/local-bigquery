@@ -68,7 +68,6 @@ def ints(bq, table, count):
     return table
 
 
-@pytest.mark.xfail(reason="BYTES double-encoded, NUMERIC returned as FLOAT")
 def test_insert_rows_round_trips_every_type(bq, dataset):
     table = create(bq, dataset, *SCHEMA)
     assert bq.insert_rows(table, [ROW]) == []
@@ -137,7 +136,6 @@ def test_invalid_row_stops_the_whole_request(bq, dataset):
     assert select(bq, table) == []
 
 
-@pytest.mark.xfail(reason="unknown field fails whole request with 400")
 def test_unknown_field_is_rejected(bq, dataset):
     table = create(bq, dataset)
     errors = bq.insert_rows_json(table, [{"x": 1, "nope": 2}])
@@ -146,7 +144,6 @@ def test_unknown_field_is_rejected(bq, dataset):
     ]
 
 
-@pytest.mark.xfail(reason="ignoreUnknownValues is ignored")
 def test_ignore_unknown_values(bq, dataset):
     table = create(bq, dataset)
     assert (
@@ -156,7 +153,6 @@ def test_ignore_unknown_values(bq, dataset):
     assert select(bq, table) == [{"x": 1}]
 
 
-@pytest.mark.xfail(reason="per-row insertErrors not implemented")
 def test_missing_required_field_is_rejected(bq, dataset):
     table = create(bq, dataset, bigquery.SchemaField("x", "INTEGER", mode="REQUIRED"))
     errors = bq.insert_rows_json(table, [{}])
@@ -164,7 +160,6 @@ def test_missing_required_field_is_rejected(bq, dataset):
     assert select(bq, table) == []
 
 
-@pytest.mark.xfail(reason="templateSuffix is ignored")
 def test_template_suffix_creates_table_from_template(bq, dataset):
     table = create(bq, dataset)
     assert bq.insert_rows_json(table, [{"x": 1}], template_suffix="_s") == []
@@ -182,7 +177,6 @@ def test_insert_into_missing_table(bq, dataset):
         bq.insert_rows_json(table, [{"x": 1}])
 
 
-@pytest.mark.xfail(reason="tabledata.list not implemented")
 def test_list_rows_decodes_every_type(bq, dataset):
     table = create(bq, dataset, *SCHEMA)
     bq.insert_rows(table, [ROW])
@@ -191,7 +185,6 @@ def test_list_rows_decodes_every_type(bq, dataset):
     assert rows.total_rows == 1
 
 
-@pytest.mark.xfail(reason="tabledata.list not implemented")
 def test_list_rows_pages(bq, dataset):
     table = ints(bq, create(bq, dataset), 5)
     pages = [[r["x"] for r in page] for page in bq.list_rows(table, page_size=2).pages]
@@ -199,7 +192,6 @@ def test_list_rows_pages(bq, dataset):
     assert sorted(x for page in pages for x in page) == [0, 1, 2, 3, 4]
 
 
-@pytest.mark.xfail(reason="tabledata.list not implemented")
 def test_list_rows_max_results_and_start_index(bq, dataset):
     table = ints(bq, create(bq, dataset), 5)
     everything = [r["x"] for r in bq.list_rows(table)]
@@ -209,7 +201,6 @@ def test_list_rows_max_results_and_start_index(bq, dataset):
     ] == everything[1:3]
 
 
-@pytest.mark.xfail(reason="tabledata.list not implemented")
 def test_list_rows_selected_fields(bq, dataset):
     a, b = bigquery.SchemaField("a", "INTEGER"), bigquery.SchemaField("b", "STRING")
     table = create(bq, dataset, a, b)
@@ -217,14 +208,12 @@ def test_list_rows_selected_fields(bq, dataset):
     assert [dict(r) for r in bq.list_rows(table, selected_fields=[b])] == [{"b": "x"}]
 
 
-@pytest.mark.xfail(reason="tabledata.list not implemented")
 def test_list_rows_empty_table(bq, dataset):
     rows = bq.list_rows(create(bq, dataset))
     assert list(rows) == []
     assert rows.total_rows == 0
 
 
-@pytest.mark.xfail(reason="tabledata.list not implemented")
 def test_list_rows_to_dataframe(bq, dataset):
     table = ints(bq, create(bq, dataset), 3)
     frame = bq.list_rows(table).to_dataframe()
@@ -242,9 +231,7 @@ def test_query_to_dataframe(bq):
 @pytest.mark.parametrize(
     "value",
     [
-        pytest.param(
-            None, marks=pytest.mark.xfail(reason="null REPEATED sent as null, not []")
-        ),
+        None,
         [],
         ["a"],
     ],

@@ -25,9 +25,9 @@ def main(argv: list[str] | None = None):
     settings.default_dataset_id = args.dataset
     settings.data_dir = args.data_dir
     if args.command == "reset":
-        from local_bigquery import db
+        from local_bigquery.engine import database
 
-        db.reset()
+        database.reset()
     elif args.command == "repl":
         from local_bigquery import repl
 

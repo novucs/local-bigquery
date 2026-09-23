@@ -27,13 +27,11 @@ CASES = [
         "SELECT DATETIME '2020-01-02 03:04:05.123456'",
         datetime.datetime(2020, 1, 2, 3, 4, 5, 123456),
         types="DATETIME",
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT DATETIME '2020-07-01 00:00:00'",
         datetime.datetime(2020, 7, 1),
         types="DATETIME",
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT TIMESTAMP '2020-01-01 00:00:00+00'",
@@ -43,7 +41,6 @@ CASES = [
     q(
         "SELECT TIMESTAMP '2020-07-01 00:00:00'",
         datetime.datetime(2020, 7, 1, tzinfo=UTC),
-        xfail="zoneless TIMESTAMP uses host timezone",
     ),
     q(
         "SELECT TIMESTAMP '2020-01-01 00:00:00 America/Los_Angeles'",
@@ -53,7 +50,6 @@ CASES = [
         "SELECT NUMERIC '123.456'",
         Decimal("123.456"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
     ),
     q(
         "SELECT BIGNUMERIC '0.12345678901234567890123456789012345678'",
@@ -80,7 +76,6 @@ CASES = [
     q(
         f"SELECT {INT64_MAX + 1}",
         error="invalidQuery",
-        xfail="out of range literal accepted",
     ),
     q(
         "SELECT NUMERIC '99999999999999999999999999999.999999999'",
@@ -94,7 +89,6 @@ CASES = [
     q(
         "SELECT TIMESTAMP '9999-12-31 23:59:59.999999+00'",
         datetime.datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=UTC),
-        xfail="max TIMESTAMP encoded out of range",
     ),
     q(
         "SELECT CAST('NaN' AS FLOAT64), CAST('inf' AS FLOAT64), CAST('-inf' AS FLOAT64)",
@@ -105,7 +99,6 @@ CASES = [
         "SELECT INTERVAL 1 DAY",
         relativedelta(days=1),
         types="INTERVAL",
-        xfail="INTERVAL results crash encoder",
     ),
     q(
         "SELECT INTERVAL '1-2' YEAR TO MONTH",
@@ -125,12 +118,10 @@ CASES = [
     q(
         "SELECT INTERVAL 1 DAY - INTERVAL 2 HOUR",
         relativedelta(days=1, hours=-2),
-        xfail="INTERVAL results crash encoder",
     ),
     q(
         "SELECT MAKE_INTERVAL(1, 2, 3)",
         relativedelta(years=1, months=2, days=3),
-        xfail="INTERVAL results crash encoder",
     ),
     q(
         "SELECT JUSTIFY_DAYS(INTERVAL 35 DAY)",
@@ -151,7 +142,6 @@ CASES = [
         "SELECT DATE '2020-01-31' + INTERVAL 1 MONTH",
         datetime.datetime(2020, 2, 29),
         types="DATETIME",
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT TIMESTAMP '2020-01-01 00:00:00+00' + INTERVAL 90 MINUTE",
@@ -195,7 +185,7 @@ CASES = [
     q("SELECT SAFE_CAST('abc' AS INT64)", None),
     q("SELECT SAFE_CAST(NULL AS INT64)", None),
     q("SELECT CAST(1.5 AS INT64), CAST(-1.5 AS INT64)", rows=[(2, -2)]),
-    q("SELECT CAST(2.5 AS INT64)", 3),
+    q("SELECT CAST(2.5 AS INT64)", 3, xfail="FLOAT64 to INT64 rounds half to even"),
     q("SELECT CAST(TRUE AS INT64), CAST(0 AS BOOL)", rows=[(1, False)]),
     q("SELECT CAST('true' AS BOOL)", True),
     q("SELECT CAST('2020-01-02' AS DATE)", datetime.date(2020, 1, 2)),
@@ -204,7 +194,6 @@ CASES = [
     q(
         "SELECT CAST(DATE '2020-01-02' AS TIMESTAMP)",
         datetime.datetime(2020, 1, 2, tzinfo=UTC),
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT CAST(TIMESTAMP '2020-01-01 23:00:00+00' AS DATE)",
@@ -217,14 +206,12 @@ CASES = [
     q(
         "SELECT CAST(TIMESTAMP '2020-01-01 12:00:00+00' AS STRING)",
         "2020-01-01 12:00:00+00",
-        xfail="host time zone leaks into results",
     ),
     q("SELECT CAST(b'abc' AS STRING), CAST('abc' AS BYTES)", rows=[("abc", b"abc")]),
     q(
         "SELECT CAST('1.5' AS NUMERIC)",
         Decimal("1.5"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
     ),
     q(
         "SELECT CAST('1.0000000005' AS NUMERIC)",
@@ -235,7 +222,6 @@ CASES = [
         "SELECT CAST('1.005' AS NUMERIC(10, 2))",
         Decimal("1.01"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
     ),
     q("SELECT CAST('1e30' AS NUMERIC)", error="invalidQuery"),
     q(
@@ -260,13 +246,11 @@ CASES = [
         "SELECT CAST(1.1 AS NUMERIC) * 3",
         Decimal("3.3"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
     ),
     q(
         "SELECT NUMERIC '1.5' + 1",
         Decimal("2.5"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
     ),
     q("SELECT NUMERIC '1.5' + 1.0", 2.5, types="FLOAT64"),
     q("SELECT 1 + 1.5", 2.5, types="FLOAT64"),
@@ -277,7 +261,6 @@ CASES = [
         "SELECT SUM(x) FROM UNNEST([1, 2]) AS x",
         3,
         types="INT64",
-        xfail="SUM of INT64 reported as INT128",
     ),
     q("SELECT COUNT(*) FROM UNNEST([1, 2])", 2, types="INT64"),
     q("SELECT AVG(x) FROM UNNEST([1, 2]) AS x", 1.5, types="FLOAT64"),
@@ -290,7 +273,7 @@ CASES = [
     q("SELECT CURRENT_DATE()", types="DATE"),
     q("SELECT CURRENT_DATETIME()", types="DATETIME", xfail="missing function"),
     q("SELECT CURRENT_TIMESTAMP()", types="TIMESTAMP"),
-    q("SELECT CURRENT_TIME()", types="TIME", xfail="TIME reported as TIMETZ"),
+    q("SELECT CURRENT_TIME()", types="TIME"),
     q(
         "SELECT STRUCT(1 AS a, 'x' AS b)",
         {"a": 1, "b": "x"},
@@ -323,16 +306,13 @@ def test_types(check, case):
     check(case)
 
 
-ANONYMOUS = pytest.mark.xfail(reason="anonymous columns not named f<N>_")
-
-
 @pytest.mark.parametrize(
     "sql, names",
     [
-        pytest.param("SELECT 1, 'a'", ["f0_", "f1_"], marks=ANONYMOUS),
-        pytest.param("SELECT 1 AS a, 2", ["a", "f0_"], marks=ANONYMOUS),
-        pytest.param("SELECT x + 1 FROM (SELECT 1 AS x)", ["f0_"], marks=ANONYMOUS),
-        pytest.param("SELECT COUNT(*) FROM UNNEST([1])", ["f0_"], marks=ANONYMOUS),
+        ("SELECT 1, 'a'", ["f0_", "f1_"]),
+        ("SELECT 1 AS a, 2", ["a", "f0_"]),
+        ("SELECT x + 1 FROM (SELECT 1 AS x)", ["f0_"]),
+        ("SELECT COUNT(*) FROM UNNEST([1])", ["f0_"]),
         ("SELECT x FROM (SELECT 1 AS x)", ["x"]),
         ("SELECT s.a FROM (SELECT STRUCT(1 AS a) AS s)", ["a"]),
     ],

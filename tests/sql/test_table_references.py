@@ -52,7 +52,6 @@ CASES = [
     q(
         "SELECT * FROM `nothing_*`",
         error="notFound",
-        xfail="unmatched wildcard not notFound",
     ),
     q(
         "SELECT id FROM t FOR SYSTEM_TIME AS OF CURRENT_TIMESTAMP() ORDER BY id",

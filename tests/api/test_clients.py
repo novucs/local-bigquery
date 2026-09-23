@@ -65,7 +65,6 @@ def test_sqlalchemy_timestamps(engine, dataset, table_id):
         ]
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_sqlalchemy_reflection(engine, table_id):
     inspector = sqlalchemy.inspect(engine)
     assert inspector.has_table(table_id)
@@ -92,7 +91,6 @@ def test_dbapi_params_and_fetch(bq):
     assert [tuple(r) for r in cursor.fetchall()] == [(3,), (4,), (5,)]
 
 
-@pytest.mark.xfail(reason="DML statistics not reported")
 def test_dbapi_rowcount(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('t')}"
     run(bq, f"CREATE TABLE {table} (x INT64)")

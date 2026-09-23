@@ -15,7 +15,6 @@ def table(dataset):
     return f"{dataset.dataset_id}.{unique('t')}"
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_create_table_types(bq, table):
     run(
         bq,
@@ -182,7 +181,6 @@ def test_alter_table_add_column(bq, table):
     assert rows(bq, f"SELECT * FROM {table}") == [(1, None, None)]
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_alter_table_add_column_if_not_exists(bq, table):
     run(bq, f"CREATE TABLE {table} (x INT64)")
     run(bq, f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS x STRING")
@@ -222,7 +220,6 @@ def test_alter_column_rejects_narrowing(bq, table):
         run(bq, f"ALTER TABLE {table} ALTER COLUMN x SET DATA TYPE INT64")
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_alter_table_rename(bq, dataset, table):
     run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x")
     renamed = unique("renamed")

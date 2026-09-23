@@ -28,7 +28,6 @@ CASES = [
         "SELECT MOD(NUMERIC '7.5', 2)",
         Decimal("1.5"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
     ),
     q("SELECT 1 / 0", error="division by zero", xfail="division by zero returns NULL"),
     q(
@@ -90,12 +89,10 @@ CASES = [
         "SELECT ROUND(NUMERIC '2.5')",
         Decimal("3"),
         types="NUMERIC",
-        xfail="NUMERIC reported as FLOAT",
     ),
     q(
         "SELECT ROUND(NUMERIC '1.005', 2)",
         Decimal("1.01"),
-        xfail="NUMERIC reported as FLOAT",
     ),
     q("SELECT ROUND(NULL)", None),
     q("SELECT TRUNC(1.7), TRUNC(-1.7)", rows=[(1.0, -1.0)]),
@@ -152,7 +149,6 @@ CASES = [
     q(
         "SELECT CAST(0.1 + 0.2 AS STRING)",
         "0.30000000000000004",
-        xfail="FLOAT64 to STRING loses precision",
     ),
     q(
         "SELECT NUMERIC '99999999999999999999999999999.999999999' + 1",

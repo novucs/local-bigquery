@@ -24,7 +24,6 @@ def test_insert_values(bq, table):
     ]
 
 
-@pytest.mark.xfail(reason="DML statistics not reported")
 def test_insert_select(bq, table):
     insert = run_job(bq, f"INSERT {table} SELECT id + 10, name, qty FROM {table}")
     assert insert.num_dml_affected_rows == 3
@@ -78,7 +77,6 @@ def test_update_requires_where(bq, table):
         run(bq, f"UPDATE {table} SET qty = 0")
 
 
-@pytest.mark.xfail(reason="numDmlAffectedRows always 0")
 def test_update_where_true(bq, table):
     assert (
         run(bq, f"UPDATE {table} SET name = NULL WHERE TRUE").num_dml_affected_rows == 3
@@ -119,7 +117,6 @@ def test_delete_with_subquery(bq, table):
     assert rows(bq, f"SELECT id FROM {table} ORDER BY id") == [(1,), (3,)]
 
 
-@pytest.mark.xfail(reason="numDmlAffectedRows always 0")
 def test_delete_where_true(bq, table):
     assert run(bq, f"DELETE FROM {table} WHERE TRUE").num_dml_affected_rows == 3
 

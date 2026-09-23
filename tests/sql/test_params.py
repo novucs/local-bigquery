@@ -23,11 +23,6 @@ SCALARS = [
     ("TIME", datetime.time(11, 30)),
     ("TIMESTAMP", datetime.datetime(2025, 4, 10, 11, 30, tzinfo=UTC)),
 ]
-BROKEN = {
-    "NUMERIC": "NUMERIC decoded as FLOAT64",
-    "BIGNUMERIC": "BIGNUMERIC decoded as FLOAT64",
-    "DATETIME": "DATETIME returned as TIMESTAMP",
-}
 
 
 CASES = [
@@ -37,7 +32,6 @@ CASES = [
             v,
             types=t,
             params=[Scalar(t.lower(), t, v)],
-            xfail=BROKEN.get(t),
         )
         for t, v in SCALARS
     ),
@@ -47,7 +41,6 @@ CASES = [
             [v, v],
             types=f"ARRAY<{t}>",
             params=[Array(f"{t.lower()}_array", t, [v, v])],
-            xfail=BROKEN.get(t),
         )
         for t, v in SCALARS
     ),
@@ -56,7 +49,6 @@ CASES = [
             f"SELECT @{t.lower()}_null IS NULL",
             True,
             params=[Scalar(f"{t.lower()}_null", t, None)],
-            xfail=None if t == "STRING" else "NULL non-STRING params crash",
         )
         for t, _ in SCALARS
     ),
@@ -111,19 +103,16 @@ CASES = [
             Scalar(None, "STRING", "a"),
             Scalar(None, "BOOL", True),
         ],
-        xfail="positional parameters unsupported",
     ),
     q(
         "SELECT ? IS NULL",
         True,
         params=[Scalar(None, "STRING", None)],
-        xfail="positional parameters unsupported",
     ),
     q(
         "SELECT SUM(x) FROM UNNEST(?) AS x",
         6,
         params=[Array(None, "INT64", [1, 2, 3])],
-        xfail="positional parameters unsupported",
     ),
     q(
         "SELECT l FROM UNNEST([1, 2, 3]) AS l JOIN UNNEST([2, 3]) AS r ON l = r AND l > @min",
@@ -137,7 +126,7 @@ CASES = [
         params=[Scalar("n", "INT64", 2)],
     ),
     q("SELECT 1", 1, params=[Scalar("unused", "INT64", 1)]),
-    q("SELECT @missing", error="missing", xfail="missing parameters bind as NULL"),
+    q("SELECT @missing", error="missing"),
     q(
         "SELECT @s + 1",
         error="No matching signature",
@@ -152,7 +141,6 @@ def test_params(check, case):
     check(case)
 
 
-@pytest.mark.xfail(reason="numDmlAffectedRows always 0")
 def test_params_in_dml(bq, dataset):
     table = bq.create_table(
         bigquery.Table(

@@ -52,7 +52,6 @@ def create(bq, dataset, schema=None, **properties):
     return bq.create_table(table)
 
 
-@pytest.mark.xfail(reason="insert echoes request, no server fields")
 def test_create_returns_server_populated_fields(bq, dataset):
     table = create(bq, dataset)
     assert table.table_type == "TABLE"
@@ -91,7 +90,6 @@ def test_schema_round_trips_every_type(bq, dataset):
     assert fetched.schema[-1].fields[0].mode == "REQUIRED"
 
 
-@pytest.mark.xfail(reason="int64 schema params rejected as non-strings")
 def test_schema_round_trips_descriptions_and_parameters(bq, dataset):
     schema = [
         bigquery.SchemaField(
@@ -107,7 +105,6 @@ def test_schema_round_trips_descriptions_and_parameters(bq, dataset):
     assert (s.max_length, s.default_value_expression) == (5, "'x'")
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_create_round_trips_metadata(bq, dataset):
     expires = datetime.datetime(2100, 1, 1, tzinfo=datetime.timezone.utc)
     table = create(
@@ -125,7 +122,6 @@ def test_create_round_trips_metadata(bq, dataset):
     assert fetched.expires == expires
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_create_time_partitioned_and_clustered(bq, dataset):
     schema = [
         bigquery.SchemaField("day", "DATE"),
@@ -146,7 +142,6 @@ def test_create_time_partitioned_and_clustered(bq, dataset):
     assert fetched.require_partition_filter is True
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_create_range_partitioned(bq, dataset):
     table = create(
         bq,
@@ -160,7 +155,6 @@ def test_create_range_partitioned(bq, dataset):
     assert fetched.range_partitioning.range_.interval == 10
 
 
-@pytest.mark.xfail(reason="views not supported by tables.insert")
 def test_create_view(bq, dataset):
     view = bigquery.Table(table_ref(dataset))
     view.view_query = "SELECT 1 AS one, 'a' AS letter"
@@ -174,7 +168,6 @@ def test_create_view(bq, dataset):
     ] == [(1, "a")]
 
 
-@pytest.mark.xfail(reason="duplicate create returns 500")
 def test_create_duplicate(bq, dataset):
     table = create(bq, dataset)
     with fails(Conflict, "duplicate"):
@@ -182,19 +175,16 @@ def test_create_duplicate(bq, dataset):
     bq.create_table(table.reference, exists_ok=True)
 
 
-@pytest.mark.xfail(reason="missing dataset returns 500")
 def test_create_in_missing_dataset(bq, project):
     with fails(NotFound, "notFound"):
         bq.create_table(f"{project}.{unique('missing')}.t")
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_get_missing(bq, dataset):
     with fails(NotFound, "notFound"):
         bq.get_table(table_ref(dataset))
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_get_reports_row_count_and_size(bq, dataset):
     table = create(bq, dataset)
     run(bq, f"INSERT INTO `{table.reference}` (x) VALUES (1), (2), (3)")
@@ -212,7 +202,6 @@ def test_table_ids_are_case_sensitive(bq, dataset):
     assert bq.get_table(upper).table_id == name.upper()
 
 
-@pytest.mark.xfail(reason="views not supported by tables.insert")
 def test_list_includes_tables_and_views(bq):
     dataset = bq.create_dataset(unique("list"))
     try:
@@ -226,7 +215,6 @@ def test_list_includes_tables_and_views(bq):
         bq.delete_dataset(dataset, delete_contents=True)
 
 
-@pytest.mark.xfail(reason="maxResults is ignored")
 def test_list_pages(bq):
     dataset = bq.create_dataset(unique("pages"))
     try:
@@ -238,7 +226,6 @@ def test_list_pages(bq):
         bq.delete_dataset(dataset, delete_contents=True)
 
 
-@pytest.mark.xfail(reason="tables.patch not implemented")
 def test_update_patches_only_given_fields(bq, dataset):
     table = create(bq, dataset, description="before")
     table.labels = {"env": "prod"}
@@ -248,7 +235,6 @@ def test_update_patches_only_given_fields(bq, dataset):
     assert fetched.description == "before"
 
 
-@pytest.mark.xfail(reason="tables.patch not implemented")
 def test_update_expiration(bq, dataset):
     table = create(bq, dataset)
     table.expires = datetime.datetime(2100, 1, 1, tzinfo=datetime.timezone.utc)
@@ -256,7 +242,6 @@ def test_update_expiration(bq, dataset):
     assert bq.get_table(table).expires == table.expires
 
 
-@pytest.mark.xfail(reason="tables.patch not implemented")
 def test_update_adds_column(bq, dataset):
     table = create(bq, dataset)
     table.schema = [*table.schema, bigquery.SchemaField("y", "STRING")]
@@ -265,7 +250,6 @@ def test_update_adds_column(bq, dataset):
     assert [f.name for f in bq.get_table(table).schema] == ["x", "y"]
 
 
-@pytest.mark.xfail(reason="tables.patch not implemented")
 def test_update_relaxes_required_column(bq, dataset):
     table = create(bq, dataset, [bigquery.SchemaField("x", "INTEGER", mode="REQUIRED")])
     table.schema = [bigquery.SchemaField("x", "INTEGER", mode="NULLABLE")]
@@ -273,7 +257,6 @@ def test_update_relaxes_required_column(bq, dataset):
     assert bq.get_table(table).schema[0].mode == "NULLABLE"
 
 
-@pytest.mark.xfail(reason="tables.patch not implemented")
 def test_update_rejects_dropping_column(bq, dataset):
     schema = [bigquery.SchemaField("x", "INTEGER"), bigquery.SchemaField("y", "STRING")]
     table = create(bq, dataset, schema)
@@ -282,7 +265,6 @@ def test_update_rejects_dropping_column(bq, dataset):
         bq.update_table(table, ["schema"])
 
 
-@pytest.mark.xfail(reason="tables.patch not implemented")
 def test_update_with_stale_etag(bq, dataset):
     table = create(bq, dataset)
     table.description = "first"
@@ -292,7 +274,6 @@ def test_update_with_stale_etag(bq, dataset):
         bq.update_table(table, ["description"])
 
 
-@pytest.mark.xfail(reason="tables.patch not implemented")
 def test_update_bumps_modified(bq, dataset):
     table = create(bq, dataset)
     table.description = "changed"
@@ -301,7 +282,6 @@ def test_update_bumps_modified(bq, dataset):
     assert updated.etag != table.etag
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_delete(bq, dataset):
     table = create(bq, dataset)
     bq.delete_table(table)

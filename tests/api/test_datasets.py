@@ -17,7 +17,6 @@ def dataset_id(bq):
     bq.delete_dataset(dataset_id, delete_contents=True, not_found_ok=True)
 
 
-@pytest.mark.xfail(reason="fullDatasetId not populated")
 def test_create_returns_server_populated_fields(bq, project, dataset_id):
     dataset = bq.create_dataset(dataset_id)
     assert dataset.project == project
@@ -71,7 +70,6 @@ def test_list(bq, dataset_id):
     assert dataset_id in [d.dataset_id for d in bq.list_datasets()]
 
 
-@pytest.mark.xfail(reason="maxResults is ignored")
 def test_list_pages(bq):
     ids = [unique("page") for _ in range(3)]
     for dataset_id in ids:
@@ -85,7 +83,6 @@ def test_list_pages(bq):
             bq.delete_dataset(dataset_id)
 
 
-@pytest.mark.xfail(reason="list ignores filter and includes DuckDB's main schema")
 def test_list_filters_by_label(bq, dataset_id):
     dataset = bigquery.Dataset(f"{bq.project}.{dataset_id}")
     dataset.labels = {"team": dataset_id}
@@ -105,7 +102,6 @@ def test_update_patches_only_given_fields(bq, dataset_id):
     assert fetched.description == "before"
 
 
-@pytest.mark.xfail(reason="null labels are stored instead of removed")
 def test_update_removes_label_set_to_none(bq, dataset_id):
     dataset = bigquery.Dataset(f"{bq.project}.{dataset_id}")
     dataset.labels = {"a": "1", "b": "2"}
@@ -115,7 +111,6 @@ def test_update_removes_label_set_to_none(bq, dataset_id):
     assert bq.get_dataset(dataset_id).labels == {"b": "2"}
 
 
-@pytest.mark.xfail(reason="etags are not checked")
 def test_update_with_stale_etag(bq, dataset_id):
     dataset = bq.create_dataset(dataset_id)
     dataset.description = "first"
@@ -125,7 +120,6 @@ def test_update_with_stale_etag(bq, dataset_id):
         bq.update_dataset(dataset, ["description"])
 
 
-@pytest.mark.xfail(reason="deleteContents is ignored")
 def test_delete_non_empty_requires_delete_contents(bq, dataset_id):
     bq.create_dataset(dataset_id)
     bq.query_and_wait(f"CREATE TABLE {dataset_id}.t (x INT64)")

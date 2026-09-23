@@ -65,7 +65,6 @@ def test_list_jobs(bq):
     assert job.job_id in [j.job_id for j in bq.list_jobs()]
 
 
-@pytest.mark.xfail(reason="list_jobs ignores maxResults")
 def test_list_jobs_pages(bq):
     run_job(bq, "SELECT 1")
     run_job(bq, "SELECT 2")
@@ -265,7 +264,6 @@ def test_result_total_rows(bq):
     assert run_job(bq, ROWS_25).result().total_rows == 25
 
 
-@pytest.mark.xfail(reason="result paging not supported")
 def test_result_pages(bq):
     pages = run_job(bq, ROWS_25).result(page_size=10).pages
     assert [[r.x for r in page] for page in pages] == [
@@ -281,7 +279,6 @@ def test_result_max_results(bq):
     )
 
 
-@pytest.mark.xfail(reason="result paging not supported")
 def test_result_start_index(bq):
     rows = run_job(bq, ROWS_25).result(start_index=20)
     assert [r.x for r in rows] == list(range(21, 26))
@@ -292,7 +289,6 @@ def test_query_and_wait_max_results(bq):
     assert [r.x for r in rows] == list(range(1, 6))
 
 
-@pytest.mark.xfail(reason="result paging not supported")
 def test_query_and_wait_pages(bq):
     rows = bq.query_and_wait(ROWS_25, page_size=10)
     assert [len(list(page)) for page in rows.pages] == [10, 10, 5]

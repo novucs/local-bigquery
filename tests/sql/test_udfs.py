@@ -58,7 +58,6 @@ CASES = [
         "CREATE TEMP FUNCTION f(x INT64) AS ((SELECT SUM(v) FROM UNNEST([x, x]) AS v)); "
         "SELECT f(4)",
         8,
-        xfail="SUM of INT64 reported as INT128",
     ),
     q(
         js(

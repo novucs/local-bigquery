@@ -88,7 +88,6 @@ def test_null_cell(api):
     assert jobs_query(api, "SELECT NULL AS n")["rows"] == [{"f": [{"v": None}]}]
 
 
-@pytest.mark.xfail(reason="NULL arrays encoded as null")
 def test_null_and_empty_arrays(api):
     result = jobs_query(
         api, "SELECT CAST(NULL AS ARRAY<INT64>) AS n, ARRAY<INT64>[] AS e"
@@ -96,7 +95,6 @@ def test_null_and_empty_arrays(api):
     assert result["rows"] == [{"f": [{"v": []}, {"v": []}]}]
 
 
-@pytest.mark.xfail(reason="TIMESTAMP encoded as int micros")
 def test_timestamp_default_encoding(api):
     result = jobs_query(api, "SELECT TIMESTAMP '2020-01-01 00:00:00.5+00' AS t")
     assert float(result["rows"][0]["f"][0]["v"]) == 1577836800.5
@@ -111,7 +109,6 @@ def test_timestamp_int64_encoding(api):
     assert result["rows"][0]["f"][0]["v"] == "1577836800500000"
 
 
-@pytest.mark.xfail(reason="DATETIME and NUMERIC encoded wrongly")
 def test_scalar_encodings(api):
     result = jobs_query(
         api,
@@ -152,7 +149,6 @@ def test_delete_returns_empty_body(api):
     assert response.content == b""
 
 
-@pytest.mark.xfail(reason="job id lacks project:location prefix")
 def test_job_id_format(api, project):
     job = insert_job(api, "SELECT 1")
     reference = job["jobReference"]
@@ -160,7 +156,6 @@ def test_job_id_format(api, project):
     assert job["id"] == f"{project}:US.{reference['jobId']}"
 
 
-@pytest.mark.xfail(reason="timestamps are seconds, not milliseconds")
 def test_statistics_times_are_milliseconds(api):
     statistics = insert_job(api, "SELECT 1")["statistics"]
     assert len(statistics["creationTime"]) == 13
@@ -174,7 +169,6 @@ def test_insert_bad_sql_returns_failed_job(api):
     assert job["status"]["errorResult"]["reason"] == "invalidQuery"
 
 
-@pytest.mark.xfail(reason="maxResults ignored by getQueryResults")
 def test_get_query_results_max_results_zero(api):
     job_id = insert_job(api, "SELECT 1")["jobReference"]["jobId"]
     result = api("GET", f"/queries/{job_id}", params={"maxResults": 0}).json()
@@ -184,7 +178,6 @@ def test_get_query_results_max_results_zero(api):
     assert "schema" in result
 
 
-@pytest.mark.xfail(reason="pageToken paging not supported")
 def test_get_query_results_page_tokens(api):
     sql = "SELECT x FROM UNNEST(GENERATE_ARRAY(1, 5)) AS x ORDER BY x"
     job_id = insert_job(api, sql)["jobReference"]["jobId"]
@@ -199,6 +192,5 @@ def test_get_query_results_page_tokens(api):
     assert pages == [["1", "2"], ["3", "4"], ["5"]]
 
 
-@pytest.mark.xfail(reason="kind omitted from responses")
 def test_query_response_kind(api):
     assert jobs_query(api, "SELECT 1")["kind"] == "bigquery#queryResponse"

@@ -21,17 +21,14 @@ CASES = [
         "SELECT DATETIME '2020-07-01 00:00:00'",
         datetime(2020, 7, 1),
         types="DATETIME",
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT DATETIME(2008, 12, 25, 5, 30, 0)",
         datetime(2008, 12, 25, 5, 30),
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT DATETIME(DATE '2020-01-02', TIME '03:04:05')",
         datetime(2020, 1, 2, 3, 4, 5),
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q("SELECT TIME '12:34:56.789'", time(12, 34, 56, 789000), types="TIME"),
     q("SELECT TIME(15, 30, 0)", time(15, 30)),
@@ -43,7 +40,6 @@ CASES = [
     q(
         "SELECT TIMESTAMP '2020-07-01 00:00:00'",
         utc(2020, 7, 1),
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT TIMESTAMP '2020-01-01 00:00:00 America/Los_Angeles'",
@@ -62,14 +58,12 @@ CASES = [
     q(
         "SELECT TIMESTAMP(DATE '2008-12-25')",
         utc(2008, 12, 25),
-        xfail="host time zone leaks into results",
     ),
     q("SELECT DATE '2019-02-29'", error="invalidQuery"),
     q("SELECT DATE(2019, 2, 29)", error="invalidQuery"),
     q(
         "SELECT TIMESTAMP('2020-01-01', 'Mars/Olympus')",
         error="invalidQuery",
-        xfail="error message echoes the query",
     ),
     q(
         "SELECT CURRENT_DATE(), CURRENT_DATETIME(), CURRENT_TIME(), CURRENT_TIMESTAMP()",
@@ -175,18 +169,15 @@ CASES = [
         "SELECT DATE '2020-01-01' + INTERVAL 1 DAY",
         datetime(2020, 1, 2),
         types="DATETIME",
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT DATETIME_ADD(DATETIME '2008-12-25 15:30:00', INTERVAL 10 MINUTE)",
         datetime(2008, 12, 25, 15, 40),
         types="DATETIME",
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT DATETIME_SUB(DATETIME '2020-03-31 00:00:00', INTERVAL 1 MONTH)",
         datetime(2020, 2, 29),
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT TIMESTAMP_ADD(TIMESTAMP '2008-12-25 15:30:00+00', INTERVAL 10 MINUTE)",
@@ -196,7 +187,6 @@ CASES = [
     q(
         "SELECT TIMESTAMP_SUB(TIMESTAMP '2020-03-09 00:00:00+00', INTERVAL 1 DAY)",
         utc(2020, 3, 8),
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT TIMESTAMP_ADD(TIMESTAMP '2020-01-01 00:00:00+00', INTERVAL 1 MONTH)",
@@ -282,13 +272,11 @@ CASES = [
         "SELECT DATETIME_TRUNC(DATETIME '2008-12-25 15:30:00', DAY)",
         datetime(2008, 12, 25),
         types="DATETIME",
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT TIMESTAMP_TRUNC(TIMESTAMP '2008-12-25 15:30:00+00', DAY)",
         utc(2008, 12, 25),
         types="TIMESTAMP",
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT TIMESTAMP_TRUNC(TIMESTAMP '2008-12-25 15:30:00+00', DAY,"
@@ -342,12 +330,10 @@ CASES = [
     q(
         "SELECT FORMAT_TIMESTAMP('%F %T', TIMESTAMP '2020-07-01 00:00:00+00')",
         "2020-07-01 00:00:00",
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT FORMAT_TIMESTAMP('%c', TIMESTAMP '2050-12-25 15:30:55+00', 'UTC')",
         "Sun Dec 25 15:30:55 2050",
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT FORMAT_TIMESTAMP('%Ez %z', TIMESTAMP '2020-01-01 00:00:00+00',"
@@ -375,12 +361,10 @@ CASES = [
         "SELECT PARSE_DATETIME('%Y-%m-%d %H:%M:%S', '1998-10-18 13:45:55')",
         datetime(1998, 10, 18, 13, 45, 55),
         types="DATETIME",
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT PARSE_DATETIME('%a %b %e %I:%M:%S %Y', 'Thu Dec 25 07:30:00 2008')",
         datetime(2008, 12, 25, 7, 30),
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q("SELECT PARSE_TIME('%H', '15')", time(15), types="TIME"),
     q("SELECT PARSE_TIME('%I:%M:%S %p', '2:23:38 pm')", time(14, 23, 38)),
@@ -482,7 +466,6 @@ CASES = [
     q(
         "SELECT CAST(TIMESTAMP '2020-07-01 00:00:00+00' AS STRING)",
         "2020-07-01 00:00:00+00",
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT STRING(TIMESTAMP '2008-12-25 15:30:00+00', 'America/Los_Angeles')",
@@ -497,20 +480,17 @@ CASES = [
     q(
         "SELECT CAST('2020-07-01 12:00:00' AS TIMESTAMP)",
         utc(2020, 7, 1, 12),
-        xfail="host time zone leaks into results",
     ),
     q("SELECT CAST('2020-01-01 12:00:00-08' AS TIMESTAMP)", utc(2020, 1, 1, 20)),
     q(
         "SELECT CAST(DATETIME '2020-07-01 00:00:00' AS TIMESTAMP)",
         utc(2020, 7, 1),
         types="TIMESTAMP",
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT CAST(TIMESTAMP '2020-07-01 00:00:00+00' AS DATETIME)",
         datetime(2020, 7, 1),
         types="DATETIME",
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q("SELECT CAST(TIMESTAMP '2020-01-01 23:00:00+00' AS DATE)", date(2020, 1, 1)),
     q("SELECT CAST('2020-13-01' AS DATE)", error="invalidQuery"),
@@ -519,12 +499,10 @@ CASES = [
         "SELECT DATETIME(TIMESTAMP '2020-01-01 12:00:00+00', 'America/New_York'),"
         " DATETIME(TIMESTAMP '2020-07-01 12:00:00+00', 'America/New_York')",
         rows=[(datetime(2020, 1, 1, 7), datetime(2020, 7, 1, 8))],
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT DATETIME(TIMESTAMP '2020-01-01 00:00:00+00', 'Pacific/Auckland')",
         datetime(2020, 1, 1, 13),
-        xfail="DATETIME reported as TIMESTAMP",
     ),
     q(
         "SELECT DATETIME(TIMESTAMP '2020-01-01 00:00:00+00', '+05:45')",
@@ -534,7 +512,6 @@ CASES = [
     q(
         "SELECT DATETIME(TIMESTAMP '2020-01-01 00:00:00+00', 'Etc/UTC')",
         datetime(2020, 1, 1),
-        xfail="DATETIME reported as TIMESTAMP",
     ),
 ]
 

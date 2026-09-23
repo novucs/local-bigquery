@@ -19,7 +19,6 @@ def test_query_missing_table(bq, project, dataset):
     )
 
 
-@pytest.mark.xfail(reason="tables.get not implemented")
 def test_get_missing_table(bq, project, dataset):
     with fails(NotFound, "notFound") as info:
         bq.get_table(f"{dataset.dataset_id}.missing_table", retry=FAST_RETRY)

@@ -10,7 +10,6 @@ dependencies = [
     "prompt-toolkit>=3.0.50",
     "pydantic-settings>=2.8.1",
     "pygments>=2.19.1",
-    "pytz>=2026.3.post1",
     "sqlglot>=30.19",
     "uvicorn>=0.35",
 ]

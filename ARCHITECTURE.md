@@ -36,15 +36,12 @@ src/local_bigquery/
   repl.py           interactive shell, a client of the HTTP API
 ```
 
-`engine/`, `catalog/`, `sql/`, `jobs/` and `grpc/` replace `db.py` and
-`transform.py` as the migration proceeds.
-
 ## Storage
 
 - Each project is a DuckLake catalog with a DuckDB-file metadata store under the
   data directory. DuckLake gives time travel, snapshots, clones and table stats.
-- `system.duckdb` holds typed tables for BigQuery-only metadata (labels, options,
-  etags), jobs, sessions, and `_results` tables for query results (24h TTL).
+- `emulator.duckdb` holds typed tables for BigQuery-only metadata (labels, options,
+  etags), jobs, sessions, and `_results` tables for query results.
 - An in-memory `bq` catalog holds the macro library loaded from `functions.sql`,
   on every cursor's `search_path`.
 - One server process owns the data directory; the REPL talks to it over HTTP.

@@ -84,7 +84,6 @@ CASES = [
         "SELECT * FROM (SELECT 'a' AS g, 1 AS v UNION ALL SELECT 'a', 2 "
         "UNION ALL SELECT 'b', 3) PIVOT (SUM(v) FOR g IN ('a', 'b'))",
         rows=[(3, 3)],
-        xfail="SUM of INT64 reported as INT128",
     ),
     q(
         "SELECT * FROM (SELECT 1 AS id, 10 AS q1, 20 AS q2) "
@@ -110,7 +109,6 @@ CASES = [
         "SELECT SUM(i) FROM n",
         15,
         types="INT64",
-        xfail="SUM of INT64 reported as INT128",
     ),
     q(
         "SELECT x FROM UNNEST([2, NULL, 1]) AS x ORDER BY x",
@@ -178,12 +176,10 @@ def names(bq, dataset, sql):
     return [field.name for field in run(bq, sql, config).schema]
 
 
-@pytest.mark.xfail(reason="anonymous columns not named f0_")
 def test_anonymous_columns_are_numbered(bq, dataset):
     assert names(bq, dataset, "SELECT 1 AS a, 2, 3") == ["a", "f0_", "f1_"]
 
 
-@pytest.mark.xfail(reason="anonymous columns not named f0_")
 def test_aggregate_columns_are_anonymous(bq, dataset):
     assert names(bq, dataset, "SELECT x, COUNT(*) FROM l GROUP BY x") == ["x", "f0_"]
 

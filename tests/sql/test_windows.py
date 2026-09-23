@@ -82,7 +82,6 @@ CASES = [
     q(
         "SELECT id, SUM(v) OVER (PARTITION BY g) FROM scores ORDER BY id",
         rows=[(1, 80), (2, 80), (3, 80), (4, 80), (5, 5), (6, 5)],
-        xfail="SUM of INT64 reported as INT128",
     ),
     q(
         "SELECT COUNT(*) OVER (), COUNT(v) OVER () FROM scores LIMIT 1",
@@ -92,12 +91,10 @@ CASES = [
         "SELECT SUM(v) OVER (ORDER BY id ROWS UNBOUNDED PRECEDING) "
         "FROM scores WHERE g = 'a' ORDER BY id",
         rows=[(10,), (30,), (50,), (80,)],
-        xfail="SUM of INT64 reported as INT128",
     ),
     q(
         "SELECT id, SUM(v) OVER (ORDER BY v) FROM scores WHERE g = 'a' ORDER BY id",
         rows=[(1, 10), (2, 50), (3, 50), (4, 80)],
-        xfail="SUM of INT64 reported as INT128",
     ),
     q(
         "SELECT AVG(v) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) "
@@ -113,7 +110,6 @@ CASES = [
         "SELECT id, SUM(v) OVER w FROM scores WHERE g = 'a' "
         "WINDOW w AS (ORDER BY id) ORDER BY id",
         rows=[(1, 10), (2, 30), (3, 50), (4, 80)],
-        xfail="SUM of INT64 reported as INT128",
     ),
     q(
         "SELECT id FROM scores WHERE TRUE "
