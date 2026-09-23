@@ -129,6 +129,8 @@ def run_query(project_id: str, body: dict = Body()):
             [],
         )
     job = runner.wait(project_id, job_id, body.get("timeoutMs"))
+    if error := runner.error(job):
+        raise runner.synchronous(error)
     int64_timestamps = (body.get("formatOptions") or {}).get("useInt64Timestamp", False)
     payload, rows = results(job, body.get("maxResults"), 0, int64_timestamps)
     statistics = job["statistics"]

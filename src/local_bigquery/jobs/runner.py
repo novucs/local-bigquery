@@ -113,10 +113,7 @@ def _dry_run(project_id: str, configuration: dict) -> dict:
                 cur, project_id, None, configuration["query"], dry_run=True
             )
         except Exception as exception:
-            error = from_exception(exception)
-            if error.location == "query":
-                error.location = "q"
-            raise error from exception
+            raise synchronous(from_exception(exception)) from exception
     job = _job(project_id, None, configuration)
     job["jobReference"].pop("jobId")
     return _done(job, {"query": statistics})
@@ -213,6 +210,12 @@ def cancel(project_id: str, job_id: str) -> dict:
         if running.cursor:
             running.cursor.interrupt()
     return wait(project_id, job_id, 1000)
+
+
+def synchronous(error: BigQueryError) -> BigQueryError:
+    if error.location == "query":
+        error.location = "q"
+    return error
 
 
 def error(job: dict) -> BigQueryError | None:

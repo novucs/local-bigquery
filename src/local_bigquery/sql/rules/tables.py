@@ -55,7 +55,6 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
             "invalid",
             f'Invalid dataset ID "{dataset_id}". Dataset IDs must be alphanumeric '
             "(plus underscores and dashes) and must be at most 1024 characters long.",
-            f"{dataset_id}.{table_id}",
         )
     if table.args.get("when"):
         return

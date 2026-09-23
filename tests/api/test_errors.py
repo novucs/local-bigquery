@@ -175,14 +175,14 @@ def query_error(bq, sql, **config) -> tuple[dict, str]:
 )
 def test_query_error_wording(bq, sql, message):
     error, text = query_error(bq, sql)
-    assert (error["reason"], error.get("location")) == ("invalidQuery", "query")
+    assert (error["reason"], error.get("location")) == ("invalidQuery", "q")
     assert re.search(message, text), text
 
 
 def test_missing_routine_message(bq, project, dataset):
     path = f"`{project}.{dataset.dataset_id}`"
     error, text = query_error(bq, f"SELECT {path}.missing_fn(1)")
-    assert error.get("location") == "query"
+    assert error.get("location") == "q"
     assert f"Function not found: {path}.missing_fn at [1:8]" in text
 
 
@@ -190,6 +190,13 @@ def test_dry_run_error_location(bq):
     error, text = query_error(bq, "SELECT NO_SUCH_FUNCTION(1)", dry_run=True)
     assert error.get("location") == "q"
     assert "Function not found: NO_SUCH_FUNCTION at [1:8]" in text
+
+
+def test_job_error_result_location(bq):
+    job = bq.query("SELECT 1 / 0", job_retry=None)
+    with pytest.raises(BadRequest):
+        job.result(retry=FAST_RETRY)
+    assert job.error_result["location"] == "query"
 
 
 def test_query_missing_dataset(bq, project, dataset):
@@ -213,7 +220,7 @@ def test_query_missing_project(bq):
 
 def test_query_invalid_dataset_id(bq):
     error, text = query_error(bq, "SELECT * FROM `!!bad!!.t`")
-    assert (error["reason"], error.get("location")) == ("invalid", "!!bad!!.t")
+    assert (error["reason"], error.get("location")) == ("invalid", None)
     assert (
         'Invalid dataset ID "!!bad!!". Dataset IDs must be alphanumeric '
         "(plus underscores and dashes) and must be at most 1024 characters long."
