@@ -4,7 +4,7 @@ import time
 import pytest
 from google.cloud import bigquery
 
-from tests.cases import q, run, run_job, scalar, unique
+from tests.cases import q, rows, run, run_job, scalar, unique
 
 _names = (f"js{i}" for i in itertools.count())
 
@@ -204,6 +204,27 @@ def routine(dataset):
 def test_persistent_sql_function(bq, routine):
     run(bq, f"CREATE FUNCTION {routine}(x INT64) AS (x + 1)")
     assert scalar(bq, f"SELECT {routine}(1)") == 2
+
+
+def test_persistent_function_quoted_paths(bq, routine):
+    run(bq, f"CREATE FUNCTION {routine}(x INT64) AS (x + 1)")
+    dataset_id, routine_id = routine.split(".")
+    calls = [
+        f"`{bq.project}.{routine}`(1)",
+        f"`{bq.project}.{dataset_id}`.{routine_id}(1)",
+        f"`{bq.project}`.{routine}(1)",
+        f"`{routine}`(1)",
+    ]
+    assert rows(bq, f"SELECT {', '.join(calls)}") == [(2, 2, 2, 2)]
+
+
+def test_persistent_function_nested_arguments(bq, routine):
+    run(
+        bq,
+        f"CREATE FUNCTION {routine}(a ARRAY<INT64>, s STRUCT<x FLOAT64>) "
+        "RETURNS FLOAT64 AS (ARRAY_LENGTH(a) + s.x)",
+    )
+    assert scalar(bq, f"SELECT {routine}([1, 2], STRUCT(0.5 AS x))") == 2.5
 
 
 def test_persistent_function_or_replace(bq, routine):

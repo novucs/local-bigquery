@@ -11,12 +11,14 @@ def definition(tree: exp.Expression, context) -> exp.Expression:
     if js.is_udf(tree):
         return tree
     for param in tree.this.expressions:
-        if (
-            isinstance(param, exp.ColumnDef)
-            and param.kind
-            and param.kind.is_type("variant")
-        ):
-            param.set("kind", None)
+        kind = param.kind if isinstance(param, exp.ColumnDef) else None
+        if kind is None or not kind.is_type("variant", *exp.DataType.NESTED_TYPES):
+            continue
+        param.set("kind", None)
+        if kind.is_type(*exp.DataType.NESTED_TYPES):
+            for column in list(tree.expression.find_all(exp.Column)):
+                if not column.table and column.name.casefold() == param.name.casefold():
+                    column.replace(exp.cast(column.copy(), kind))
     returns = tree.find(exp.ReturnsProperty)
     if body := table_body(tree):
         tree.set("expression", TableMacro(this=body))
@@ -31,6 +33,26 @@ def _coerce(arg: exp.Expression, kind: exp.DataType) -> exp.Expression:
     ):
         return exp.cast(exp.Anonymous(this="ROW", expressions=arg.expressions), kind)
     return arg
+
+
+def _parts(node: exp.Expression) -> list[str]:
+    if isinstance(node, exp.Dot):
+        return _parts(node.this) + _parts(node.expression)
+    return node.name.split(".")
+
+
+def routine_path(node: exp.Expression, context) -> exp.Expression:
+    if isinstance(node, exp.Anonymous) and isinstance(node.this, exp.Identifier):
+        path, function = node.this, node
+    elif isinstance(node, exp.Dot) and isinstance(node.expression, exp.Anonymous):
+        path, function = node, node.expression
+    else:
+        return node
+    *prefix, name = _parts(path)
+    if not any("." in part.name for part in path.find_all(exp.Identifier)):
+        return node
+    call = exp.Anonymous(this=name, expressions=function.expressions)
+    return exp.Dot.build([*(exp.to_identifier(p, quoted=True) for p in prefix), call])
 
 
 def call(node: exp.Expression, context) -> exp.Expression:
@@ -49,4 +71,4 @@ def call(node: exp.Expression, context) -> exp.Expression:
 
 
 STATEMENT_RULES = [definition]
-NODE_RULES = [call]
+NODE_RULES = [routine_path, call]
