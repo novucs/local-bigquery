@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import duckdb
 
 from local_bigquery.settings import settings
-from local_bigquery.sql.dialect import FUNCTIONS
+from local_bigquery.sql.dialect import FUNCTIONS, MACRO
 
 EMULATOR_SCHEMA = """
 CREATE SCHEMA IF NOT EXISTS emulator._results;
@@ -51,10 +51,9 @@ def connection() -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(config={"TimeZone": "UTC"})
     con.execute(f"ATTACH '{settings.data_dir / 'emulator.duckdb'}' AS emulator")
     con.execute(EMULATOR_SCHEMA)
-    con.execute("ATTACH ':memory:' AS bq; USE bq")
+    con.execute("ATTACH ':memory:' AS bq")
     for path in FUNCTIONS:
-        con.execute(path.read_text())
-    con.execute("USE memory")
+        con.execute(MACRO.sub(r"CREATE MACRO bq.main.\1", path.read_text()))
     for path in sorted(settings.data_dir.glob("*.ducklake")):
         _attach(con, path.stem)
     _attach(con, settings.default_project_id)

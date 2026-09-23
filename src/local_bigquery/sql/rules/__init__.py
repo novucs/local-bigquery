@@ -6,11 +6,13 @@ from local_bigquery.sql.rules import (
     dml,
     external,
     information_schema,
+    json,
     literals,
     math,
     parameters,
     query,
     safe,
+    strings,
     tables,
     udfs,
 )
@@ -30,6 +32,8 @@ MODULES = [
     parameters,
     literals,
     safe,
+    strings,
+    json,
 ]
 STATEMENT_RULES = [
     rule for module in MODULES for rule in getattr(module, "STATEMENT_RULES", [])

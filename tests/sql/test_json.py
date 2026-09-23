@@ -9,7 +9,6 @@ CASES = [
     q(
         "SELECT PARSE_JSON('922337203685477580701')",
         error="invalidQuery",
-        xfail="lossy JSON numbers not rejected",
     ),
     q(
         "SELECT PARSE_JSON('922337203685477580701', wide_number_mode => 'round')",
@@ -22,7 +21,6 @@ CASES = [
     q(
         "SELECT TO_JSON(STRUCT(1 AS a, [1, 2] AS b))",
         {"a": 1, "b": [1, 2]},
-        xfail="TO_JSON typed as STRING",
     ),
     q(
         "SELECT TO_JSON_STRING(STRUCT(1 AS a, 'x' AS b))",
@@ -32,9 +30,8 @@ CASES = [
     q(
         "SELECT TO_JSON_STRING([1, 2], true)",
         "[\n  1,\n  2\n]",
-        xfail="pretty_print argument unsupported",
     ),
-    q("SELECT TO_JSON_STRING(NULL)", "null", xfail="NULL serialised as SQL NULL"),
+    q("SELECT TO_JSON_STRING(NULL)", "null"),
     q(
         "SELECT TO_JSON_STRING(STRUCT(DATE '2020-01-02' AS d, b'ab' AS b))",
         '{"d":"2020-01-02","b":"YWI="}',
@@ -49,13 +46,11 @@ CASES = [
         """SELECT JSON_QUERY('{"a": {"b": 1}}', '$.a')""",
         '{"b":1}',
         types="STRING",
-        xfail="JSON_QUERY on STRING returns JSON",
     ),
     q("""SELECT JSON_QUERY(JSON '{"a": [1, 2]}', '$.a')""", [1, 2], types="JSON"),
     q(
         """SELECT JSON_EXTRACT('{"a": "x"}', '$.a')""",
         '"x"',
-        xfail="JSON_EXTRACT unquotes strings",
     ),
     q("""SELECT JSON_EXTRACT_SCALAR('{"a": "x"}', '$.a')""", "x"),
     q("""SELECT JSON_EXTRACT_SCALAR('{"a": true}', '$.a')""", "true"),
@@ -63,14 +58,12 @@ CASES = [
         """SELECT JSON_EXTRACT_ARRAY('[1, "a", {"b": 2}]')""",
         ["1", '"a"', '{"b":2}'],
         types="ARRAY<STRING>",
-        xfail="JSON_EXTRACT_ARRAY returns wrong type",
     ),
     q("""SELECT JSON_EXTRACT_STRING_ARRAY('["a", "é"]')""", ["a", "é"]),
     q("""SELECT JSON_VALUE_ARRAY('["a", 1]')""", ["a", "1"]),
     q(
         """SELECT JSON_QUERY_ARRAY('[{"a": 1}, 2]')""",
         ['{"a":1}', "2"],
-        xfail="JSON_QUERY_ARRAY returns JSON elements",
     ),
     q("""SELECT j.a.b FROM (SELECT JSON '{"a": {"b": 1}}' AS j)""", 1, types="JSON"),
     q("""SELECT j['a']['b'] FROM (SELECT JSON '{"a": {"b": 1}}' AS j)""", 1),
@@ -84,54 +77,44 @@ CASES = [
         """SELECT INT64(JSON '1'), FLOAT64(JSON '1.5'), BOOL(JSON 'true'), STRING(JSON '"x"')""",
         rows=[(1, 1.5, True, "x")],
         types=("INT64", "FLOAT64", "BOOL", "STRING"),
-        xfail="missing function",
     ),
     q(
         """SELECT INT64(JSON '"1"')""",
         error="invalidQuery",
-        xfail="strict JSON conversion not enforced",
     ),
     q(
         """SELECT LAX_INT64(JSON '"10"'), LAX_FLOAT64(JSON '"1.5"'), LAX_BOOL(JSON '"true"'), LAX_STRING(JSON '1')""",
         rows=[(10, 1.5, True, "1")],
-        xfail="missing function",
     ),
     q(
         """SELECT JSON_TYPE(JSON '1'), JSON_TYPE(JSON '[]'), JSON_TYPE(JSON '{}'), """
         """JSON_TYPE(JSON 'true'), JSON_TYPE(JSON 'null'), JSON_TYPE(JSON '"a"')""",
         rows=[("number", "array", "object", "boolean", "null", "string")],
-        xfail="JSON_TYPE returns DuckDB type names",
     ),
     q(
         """SELECT JSON_KEYS(JSON '{"a": {"b": 1}, "c": 2}')""",
         ["a", "a.b", "c"],
-        xfail="missing function",
     ),
     q(
         """SELECT JSON_KEYS(JSON '{"a": {"b": 1}, "c": 2}', 1)""",
         ["a", "c"],
-        xfail="missing function",
     ),
     q(
         """SELECT JSON_SET(JSON '{"a": 1}', '$.b', 2)""",
         {"a": 1, "b": 2},
-        xfail="missing function",
     ),
     q(
         """SELECT JSON_REMOVE(JSON '{"a": 1, "b": 2}', '$.a')""",
         {"b": 2},
-        xfail="missing function",
     ),
     q(
         """SELECT JSON_STRIP_NULLS(JSON '{"a": null, "b": 1}')""",
         {"b": 1},
-        xfail="missing function",
     ),
-    q("SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', 2)", [1, 2], xfail="missing function"),
+    q("SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', 2)", [1, 2]),
     q(
         "SELECT JSON_ARRAY_INSERT(JSON '[1, 2]', '$[0]', 0)",
         [0, 1, 2],
-        xfail="missing function",
     ),
     q("SELECT JSON 'null' IS NULL", False),
     q("""SELECT JSON_QUERY(JSON '{"a": null}', '$.a') IS NULL""", False),
@@ -139,7 +122,6 @@ CASES = [
     q(
         "SELECT JSON '1' = JSON '1'",
         error="not defined|No matching signature",
-        xfail="JSON equality not rejected",
     ),
 ]
 

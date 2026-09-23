@@ -35,12 +35,10 @@ CASES = [
     q(
         "SELECT INSTR('abcabc', 'c', 1, 2)",
         6,
-        xfail="INSTR occurrence argument dropped",
     ),
     q(
         "SELECT INSTR('abcabc', 'c', -1)",
         6,
-        xfail="INSTR negative position unsupported",
     ),
     q("SELECT STARTS_WITH('abc', 'ab'), ENDS_WITH('abc', 'bc')", rows=[(True, True)]),
     q("SELECT CONTAINS_SUBSTR('the Blue house', 'blue')", True),
@@ -53,7 +51,6 @@ CASES = [
     q(
         "SELECT REGEXP_EXTRACT('abc', r'z')",
         None,
-        xfail="no match returns '' instead of NULL",
     ),
     q(r"SELECT REGEXP_EXTRACT_ALL('a1b22c333', r'\d+')", ["1", "22", "333"]),
     q(r"SELECT REGEXP_REPLACE('abc123', r'\d', 'X')", "abcXXX"),
@@ -61,49 +58,42 @@ CASES = [
     q(
         "SELECT FORMAT('%d-%s', 1, 'a')",
         "1-a",
-        xfail="FORMAT passed to DuckDB fmt-style format",
     ),
     q(
         "SELECT FORMAT('%05.2f', 3.14159)",
         "03.14",
-        xfail="FORMAT passed to DuckDB fmt-style format",
     ),
     q(
         "SELECT FORMAT('%t', [1, 2])",
         "[1, 2]",
-        xfail="FORMAT passed to DuckDB fmt-style format",
     ),
     q("SELECT ASCII('A'), CHR(65), UNICODE('â')", rows=[(65, "A", 226)]),
     q("SELECT TO_CODE_POINTS('ab')", [97, 98]),
-    q("SELECT CODE_POINTS_TO_STRING([97, 98])", "ab", xfail="missing function"),
+    q("SELECT CODE_POINTS_TO_STRING([97, 98])", "ab"),
     q("SELECT TO_HEX(b'abc'), FROM_HEX('616263')", rows=[("616263", b"abc")]),
     q("SELECT TO_BASE64(b'abc'), FROM_BASE64('YWJj')", rows=[("YWJj", b"abc")]),
-    q("SELECT SAFE_CONVERT_BYTES_TO_STRING(b'abc')", "abc", xfail="missing function"),
+    q("SELECT SAFE_CONVERT_BYTES_TO_STRING(b'abc')", "abc"),
     q(
         r"SELECT NORMALIZE('\u00e9') = NORMALIZE('e\u0301')",
         True,
-        xfail="missing function",
     ),
-    q("SELECT SOUNDEX('Ashcraft')", "A261", xfail="missing function"),
+    q("SELECT SOUNDEX('Ashcraft')", "A261"),
     q("SELECT EDIT_DISTANCE('abc', 'abd')", 1),
     q("SELECT 'a' < 'B'", False),
     q(
         "SELECT COLLATE('A', 'und:ci') = 'a'",
         True,
-        xfail="collation names not translated",
     ),
     q("SELECT 'abc' LIKE 'a%', 'abc' LIKE 'A%'", rows=[(True, False)]),
     q(
         r"SELECT 'a_c' LIKE r'a\_c', 'abc' LIKE r'a\_c'",
         rows=[(True, False)],
-        xfail="LIKE backslash escapes ignored",
     ),
     q("SELECT 'abc' LIKE ANY ('x%', 'a%')", True),
     q("SELECT CAST(123 AS STRING), CAST(TRUE AS STRING)", rows=[("123", "true")]),
     q(
         "SELECT CAST(1.5 AS STRING), CAST(1.0 AS STRING)",
         rows=[("1.5", "1")],
-        xfail="FLOAT64 to STRING keeps trailing .0",
     ),
 ]
 
