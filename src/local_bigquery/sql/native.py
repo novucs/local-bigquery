@@ -1,6 +1,7 @@
 import base64
 import datetime
 import hashlib
+import ipaddress
 import json
 import unicodedata
 import zoneinfo
@@ -192,7 +193,44 @@ def raise_error(message: str):
     raise ValueError(message)
 
 
+def ip_from_string(text: str) -> bytes:
+    try:
+        return ipaddress.ip_address(text).packed
+    except ValueError:
+        raise ValueError(
+            f"NET.IP_FROM_STRING() encountered an unparseable IP-address: {text}"
+        ) from None
+
+
+def ip_to_string(data: bytes) -> str:
+    if len(data) not in (4, 16):
+        raise ValueError(
+            f"NET.IP_TO_STRING() encountered a non-IPv4/IPv6 address. "
+            f"Expected 4 or 16 bytes but got {len(data)}"
+        )
+    return str(ipaddress.ip_address(bytes(data)))
+
+
+def ip_net_mask(size: int, prefix: int) -> bytes:
+    if size not in (4, 16) or not 0 <= prefix <= size * 8:
+        raise ValueError(
+            f"NET.IP_NET_MASK() encountered an invalid prefix length {prefix} "
+            f"for {size} output bytes"
+        )
+    return (((1 << prefix) - 1) << (size * 8 - prefix)).to_bytes(size)
+
+
+def ip_trunc(data: bytes, prefix: int) -> bytes:
+    size = len(data)
+    mask = int.from_bytes(ip_net_mask(size, prefix))
+    return (int.from_bytes(data) & mask).to_bytes(size)
+
+
 FUNCTIONS = {
+    "_ip_from_string": (ip_from_string, ["VARCHAR"], "BLOB"),
+    "_ip_to_string": (ip_to_string, ["BLOB"], "VARCHAR"),
+    "_ip_net_mask": (ip_net_mask, ["BIGINT", "BIGINT"], "BLOB"),
+    "_ip_trunc": (ip_trunc, ["BLOB", "BIGINT"], "BLOB"),
     "_raise": (raise_error, ["VARCHAR"], "NULL"),
     "_zone_name": (zone_name, ["DOUBLE", "VARCHAR"], "VARCHAR"),
     "_json_exact": (json_exact, ["VARCHAR"], "BOOLEAN"),

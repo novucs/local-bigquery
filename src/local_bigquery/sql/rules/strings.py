@@ -4,6 +4,7 @@ from sqlglot import exp
 from sqlglot.optimizer.annotate_types import annotate_types
 
 from local_bigquery.errors import BigQueryError
+from local_bigquery.sql.dialect import macro
 
 ESCAPE = re.compile(
     r"\\(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2})|([0-7]{3}))"
@@ -133,7 +134,17 @@ def concat(node: exp.Expression, context) -> exp.Expression:
     return node
 
 
+def net(node: exp.Expression, context) -> exp.Expression:
+    if not isinstance(node, exp.NetFunc):
+        return node
+    function = node.this
+    if isinstance(function, exp.Anonymous):
+        return macro(f"_net_{function.name.lower()}", *function.expressions)
+    return macro(f"_net_{function.sql_name().lower()}", function.this)
+
+
 NODE_RULES = [
+    net,
     string_escapes,
     format_,
     regexp_extract,
