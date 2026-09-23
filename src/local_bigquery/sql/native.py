@@ -1,7 +1,9 @@
 import base64
+import datetime
 import hashlib
 import json
 import unicodedata
+import zoneinfo
 
 import duckdb
 
@@ -177,7 +179,17 @@ def json_exact(text: str) -> bool:
     return True
 
 
+def zone_name(seconds: float, zone: str) -> str:
+    try:
+        return datetime.datetime.fromtimestamp(
+            seconds, zoneinfo.ZoneInfo(zone)
+        ).tzname()
+    except (ValueError, zoneinfo.ZoneInfoNotFoundError):
+        return zone
+
+
 FUNCTIONS = {
+    "_zone_name": (zone_name, ["DOUBLE", "VARCHAR"], "VARCHAR"),
     "_json_exact": (json_exact, ["VARCHAR"], "BOOLEAN"),
     "_farm_fingerprint": (farm_fingerprint, ["BLOB"], "BIGINT"),
     "_sha512": (lambda data: hashlib.sha512(data).digest(), ["BLOB"], "BLOB"),

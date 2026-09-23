@@ -9,7 +9,7 @@ WEEKDAYS = "SUNDAY MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY".split()
 TIMESTAMP_UNITS = {"MICROSECOND", "MILLISECOND", "SECOND", "MINUTE", "HOUR", "DAY"}
 INTERVAL_FIELDS = ["year", "month", "day", "hour", "minute", "second"]
 OFFSET = re.compile(r"^([+-])(\d{1,2})(?::?(\d{2}))?$")
-FORMAT_ELEMENTS = re.compile(r"(%E(?:\d|\*)S|%E4Y|%Ez|%Q|%s|%z|%R|%Y)")
+FORMAT_ELEMENTS = re.compile(r"(%E(?:\d|\*)S|%E4Y|%Ez|%Q|%s|%z|%Z|%R|%Y)")
 
 
 def call(name: str, *args) -> exp.Anonymous:
@@ -110,11 +110,11 @@ def _format(node: exp.TimeToStr) -> exp.Expression | None:
     for piece in FORMAT_ELEMENTS.split(template.this):
         if not piece:
             continue
-        pieces.append(_element(piece, local, instant))
+        pieces.append(_element(piece, local, instant, zone))
     return exp.cast(_concat(pieces), "VARCHAR")
 
 
-def _element(piece: str, local: exp.Expression, instant: exp.Expression | None):
+def _element(piece: str, local, instant: exp.Expression | None, zone):
     offset = (
         exp.cast(
             exp.Sub(
@@ -137,6 +137,8 @@ def _element(piece: str, local: exp.Expression, instant: exp.Expression | None):
             return macro("_offset", offset, _node(":"), exp.true())
         case "%z":
             return macro("_offset", offset, _node(""), exp.true())
+        case "%Z" if instant is not None:
+            return call("_zone_name", call("epoch", instant.copy()), zone or "UTC")
         case "%s":
             source = instant if instant is not None else local
             return exp.cast(exp.cast(call("epoch", source.copy()), "BIGINT"), "VARCHAR")

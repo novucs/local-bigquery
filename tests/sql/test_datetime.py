@@ -326,6 +326,12 @@ CASES = [
         "+05:30 +0530",
     ),
     q(
+        "SELECT FORMAT_TIMESTAMP('%Z', TIMESTAMP '2020-01-05 10:00:00+00', "
+        "'America/New_York'), FORMAT_TIMESTAMP('%H %Z', TIMESTAMP '2020-07-05 10:00:00+00', "
+        "'America/New_York'), FORMAT_TIMESTAMP('%Z', TIMESTAMP '2020-01-05 10:00:00+00')",
+        rows=[("EST", "06 EDT", "UTC")],
+    ),
+    q(
         "SELECT FORMAT_TIMESTAMP('%H:%M:%E3S', TIMESTAMP '2020-01-01 00:00:00.123456+00')",
         "00:00:00.123",
     ),
