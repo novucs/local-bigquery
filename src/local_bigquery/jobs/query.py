@@ -6,11 +6,11 @@ import duckdb
 import sqlglot
 from sqlglot import exp
 
-from local_bigquery.catalog import datasets, metadata, row_access, routines, tables
+from local_bigquery.catalog import datasets, row_access, routines, tables
 from local_bigquery.catalog import ddl as catalog_ddl
 from local_bigquery.engine import database, types
 from local_bigquery.engine.database import quote
-from local_bigquery.errors import BigQueryError, from_duckdb
+from local_bigquery.errors import from_duckdb
 from local_bigquery.jobs import extract, merge
 from local_bigquery.sql import js, params, script
 from local_bigquery.sql.dialect import DuckDBDialect
@@ -34,7 +34,6 @@ DML_COUNTS = {
     exp.Delete: "deletedRowCount",
 }
 DDL = (exp.Create, exp.Drop, exp.Alter)
-LAYOUT = ("timePartitioning", "rangePartitioning", "clustering")
 
 
 def statement_type(tree: exp.Expression) -> str:
@@ -128,39 +127,12 @@ def _target(tree: exp.Expression, context: Context) -> tuple[str, str, str]:
     )
 
 
-def _layout(relation: duckdb.DuckDBPyRelation, config: dict, write: str) -> dict:
-    layout = {key: config[key] for key in LAYOUT if config.get(key)}
-    columns = {name.casefold() for name in relation.columns}
-    partitioning = (
-        layout.get("timePartitioning") or layout.get("rangePartitioning") or {}
-    )
-    if (field := partitioning.get("field")) and field.casefold() not in columns:
-        raise BigQueryError(
-            "invalid",
-            "The field specified for partitioning cannot be found in the schema.",
-        )
-    for field in (layout.get("clustering") or {}).get("fields") or []:
-        if field.casefold() not in columns:
-            raise BigQueryError(
-                "invalid",
-                "The field specified for clustering cannot be found in the schema. "
-                f"Invalid field: {field}",
-            )
-    if config.get("schemaUpdateOptions") and write != "WRITE_APPEND":
-        raise BigQueryError(
-            "invalid",
-            "Schema update options should only be specified with WRITE_APPEND "
-            "disposition, or with WRITE_TRUNCATE disposition on a table partition.",
-        )
-    return layout
-
-
 def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated: bool):
     reference = tables.reference(destination)
     write = config.get("writeDisposition") or "WRITE_EMPTY"
     create = config.get("createDisposition")
     relation = cur.sql(sql, params=bound)
-    layout = _layout(relation, config, write)
+    layout = tables.layout(relation.columns, config, write)
     with (
         database.writing(*reference),
         database.cursor() if isolated else contextlib.nullcontext(cur) as writer,
@@ -173,9 +145,7 @@ def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated
         tables.write(
             cur, sql, bound, reference, write, create, writer if isolated else None
         )
-    if layout:
-        stored = metadata.load("tables", *reference) or tables.defaults(*reference)
-        tables.record(*reference, stored | layout)
+    tables.annotate(reference, layout)
 
 
 def _fields(relation: duckdb.DuckDBPyRelation, required: set[str]) -> list[dict]:
@@ -241,10 +211,16 @@ def _statement(
     isolated: bool,
 ) -> dict:
     tree = ddl.normalise(tree)
+    context.referenced.clear()
     try:
-        return _run(cur, tree, context, destination, config, dry_run, isolated)
+        statistics = _run(cur, tree, context, destination, config, dry_run, isolated)
     except duckdb.Error as error:
         raise from_duckdb(error, context, tree) from error
+    referenced = [
+        dict(zip(("projectId", "datasetId", "tableId"), reference))
+        for reference in sorted(context.referenced)
+    ]
+    return statistics | ({"referencedTables": referenced} if referenced else {})
 
 
 def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:

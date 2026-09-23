@@ -23,6 +23,7 @@ DERIVED = (
 STORED_TYPES = ("MATERIALIZED_VIEW", "SNAPSHOT")
 RESULTS = "_results"
 INGESTION_TIME = "_PARTITIONTIME"
+LAYOUT = ("timePartitioning", "rangePartitioning", "clustering")
 
 
 def reference(table: dict) -> tuple[str, str, str]:
@@ -112,6 +113,10 @@ def columns(project_id: str, dataset_id: str, table_id: str) -> list[TableFieldS
         ]
 
 
+def logical_bytes(rows: int, columns: int) -> int:
+    return rows * columns * 8
+
+
 def load(project_id: str, dataset_id: str, table_id: str) -> dict:
     found = _lookup(project_id, dataset_id, table_id)
     if not found:
@@ -133,7 +138,7 @@ def load(project_id: str, dataset_id: str, table_id: str) -> dict:
         "type": _type(resource, kind),
         "schema": {"fields": _overlay(fields, extras)},
         "numRows": str(num_rows),
-        "numBytes": str(num_bytes := num_rows * len(fields) * 8),
+        "numBytes": str(num_bytes := logical_bytes(num_rows, len(fields))),
         "numLongTermBytes": "0",
         "numTotalLogicalBytes": str(num_bytes),
         "numActiveLogicalBytes": str(num_bytes),
@@ -302,6 +307,39 @@ def evolve(
             f"ALTER TABLE {name(*reference)} "
             f"ADD COLUMN {quote(column)} {types.normalised(t)}"
         )
+
+
+def layout(columns: list[str], config: dict, write: str) -> dict:
+    layout = {key: config[key] for key in LAYOUT if config.get(key)}
+    names = {name.casefold() for name in columns}
+    partitioning = (
+        layout.get("timePartitioning") or layout.get("rangePartitioning") or {}
+    )
+    if (field := partitioning.get("field")) and field.casefold() not in names:
+        raise BigQueryError(
+            "invalid",
+            "The field specified for partitioning cannot be found in the schema.",
+        )
+    for field in (layout.get("clustering") or {}).get("fields") or []:
+        if field.casefold() not in names:
+            raise BigQueryError(
+                "invalid",
+                "The field specified for clustering cannot be found in the schema. "
+                f"Invalid field: {field}",
+            )
+    if config.get("schemaUpdateOptions") and write != "WRITE_APPEND":
+        raise BigQueryError(
+            "invalid",
+            "Schema update options should only be specified with WRITE_APPEND "
+            "disposition, or with WRITE_TRUNCATE disposition on a table partition.",
+        )
+    return layout
+
+
+def annotate(reference: tuple[str, str, str], changes: dict):
+    if changes:
+        stored = metadata.load("tables", *reference) or defaults(*reference)
+        record(*reference, stored | changes)
 
 
 def write(

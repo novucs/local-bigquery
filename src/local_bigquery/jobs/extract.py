@@ -1,4 +1,5 @@
 import duckdb
+import fastavro
 from sqlglot import exp
 
 from local_bigquery.catalog import tables
@@ -12,6 +13,7 @@ FORMATS = {
     "PARQUET": "parquet",
     "AVRO": "avro",
 }
+AVRO_CODECS = {"DEFLATE": "deflate", "SNAPPY": "snappy", "ZSTD": "zstandard"}
 EXPORT_OPTIONS = {
     "uri": "destinationUri",
     "format": "destinationFormat",
@@ -19,6 +21,14 @@ EXPORT_OPTIONS = {
     "field_delimiter": "fieldDelimiter",
     "compression": "compression",
 }
+
+
+def _recode(target: str, codec: str):
+    with open(target, "rb") as file:
+        reader = fastavro.reader(file)
+        schema, records = reader.writer_schema, list(reader)
+    with open(target, "wb") as file:
+        fastavro.writer(file, schema, records, codec=codec)
 
 
 def write(
@@ -33,7 +43,9 @@ def write(
             f"HEADER {str(config.get('printHeader', True)).lower()}",
             f"DELIMITER {literal(config.get('fieldDelimiter') or ',')}",
         ]
-    if compression := config.get("compression"):
+    compression = (config.get("compression") or "NONE").upper()
+    codec = AVRO_CODECS.get(compression) if kind == "AVRO" else None
+    if compression != "NONE" and kind != "AVRO":
         options.append(f"COMPRESSION {compression.lower()}")
     uris = config.get("destinationUris") or [config.get("destinationUri")]
     rows = 0
@@ -42,6 +54,8 @@ def write(
             (rows,) = cur.execute(
                 f"COPY ({query}) TO {literal(target)} ({', '.join(options)})", params
             ).fetchone()
+            if codec:
+                _recode(target, codec)
     return rows
 
 

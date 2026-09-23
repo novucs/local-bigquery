@@ -117,11 +117,14 @@ def qualify(tree: exp.Expression, context) -> exp.Expression:
             continue
         if not table.db and context.dataset_id is None:
             continue
-        path = tables.physical(
+        reference = (
             table.catalog or context.project_id,
             table.db or context.dataset_id,
             table.name,
         )
+        if table is not target or isinstance(tree, DML):
+            context.referenced.add(reference)
+        path = tables.physical(*reference)
         for key, part in zip(("catalog", "db", "this"), path):
             table.set(key, exp.to_identifier(part, quoted=True))
         _check(tree, table, table is target)
