@@ -11,5 +11,5 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:$PATH"
 RUN python -c "import duckdb; duckdb.execute('INSTALL ducklake; INSTALL spatial; INSTALL postgres')"
-EXPOSE 9050
+EXPOSE 9050 9060
 CMD ["local-bigquery"]

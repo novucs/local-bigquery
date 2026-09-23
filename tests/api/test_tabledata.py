@@ -213,7 +213,7 @@ def test_list_rows_empty_table(bq, dataset):
 
 def test_list_rows_to_dataframe(bq, dataset):
     table = ints(bq, create(bq, dataset), 3)
-    frame = bq.list_rows(table).to_dataframe()
+    frame = bq.list_rows(table).to_dataframe(create_bqstorage_client=False)
     assert sorted(frame["x"].tolist()) == [0, 1, 2]
     assert str(frame["x"].dtype) == "Int64"
 

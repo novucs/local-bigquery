@@ -2,11 +2,18 @@ import os
 import threading
 import time
 
+import grpc
 import pytest
 import uvicorn
 from google.api_core.client_options import ClientOptions
 from google.auth.credentials import AnonymousCredentials
-from google.cloud import bigquery
+from google.cloud import bigquery, bigquery_storage_v1
+from google.cloud.bigquery_storage_v1.services.big_query_read.transports import (
+    BigQueryReadGrpcTransport,
+)
+from google.cloud.bigquery_storage_v1.services.big_query_write.transports import (
+    BigQueryWriteGrpcTransport,
+)
 
 from tests.cases import Query, unique
 
@@ -62,6 +69,37 @@ def bq(endpoint, project):
         )
     yield client
     client.close()
+
+
+@pytest.fixture(scope="session")
+def storage_channel(request, endpoint):
+    option = request.config.getoption("--endpoint")
+    if option == "google":
+        yield None
+        return
+    if option:
+        pytest.skip("Storage API tests need the in-process emulator or real BigQuery")
+    from local_bigquery.grpc import server
+
+    grpc_server, port = server.start("127.0.0.1", 0)
+    yield grpc.insecure_channel(f"127.0.0.1:{port}")
+    grpc_server.stop(None)
+
+
+@pytest.fixture(scope="session")
+def bqstorage(storage_channel):
+    if storage_channel is None:
+        return bigquery_storage_v1.BigQueryReadClient()
+    transport = BigQueryReadGrpcTransport(channel=storage_channel)
+    return bigquery_storage_v1.BigQueryReadClient(transport=transport)
+
+
+@pytest.fixture(scope="session")
+def bqwrite(storage_channel):
+    if storage_channel is None:
+        return bigquery_storage_v1.BigQueryWriteClient()
+    transport = BigQueryWriteGrpcTransport(channel=storage_channel)
+    return bigquery_storage_v1.BigQueryWriteClient(transport=transport)
 
 
 @pytest.fixture(scope="module")
