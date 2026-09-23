@@ -315,7 +315,6 @@ CASES = [
         "SELECT LAST_DAY(DATE '2008-11-10', WEEK(SUNDAY)),"
         " LAST_DAY(DATE '2008-11-10', WEEK(MONDAY))",
         rows=[(date(2008, 11, 15), date(2008, 11, 16))],
-        xfail="LAST_DAY ignores WEEK part",
     ),
     q("SELECT FORMAT_DATE('%x', DATE '2008-12-25')", "12/25/08"),
     q("SELECT FORMAT_DATE('%b-%d-%Y', DATE '2008-12-25')", "Dec-25-2008"),

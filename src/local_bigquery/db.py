@@ -13,20 +13,18 @@ from duckdb.sqltypes import DuckDBPyType
 from py_mini_racer import MiniRacer
 from sqlglot.optimizer.qualify_tables import qualify_tables
 
-from local_bigquery.errors import NotFoundError, AlreadyExistsError
+from local_bigquery.errors import already_exists, not_found
 from local_bigquery.models import (
     GetQueryResultsResponse,
     Job,
     QueryParameter,
-    Row1,
+    TableDataInsertAllRequestRowsItem,
     TableSchema,
     TableRow,
     Dataset,
     DatasetReference,
     LinkedDatasetMetadata,
-    LinkState,
-    StorageBillingModel,
-    Project,
+    ProjectListProjectsItem,
     ProjectReference,
 )
 from local_bigquery.settings import settings
@@ -135,35 +133,10 @@ def migrate(conn):
     )
 
 
-@contextlib.contextmanager
-def debug_sql(
-    *,
-    bq_sql: Optional[str] = None,
-    duckdb_sql: Optional[str] = None,
-    params: Optional[dict] = None,
-):
-    try:
-        yield
-    except duckdb.Error as e:
-        context = ""
-        if bq_sql:
-            context += f"BigQuery SQL:\n{bq_sql}\n"
-        if duckdb_sql:
-            context += f"DuckDB SQL:\n{duckdb_sql}\n"
-        if params:
-            context += f"Params:\n{params}\n"
-        if "does not exist" in str(e) or "not found" in str(e):
-            raise NotFoundError(context + f"DuckDB SQL error:\n{e}")
-        if "already exists" in str(e):
-            raise AlreadyExistsError(context + f"DuckDB SQL error:\n{e}")
-        raise
-
-
 def run(
     cur, duckdb_sql: str, params: Optional[dict] = None, bq_sql: Optional[str] = None
 ):
-    with debug_sql(bq_sql=bq_sql, duckdb_sql=duckdb_sql, params=params):
-        return cur.sql(duckdb_sql, params=params or {})
+    return cur.sql(duckdb_sql, params=params or {})
 
 
 def store_where(keys: dict) -> str:
@@ -202,12 +175,12 @@ def store_delete(table: str, **keys):
         cur.execute(f"DELETE FROM {table} WHERE {store_where(keys)}", keys)
 
 
-def list_projects() -> list[Project]:
+def list_projects() -> list[ProjectListProjectsItem]:
     with cursor() as cur:
         results = cur.sql("SELECT database_name FROM duckdb_databases")
         project_ids = sorted(row[0] for row in results.fetchall())
     return [
-        Project(
+        ProjectListProjectsItem(
             friendlyName=project_id,
             id=project_id,
             numericId=str(hash(project_id)),
@@ -265,11 +238,11 @@ def get_dataset(
         isCaseInsensitive=False,
         lastModifiedTime=now,
         linkedDatasetMetadata=LinkedDatasetMetadata(
-            linkState=LinkState.UNLINKED,
+            linkState="UNLINKED",
         ),
         location="US",
         selfLink=f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}",
-        storageBillingModel=StorageBillingModel.LOGICAL,
+        storageBillingModel="LOGICAL",
         type="DEFAULT",
     )
     return store_put("datasets", dataset, project_id=project_id, dataset_id=dataset_id)
@@ -277,7 +250,7 @@ def get_dataset(
 
 def create_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
     if get_dataset(project_id, dataset_id):
-        raise AlreadyExistsError(f"Dataset {dataset_id} already exists")
+        raise already_exists("Dataset", f"{project_id}:{dataset_id}")
     store_put("datasets", dataset, project_id=project_id, dataset_id=dataset_id)
     with cursor(project_id, dataset_id) as cur:
         run(cur, f"CREATE SCHEMA {table_expr(project_id, dataset_id).sql('duckdb')}")
@@ -286,7 +259,7 @@ def create_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
 
 def update_dataset(project_id, dataset_id, dataset: Dataset) -> Dataset:
     if not get_dataset(project_id, dataset_id):
-        raise NotFoundError(f"Dataset {dataset_id} does not exist")
+        raise not_found("Dataset", f"{project_id}:{dataset_id}")
     return store_put("datasets", dataset, project_id=project_id, dataset_id=dataset_id)
 
 
@@ -319,7 +292,7 @@ def delete_table(project_id, dataset_id, table_id):
 
 def create_job(project_id: str, job_id: str, job: Job) -> Job:
     if get_job(project_id, job_id):
-        raise AlreadyExistsError(f"Job {job_id} already exists")
+        raise already_exists("Job", f"{project_id}:{job_id}")
     return store_put("jobs", job, project_id=project_id, job_id=job_id)
 
 
@@ -382,18 +355,19 @@ def query(
             result = run(cur, duckdb_sql, params=used_params, bq_sql=bq_sql)
 
         if result is None:
-            return [], TableSchema(fields=[], foreignTypeInfo=None)
+            return [], TableSchema(fields=[])
 
         duckdb_fields = list(zip(result.columns, result.types))
         bigquery_schema = TableSchema(
             fields=duckdb_fields_to_bigquery_fields(duckdb_fields),
-            foreignTypeInfo=None,
         )
         bigquery_rows = duckdb_values_to_bigquery_values(result.fetchall())
         return bigquery_rows, bigquery_schema
 
 
-def tabledata_insert_all(project_id, dataset_id, table_id, rows: list[Row1]):
+def tabledata_insert_all(
+    project_id, dataset_id, table_id, rows: list[TableDataInsertAllRequestRowsItem]
+):
     jsons = [row.json_ for row in rows if row.json_ and row.json_.root]
     keys = list(dict.fromkeys(k for j in jsons for k in j.root))
     if not keys:

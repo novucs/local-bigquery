@@ -125,7 +125,6 @@ def duckdb_field_to_bigquery_field(
         mode="NULLABLE",
         name=name,
         type=BIGQUERY_LEGACY_TYPES.get(bigquery_type, bigquery_type),
-        fields=None,
     )
 
 

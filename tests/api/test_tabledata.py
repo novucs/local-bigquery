@@ -174,7 +174,6 @@ def test_template_suffix_creates_table_from_template(bq, dataset):
     assert select(bq, table) == []
 
 
-@pytest.mark.xfail(reason="missing table returns 400, not 404")
 def test_insert_into_missing_table(bq, dataset):
     table = bigquery.Table(
         f"{dataset.project}.{dataset.dataset_id}.{unique('missing')}"

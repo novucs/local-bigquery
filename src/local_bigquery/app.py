@@ -1,0 +1,62 @@
+import json
+import logging
+import pathlib
+import re
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from local_bigquery.api import datasets, jobs, projects, tables
+from local_bigquery.errors import BigQueryError, from_exception, not_implemented
+
+DISCOVERY = json.loads((pathlib.Path(__file__).parent / "discovery.json").read_text())
+PREFIX = "/" + DISCOVERY["servicePath"].rstrip("/")
+
+app = FastAPI(title=DISCOVERY["title"], version=DISCOVERY["version"])
+
+
+@app.exception_handler(Exception)
+async def handle_error(request: Request, error: Exception) -> JSONResponse:
+    if isinstance(error, RequestValidationError):
+        error = BigQueryError("invalid", str(error))
+    error = from_exception(error)
+    if error.reason == "dontRetry":
+        logging.exception(error.message, exc_info=error.__context__)
+    return JSONResponse(error.response(), status_code=error.code)
+
+
+for error_type in (BigQueryError, RequestValidationError):
+    app.add_exception_handler(error_type, handle_error)
+
+
+@app.get("/$discovery/rest", include_in_schema=False)
+@app.get("/discovery/v1/apis/bigquery/v2/rest", include_in_schema=False)
+def discovery():
+    return DISCOVERY
+
+
+def methods(resource: dict):
+    for child in resource.get("resources", {}).values():
+        yield from child.get("methods", {}).values()
+        yield from methods(child)
+
+
+def stub(method_id: str):
+    def handler():
+        raise not_implemented(method_id)
+
+    return handler
+
+
+for module in (projects, datasets, tables, jobs):
+    app.include_router(module.router, prefix=PREFIX)
+
+for method in methods(DISCOVERY):
+    path = re.sub(r"\{\+resource\}", "{resource:path}", method["path"])
+    app.add_api_route(
+        f"{PREFIX}/{path.replace('{+', '{')}",
+        stub(method["id"]),
+        methods=[method["httpMethod"]],
+        include_in_schema=False,
+    )

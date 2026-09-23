@@ -86,7 +86,6 @@ CASES = [
     q(
         "SELECT ARRAY_AGG(x IGNORE NULLS ORDER BY x) FROM UNNEST([2, NULL, 1]) AS x",
         [1, 2],
-        xfail="IGNORE NULLS dropped in ARRAY_AGG",
     ),
     q("SELECT ARRAY_AGG(DISTINCT x ORDER BY x) FROM UNNEST([1, 1, 2]) AS x", [1, 2]),
     q(
@@ -103,7 +102,6 @@ CASES = [
         "SELECT ARRAY_CONCAT_AGG(a ORDER BY a[OFFSET(0)]) "
         "FROM (SELECT [3] AS a UNION ALL SELECT [1, 2])",
         [1, 2, 3],
-        xfail="missing function",
     ),
     q("SELECT STRING_AGG(x ORDER BY x) FROM UNNEST(['b', 'a']) AS x", "a,b"),
     q(

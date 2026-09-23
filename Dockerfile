@@ -9,7 +9,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ADD . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
-ENV PATH="/app/.venv/bin:/app/src/scripts:$PATH"
-ENV PYTHONPATH="/app/src"
+ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 9050
-CMD ["run"]
+CMD ["local-bigquery"]

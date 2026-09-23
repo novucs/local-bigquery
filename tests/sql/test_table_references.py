@@ -48,7 +48,6 @@ CASES = [
     q(
         "SELECT * FROM missing",
         error="notFound",
-        xfail="error message echoes the query",
     ),
     q(
         "SELECT * FROM `nothing_*`",

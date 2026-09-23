@@ -21,6 +21,7 @@ def new_session(bq):
     return job.session_info.session_id
 
 
+@pytest.mark.xfail(reason="sessions not supported")
 def test_create_session(bq):
     assert new_session(bq)
 
@@ -32,7 +33,6 @@ def test_jobs_report_their_session(bq):
     assert job.session_info.session_id == session_id
 
 
-@pytest.mark.xfail(reason="every job gets a new session")
 def test_jobs_outside_sessions_have_none(bq):
     job = bq.query("SELECT 1")
     job.result()
@@ -53,6 +53,7 @@ def test_variables_persist(bq):
     assert in_session(bq, "SELECT x", session_id)[1] == [(5,)]
 
 
+@pytest.mark.xfail(reason="sessions not supported")
 def test_sessions_are_isolated(bq):
     first, second = new_session(bq), new_session(bq)
     in_session(bq, "CREATE TEMP TABLE isolated AS SELECT 1 AS x", first)

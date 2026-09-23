@@ -79,7 +79,6 @@ def test_cells_are_strings(api):
     assert result["totalRows"] == "1"
 
 
-@pytest.mark.xfail(reason="responses contain null keys")
 def test_no_null_keys(api):
     result = jobs_query(api, "SELECT STRUCT(1 AS a) AS r, NULL AS n")
     assert null_paths(result) == []
@@ -139,13 +138,11 @@ def test_error_envelope(api):
     assert error["errors"][0]["domain"] == "global"
 
 
-@pytest.mark.xfail(reason="error envelope lacks status")
 def test_error_envelope_status(api):
     response = api("GET", f"/datasets/{unique('missing')}")
     assert response.json()["error"]["status"] == "NOT_FOUND"
 
 
-@pytest.mark.xfail(reason="deletes return a null JSON body")
 def test_delete_returns_empty_body(api):
     dataset_id = unique("wire")
     body = {"datasetReference": {"datasetId": dataset_id}}

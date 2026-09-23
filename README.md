@@ -16,12 +16,12 @@ docker run --init -d --rm -p 9050:9050 -v /tmp/local-bigquery/:/data --name bigq
 
 Enter the REPL
 ```bash
-docker exec -it bigquery repl
+docker exec -it bigquery local-bigquery repl
 ```
 
 Delete all projects, datasets, and tables
 ```bash
-docker exec -it bigquery reset
+docker exec -it bigquery local-bigquery reset
 ```
 
 Stop the container
@@ -53,6 +53,11 @@ services:
       POSTGRES_URI: postgresql://postgres:example@db:5432/postgres
     volumes:
       - bigquery_data:/data
+```
+
+### Without Docker
+```bash
+uv run local-bigquery --port 9050 --project local --dataset local --data-dir /tmp/local-bigquery
 ```
 
 ### BQ CLI
@@ -117,3 +122,8 @@ func main() {
     // ... your code here ...
 }
 ```
+
+## Development
+
+See [ARCHITECTURE.md](ARCHITECTURE.md). Run the test suite with `uv run pytest`, or against real
+BigQuery with `uv run pytest --endpoint google --project <your-project>`.

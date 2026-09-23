@@ -1,26 +1,34 @@
 [project]
 name = "local_bigquery"
-version = "0.1.0"
+version = "0.3.0"
 description = "Run BigQuery locally"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "duckdb>=1.2.2",
-    "fastapi[standard]>=0.115.12",
+    "duckdb>=1.5.5",
+    "fastapi>=0.139",
     "mini-racer>=0.12.4",
-    "numpy>=2.2.4",
     "prompt-toolkit>=3.0.50",
-    "psycopg2-binary>=2.9.10",
     "pydantic-settings>=2.8.1",
     "pygments>=2.19.1",
-    "pytz>=2025.2",
-    "sqlglot>=26.12.1",
+    "pytz>=2026.3.post1",
+    "sqlglot>=30.19",
+    "uvicorn>=0.35",
 ]
+
+[project.scripts]
+local-bigquery = "local_bigquery.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "datamodel-code-generator>=0.82.0",
     "db-dtypes>=1.7.1",
     "google-cloud-bigquery>=3.31.0",
     "pandas>=3.0.6",
+    "psycopg2-binary>=2.9.13",
     "pyarrow>=25.0.1",
     "pytest>=8.3.5",
     "pytest-timeout>=2.4.0",
@@ -30,7 +38,6 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
 xfail_strict = true
 addopts = "-p no:warnings -n auto --dist loadgroup"
 timeout = 30

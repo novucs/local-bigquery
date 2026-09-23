@@ -108,7 +108,6 @@ CASES = [
     q(
         "SELECT * FROM EXTERNAL_QUERY('us.default', 'SELECT * FROM missing_table')",
         error="(?i)missing_table",
-        xfail="error message echoes the query",
     ),
 ]
 

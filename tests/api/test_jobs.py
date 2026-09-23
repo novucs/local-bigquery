@@ -60,7 +60,6 @@ def test_get_missing_job(bq):
         bq.get_job(unique("missing"), retry=FAST_RETRY)
 
 
-@pytest.mark.xfail(reason="jobs.list returns 500")
 def test_list_jobs(bq):
     job = run_job(bq, "SELECT 1")
     assert job.job_id in [j.job_id for j in bq.list_jobs()]
@@ -89,7 +88,6 @@ def test_list_jobs_creation_time_filters(bq):
     assert job.job_id not in [j.job_id for j in bq.list_jobs(min_creation_time=after)]
 
 
-@pytest.mark.xfail(reason="jobs.list returns 500")
 def test_list_jobs_all_users(bq):
     job = run_job(bq, "SELECT 1")
     assert job.job_id in [j.job_id for j in bq.list_jobs(all_users=True)]
@@ -133,7 +131,6 @@ def test_dry_run_does_not_execute(bq, table):
     assert list(run(bq, f"SELECT * FROM {table}")) == []
 
 
-@pytest.mark.xfail(reason="dry run does not validate SQL")
 def test_dry_run_invalid_query(bq):
     with fails(BadRequest, "invalidQuery"):
         bq.query(
@@ -318,7 +315,6 @@ def test_failed_query_is_done_job_with_error(bq):
     assert bq.get_job(job.job_id).error_result["reason"] == "invalidQuery"
 
 
-@pytest.mark.xfail(reason="unknown column reported as notFound")
 def test_query_and_wait_failure(bq):
     with fails(BadRequest, "invalidQuery"):
         run(bq, "SELECT nope")
