@@ -199,6 +199,20 @@ def test_ddl_statistics(bq, dataset):
     assert run_job(bq, f"DROP TABLE {table_id}").ddl_operation_performed == "DROP"
 
 
+def test_referenced_tables(bq, dataset, table):
+    other = f"{dataset.dataset_id}.{unique('t')}"
+    run(bq, f"CREATE TABLE {other} (x INT64)")
+    job = run_job(
+        bq,
+        f"WITH c AS (SELECT x FROM {table}) "
+        f"SELECT * FROM c JOIN {other} USING (x) JOIN {table} USING (x)",
+    )
+    referenced = {f"{t.dataset_id}.{t.table_id}" for t in job.referenced_tables}
+    assert referenced == {table, other}
+    assert len(job.referenced_tables) == 2
+    assert run_job(bq, "SELECT 1").referenced_tables == []
+
+
 def test_script_returns_last_statement(bq):
     job = run_job(bq, "SELECT 1; SELECT 2 AS b")
     assert [tuple(r.values()) for r in job.result()] == [(2,)]

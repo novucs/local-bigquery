@@ -1,4 +1,5 @@
 import datetime
+import decimal
 import gzip
 import io
 import json
@@ -6,8 +7,10 @@ import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import fastavro
 import pandas as pd
 import pyarrow as pa
+import pyarrow.orc as orc
 import pyarrow.parquet as pq
 import pytest
 from google.api_core.exceptions import BadRequest, Conflict, NotFound
@@ -366,3 +369,266 @@ def test_export_data_rejects_orc(bq, local):
             "AS SELECT 1 AS x",
         )
     assert "'ORC' is not a valid value; failed to set 'format'" in str(info.value)
+
+
+def test_load_applies_partitioning_and_clustering(bq, dataset):
+    table = table_id(dataset)
+    config = bigquery.LoadJobConfig(
+        schema=[*X, bigquery.SchemaField("d", "DATE")],
+        time_partitioning=bigquery.TimePartitioning(field="d"),
+        clustering_fields=["x"],
+    )
+    rows = [{"x": 1, "d": "2020-01-01"}]
+    bq.load_table_from_json(rows, table, job_config=config).result()
+    loaded = bq.get_table(table)
+    partitioning = loaded.time_partitioning
+    assert (partitioning.field, partitioning.type_) == ("d", "DAY")
+    assert loaded.clustering_fields == ["x"]
+
+
+def test_load_rejects_unknown_partitioning_field(bq, dataset):
+    config = bigquery.LoadJobConfig(
+        schema=X, time_partitioning=bigquery.TimePartitioning(field="missing")
+    )
+    table = table_id(dataset)
+    with fails(BadRequest, "invalid"):
+        bq.load_table_from_json([{"x": 1}], table, job_config=config).result()
+
+
+AVRO_SCHEMA = {
+    "type": "record",
+    "name": "r",
+    "fields": [
+        {
+            "name": "n",
+            "type": {
+                "type": "bytes",
+                "logicalType": "decimal",
+                "precision": 10,
+                "scale": 2,
+            },
+        },
+        {"name": "ts", "type": {"type": "long", "logicalType": "timestamp-micros"}},
+        {"name": "d", "type": {"type": "int", "logicalType": "date"}},
+        {"name": "t", "type": {"type": "long", "logicalType": "time-micros"}},
+        {
+            "name": "dt",
+            "type": {"type": "long", "logicalType": "local-timestamp-micros"},
+        },
+        {"name": "s", "type": ["null", "string"]},
+    ],
+}
+TS = datetime.datetime(2020, 1, 2, 3, 4, 5, tzinfo=datetime.timezone.utc)
+AVRO_ROW = {
+    "n": decimal.Decimal("1.25"),
+    "ts": TS,
+    "d": datetime.date(2020, 1, 2),
+    "t": datetime.time(3, 4, 5),
+    "dt": datetime.datetime(2020, 1, 2, 3, 4, 5),
+    "s": None,
+}
+
+
+def avro_bytes(schema, records):
+    buffer = io.BytesIO()
+    fastavro.writer(buffer, schema, records)
+    return buffer.getvalue()
+
+
+def test_load_avro_logical_types(bq, dataset):
+    table = table_id(dataset)
+    data = avro_bytes(AVRO_SCHEMA, [AVRO_ROW])
+    load_file(bq, table, data, source_format="AVRO", use_avro_logical_types=True)
+    assert types(bq, table) == [
+        "NUMERIC",
+        "TIMESTAMP",
+        "DATE",
+        "TIME",
+        "DATETIME",
+        "STRING",
+    ]
+    assert select(bq, table) == [
+        (
+            decimal.Decimal("1.25"),
+            TS,
+            datetime.date(2020, 1, 2),
+            datetime.time(3, 4, 5),
+            datetime.datetime(2020, 1, 2, 3, 4, 5),
+            None,
+        )
+    ]
+
+
+def test_load_avro_without_logical_types_uses_primitive_types(bq, dataset):
+    table = table_id(dataset)
+    load_file(bq, table, avro_bytes(AVRO_SCHEMA, [AVRO_ROW]), source_format="AVRO")
+    assert types(bq, table) == ["NUMERIC", "INT64", "INT64", "INT64", "INT64", "STRING"]
+    assert select(bq, table)[0][:4] == (
+        decimal.Decimal("1.25"),
+        int(TS.timestamp()) * 1_000_000,
+        18263,
+        (3 * 3600 + 4 * 60 + 5) * 1_000_000,
+    )
+
+
+def test_load_avro_nested_fields(bq, dataset):
+    table = table_id(dataset)
+    inner = {
+        "type": "record",
+        "name": "inner",
+        "fields": [{"name": "y", "type": "int"}],
+    }
+    schema = {
+        "type": "record",
+        "name": "r",
+        "fields": [
+            {"name": "rec", "type": inner},
+            {"name": "tags", "type": {"type": "array", "items": "string"}},
+        ],
+    }
+    data = avro_bytes(schema, [{"rec": {"y": 1}, "tags": ["a"]}])
+    load_file(bq, table, data, source_format="AVRO")
+    assert types(bq, table) == ["STRUCT<y INT64>", "ARRAY<STRING>"]
+    assert select(bq, table) == [({"y": 1}, ["a"])]
+
+
+def test_load_orc(bq, dataset):
+    table = table_id(dataset)
+    buffer = io.BytesIO()
+    orc.write_table(pa.table({"x": [1, 2], "s": ["a", "b"]}), buffer)
+    load_file(bq, table, buffer.getvalue(), source_format="ORC")
+    assert types(bq, table) == ["INT64", "STRING"]
+    assert select(bq, table) == [(1, "a"), (2, "b")]
+
+
+@pytest.mark.parametrize(
+    "encoding, codec",
+    [
+        ("ISO-8859-1", "latin-1"),
+        ("UTF-16LE", "utf-16-le"),
+        pytest.param(
+            "UTF-16BE",
+            "utf-16-be",
+            marks=pytest.mark.xfail(strict=True, reason="DuckDB reads only UTF-16LE"),
+        ),
+    ],
+)
+def test_load_csv_encoding(bq, dataset, encoding, codec):
+    table = table_id(dataset)
+    schema = [bigquery.SchemaField("s", "STRING")]
+    load_file(bq, table, "é\n".encode(codec), schema=schema, encoding=encoding)
+    assert select(bq, table) == [("é",)]
+
+
+def test_extract_avro_deflate(bq, dataset, local):
+    extract(
+        bq,
+        ctas(bq, dataset, 1, 2),
+        f"file://{local}/out.avro",
+        destination_format=bigquery.DestinationFormat.AVRO,
+        compression=bigquery.Compression.DEFLATE,
+    )
+    with open(local / "out.avro", "rb") as file:
+        reader = fastavro.reader(file)
+        assert reader.codec == "deflate"
+        assert sorted(record["x"] for record in reader) == [1, 2]
+
+
+@pytest.mark.xfail(strict=True, reason="snappy needs cramjam, not a dependency")
+def test_extract_avro_snappy(bq, dataset, local):
+    extract(
+        bq,
+        ctas(bq, dataset, 1),
+        f"file://{local}/out.avro",
+        destination_format=bigquery.DestinationFormat.AVRO,
+        compression=bigquery.Compression.SNAPPY,
+    )
+    with open(local / "out.avro", "rb") as file:
+        assert fastavro.reader(file).codec == "snappy"
+
+
+def test_extract_creates_missing_directory(bq, dataset, local):
+    extract(bq, ctas(bq, dataset, 1), f"file://{local}/new/dir/out.csv")
+    assert (local / "new" / "dir" / "out.csv").read_text().splitlines() == ["x", "1"]
+
+
+def copy_job(bq, source, destination, operation):
+    config = bigquery.CopyJobConfig()
+    config._properties["copy"]["operationType"] = operation
+    return bq.copy_table(source, destination, job_config=config).result()
+
+
+def test_copy_snapshot(bq, dataset):
+    source, snapshot = ctas(bq, dataset, 1), table_id(dataset)
+    copy_job(bq, source, snapshot, "SNAPSHOT")
+    created = bq.get_table(snapshot)
+    assert created.table_type == "SNAPSHOT"
+    base = created.snapshot_definition.base_table_reference
+    assert f"{base.project}.{base.dataset_id}.{base.table_id}" == source
+    assert created.snapshot_definition.snapshot_time is not None
+    assert select(bq, snapshot) == [(1,)]
+    with fails(BadRequest, "invalidQuery"):
+        run(bq, f"INSERT INTO `{snapshot}` VALUES (2)")
+
+
+def test_copy_clone(bq, dataset):
+    source, clone = ctas(bq, dataset, 1), table_id(dataset)
+    copy_job(bq, source, clone, "CLONE")
+    created = bq.get_table(clone)
+    assert created.table_type == "TABLE"
+    assert (
+        created.clone_definition.base_table_reference.table_id == source.split(".")[-1]
+    )
+    run(bq, f"INSERT INTO `{clone}` VALUES (2)")
+    assert select(bq, clone) == [(1,), (2,)]
+
+
+def test_copy_restore_snapshot(bq, dataset):
+    source, snapshot = ctas(bq, dataset, 1), table_id(dataset)
+    restored = table_id(dataset)
+    copy_job(bq, source, snapshot, "SNAPSHOT")
+    copy_job(bq, snapshot, restored, "RESTORE")
+    created = bq.get_table(restored)
+    assert (created.table_type, created.snapshot_definition) == ("TABLE", None)
+    run(bq, f"INSERT INTO `{restored}` VALUES (2)")
+    assert select(bq, restored) == [(1,), (2,)]
+
+
+@pytest.mark.parametrize(
+    "mode, suffix, expected",
+    [
+        ("AUTO", "", ["INT64", "STRING", "DATE"]),
+        ("STRINGS", "", ["INT64", "STRING", "STRING"]),
+        ("CUSTOM", "/{dt:DATE}/{country:STRING}", ["INT64", "STRING", "DATE"]),
+    ],
+)
+def test_load_hive_partitioning(bq, dataset, bucket, mode, suffix, expected):
+    for day, country in [("2020-01-01", "us"), ("2020-01-02", "uk")]:
+        folder = bucket / "data" / f"dt={day}" / f"country={country}"
+        folder.mkdir(parents=True)
+        (folder / "part.csv").write_text("1\n")
+    options = bigquery.HivePartitioningOptions()
+    options.mode = mode
+    options.source_uri_prefix = f"gs://{bucket.name}/data{suffix}"
+    config = bigquery.LoadJobConfig(schema=X, hive_partitioning=options)
+    table = table_id(dataset)
+    uri = f"gs://{bucket.name}/data/*"
+    bq.load_table_from_uri(uri, table, job_config=config).result()
+    assert sorted(types(bq, table)) == sorted(expected)
+    assert sorted(row["country"] for row in run(bq, f"SELECT * FROM `{table}`")) == [
+        "uk",
+        "us",
+    ]
+
+
+def test_load_gcs_wildcard_matches_across_directories(bq, dataset, bucket):
+    for name in ("a.csv", "sub/b.csv", "sub/deeper/c.csv", "other.txt"):
+        (bucket / "dir" / name).parent.mkdir(parents=True, exist_ok=True)
+        (bucket / "dir" / name).write_text("1\n")
+    table = table_id(dataset)
+    config = bigquery.LoadJobConfig(schema=X)
+    uri = f"gs://{bucket.name}/dir/*.csv"
+    job = bq.load_table_from_uri(uri, table, job_config=config).result()
+    assert select(bq, table) == [(1,), (1,), (1,)]
+    assert (job.input_files, job.input_file_bytes, job.output_rows) == (3, 6, 3)
+    assert job.output_bytes > 0

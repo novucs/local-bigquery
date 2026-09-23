@@ -20,6 +20,7 @@ class Context:
     system: dict = field(default_factory=dict)
     attach_postgres: callable = None
     used: set[str] = field(default_factory=set)
+    referenced: set[tuple[str, str, str]] = field(default_factory=set)
     position: int = 0
 
 
