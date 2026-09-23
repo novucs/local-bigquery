@@ -105,6 +105,9 @@ def qualify(tree: exp.Expression, context) -> exp.Expression:
         if target is not None and not target.catalog:
             target.set("catalog", exp.to_identifier(context.project_id))
         return tree
+    for table in tree.find_all(exp.Table):
+        if not table.catalog and table.db.casefold() == "_session":
+            table.set("db", None)
     if isinstance(tree, exp.Create) and _temporary(tree):
         context.temporary.add(tree.find(exp.Table).name.casefold())
     ctes = {cte.alias_or_name.casefold() for cte in tree.find_all(exp.CTE)}

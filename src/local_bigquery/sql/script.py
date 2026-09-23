@@ -419,6 +419,7 @@ class Interpreter:
 
     def set_system(self, name: str, value: exp.Expression):
         result = self.evaluate(value.sql(dialect=BigQueryDialect))
+        self.context.settings[name] = result
         if name in ("project_id", "dataset_id"):
             setattr(self.context, name, result)
         else:

@@ -8,7 +8,7 @@ from sqlglot import exp
 
 from local_bigquery.catalog import datasets, metadata, row_access, routines, tables
 from local_bigquery.catalog import ddl as catalog_ddl
-from local_bigquery.engine import database, types
+from local_bigquery.engine import database, sessions, types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import BigQueryError, from_duckdb
 from local_bigquery.jobs import extract, merge
@@ -323,10 +323,10 @@ def execute(
     job_id: str | None,
     config: dict,
     dry_run: bool = False,
-    isolated: bool = False,
-    variables: dict | None = None,
+    session: sessions.Session | None = None,
 ) -> tuple[dict, list[dict], dict | None]:
     default = config.get("defaultDataset") or {}
+    settings = session.settings if session else {}
     attachments = []
 
     def attach_postgres(uri: str) -> str:
@@ -339,13 +339,20 @@ def execute(
 
     temporary = cur.sql("SELECT table_name FROM duckdb_tables() WHERE temporary")
     context = Context(
-        default.get("projectId") or project_id,
-        default.get("datasetId"),
+        settings.get("project_id") or default.get("projectId") or project_id,
+        settings.get("dataset_id") or default.get("datasetId"),
         *params.bind(config.get("queryParameters") or []),
         temporary={name.casefold() for (name,) in temporary.fetchall()},
         attach_postgres=attach_postgres,
-        variables={} if variables is None else variables,
-        system={"current_job_id": job_id, "script.job_id": job_id, "time_zone": "UTC"},
+        variables=session.variables if session else {},
+        settings=settings,
+        system={
+            "current_job_id": job_id,
+            "script.job_id": job_id,
+            "session_id": session and session.id,
+            "time_zone": "UTC",
+        }
+        | settings,
     )
     database.attach(context.project_id)
     found = context.dataset_id and datasets.exists(
@@ -357,7 +364,7 @@ def execute(
     try:
         statements = script.parse_script(config.get("query") or "")
         return _execute(
-            cur, project_id, job_id, config, dry_run, isolated, context, statements
+            cur, project_id, job_id, config, dry_run, bool(session), context, statements
         )
     finally:
         for alias in attachments:

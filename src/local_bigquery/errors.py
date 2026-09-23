@@ -221,7 +221,14 @@ def from_duckdb(error: Exception, context=None, tree=None) -> BigQueryError:
         if match := pattern.search(first):
             name = match["name"].strip("!\"'")
             table = name
-            if context is not None and "." not in name:
+            unqualified = context is not None and "." not in name
+            if unqualified and context.dataset_id is None and reason == "notFound":
+                return BigQueryError(
+                    "invalid",
+                    f'Table "{name}" must be qualified with a dataset '
+                    "(e.g. dataset.table).",
+                )
+            if unqualified:
                 table = f"{context.project_id}:{context.dataset_id}.{name}"
             function_name, function_position = _function(tree, name, context)
             arguments = ", ".join(

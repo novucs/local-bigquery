@@ -16,6 +16,7 @@ class Session:
     cursor: duckdb.DuckDBPyConnection
     lock: threading.Lock = field(default_factory=threading.Lock)
     variables: dict = field(default_factory=dict)
+    settings: dict = field(default_factory=dict)
 
 
 _sessions: dict[str, Session] = {}
