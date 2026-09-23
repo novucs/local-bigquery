@@ -1,7 +1,7 @@
 from fastapi import Body, Header, Query
 
 from local_bigquery.api import Router, paginate, with_rows
-from local_bigquery.catalog import tables
+from local_bigquery.catalog import tabledata, tables
 from local_bigquery.jobs.query import translate_view
 from local_bigquery.models import Table, TableDataInsertAllResponse, TableList
 
@@ -67,7 +67,7 @@ def delete_table(project_id: str, dataset_id: str, table_id: str):
 def insert_all(
     project_id: str, dataset_id: str, table_id: str, body: dict = Body()
 ) -> TableDataInsertAllResponse:
-    response = tables.insert_all(project_id, dataset_id, table_id, body)
+    response = tabledata.insert_all(project_id, dataset_id, table_id, body)
     return TableDataInsertAllResponse(
         kind="bigquery#tableDataInsertAllResponse", **response
     )
@@ -85,7 +85,7 @@ def list_rows(
     int64_timestamps: bool = Query(False, alias="formatOptions.useInt64Timestamp"),
 ):
     start = int(pageToken) if pageToken else startIndex
-    page, _ = tables.list_rows(
+    page, _ = tabledata.list_rows(
         project_id,
         dataset_id,
         table_id,

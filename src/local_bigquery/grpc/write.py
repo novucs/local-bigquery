@@ -13,7 +13,7 @@ from google.protobuf import (
 )
 from google.rpc import status_pb2
 
-from local_bigquery.catalog import tables
+from local_bigquery.catalog import tabledata, tables
 from local_bigquery.grpc.read import table
 from local_bigquery.models import TableFieldSchema
 
@@ -120,7 +120,7 @@ def _row(fields: list[TableFieldSchema], values: dict) -> dict:
 
 def _insert(stream: Stream, rows: list[dict]) -> list[dict]:
     body = {"rows": [{"json": row} for row in rows]}
-    response = tables.insert_all(*stream.table, body)
+    response = tabledata.insert_all(*stream.table, body)
     return [
         error
         for error in response.get("insertErrors", [])

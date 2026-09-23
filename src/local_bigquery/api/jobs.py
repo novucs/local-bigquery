@@ -3,7 +3,7 @@ import uuid
 from fastapi import Body, Query
 
 from local_bigquery.api import Router, paginate, with_rows
-from local_bigquery.catalog import tables
+from local_bigquery.catalog import tabledata, tables
 from local_bigquery.jobs import runner, store
 from local_bigquery.models import Job, JobCancelResponse, JobList, JobListJobsItem
 
@@ -31,14 +31,14 @@ def results(
         "totalRows": "0",
     }
     destination = job["configuration"]["query"].get("destinationTable")
-    if not destination or "schema" in statistics and not destination:
+    if not destination:
         return payload, []
     reference = (
         destination["projectId"],
         destination["datasetId"],
         destination["tableId"],
     )
-    page, schema = tables.list_rows(
+    page, schema = tabledata.list_rows(
         *reference, max_results, start, None, int64_timestamps
     )
     payload |= {
