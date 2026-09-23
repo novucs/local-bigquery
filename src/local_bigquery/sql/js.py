@@ -49,9 +49,13 @@ def _function(names: list[str], body: str, returns: DuckDBPyType):
                 context.eval("var batch = rows => rows.map(row => f.apply(null, row));")
                 _contexts[source] = context, threading.Lock()
         context, lock = _contexts[source]
-        rows = json.loads(
-            json.dumps(list(zip(*(a.to_pylist() for a in arrays))), default=str)
-        )
+        columns = [
+            [None if v is None else str(v) for v in a.to_pylist()]
+            if pyarrow.types.is_integer(a.type)
+            else a.to_pylist()
+            for a in arrays
+        ]
+        rows = json.loads(json.dumps(list(zip(*columns)), default=str))
         with lock:
             values = context.call("batch", rows)
         return pyarrow.array([_convert(value, returns) for value in values])

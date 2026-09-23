@@ -46,3 +46,16 @@ CREATE MACRO soundex(s) AS bq.main._soundex(
         ''
     )
 );
+
+CREATE MACRO _bytes(x) AS CASE WHEN typeof(x) = 'BLOB' THEN x::BLOB ELSE encode(x::VARCHAR) END;
+
+CREATE MACRO farm_fingerprint(x) AS _farm_fingerprint(bq.main._bytes(x));
+
+CREATE MACRO sha512(x) AS _sha512(bq.main._bytes(x));
+
+CREATE MACRO to_base32(b) AS _to_base32(b);
+
+CREATE MACRO from_base32(s) AS _from_base32(s);
+
+CREATE MACRO code_points_to_bytes(points) AS
+    unhex(array_to_string(list_transform(points, p -> lpad(to_hex(p), 2, '0')), ''));

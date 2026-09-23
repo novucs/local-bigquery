@@ -29,3 +29,6 @@ CREATE MACRO _shift_right(a, b) AS
         WHEN b = 0 THEN CAST(a AS BIGINT)
         ELSE (CAST(a AS BIGINT) >> b) & (9223372036854775807 >> (b - 1))
     END;
+CREATE MACRO coth(x) AS 1 / tanh(x);
+CREATE MACRO csch(x) AS 1 / sinh(x);
+CREATE MACRO sech(x) AS 1 / cosh(x);

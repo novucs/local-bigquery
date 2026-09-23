@@ -156,7 +156,7 @@ CASES = [
     q("CREATE OR REPLACE TABLE m AS SELECT 1 AS b; SELECT b FROM m", 1),
     q("CREATE TEMP TABLE tmp AS SELECT 2 AS b; SELECT b FROM tmp", 2),
     q(
-        "SELECT 1 AS a, 2 AS a",
+        "CREATE TABLE dup AS SELECT 1 AS a, 2 AS a",
         error="(?i)duplicate column names",
     ),
 ]
@@ -183,3 +183,12 @@ def test_aggregate_columns_are_anonymous(bq, dataset):
 def test_columns_are_named_after_references(bq, dataset):
     sql = "SELECT l.x, s.a FROM l, (SELECT STRUCT(1 AS a) AS s) LIMIT 1"
     assert names(bq, dataset, sql) == ["x", "a"]
+
+
+def test_duplicate_columns_are_suffixed(bq, dataset):
+    sql = "SELECT x.a, y.a, 3 AS a FROM (SELECT 1 AS a) AS x, (SELECT 2 AS a) AS y"
+    assert names(bq, dataset, sql) == ["a", "a_1", "a_2"]
+
+
+def test_parenthesised_column_keeps_its_name(bq, dataset):
+    assert names(bq, dataset, "SELECT DISTINCT(x) FROM UNNEST([1]) AS x") == ["x"]

@@ -3,6 +3,8 @@ import re
 from sqlglot import exp
 from sqlglot.optimizer.annotate_types import annotate_types
 
+from local_bigquery.errors import BigQueryError
+
 ESCAPE = re.compile(
     r"\\(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2})|([0-7]{3}))"
 )
@@ -68,7 +70,12 @@ def collate(node: exp.Expression, context) -> exp.Expression:
     name = node.expression.this.lower()
     if name == "und:ci":
         return exp.Collate(this=node.this, expression=exp.var("NOCASE"))
-    return node.this if name in ("", "binary") else node
+    if name:
+        raise BigQueryError(
+            "invalidQuery",
+            f"Collation '{node.expression.this}' in collate function is not supported.",
+        )
+    return node.this
 
 
 def like_escape(node: exp.Expression, context) -> exp.Expression:
@@ -93,8 +100,36 @@ def float_to_string(node: exp.Expression, context) -> exp.Expression:
 
 
 def normalize(node: exp.Expression, context) -> exp.Expression:
-    if isinstance(node, exp.Normalize) and not node.args.get("form"):
-        return exp.Anonymous(this="nfc_normalize", expressions=[node.this])
+    if not isinstance(node, exp.Normalize):
+        return node
+    form = node.args.get("form")
+    return exp.Anonymous(
+        this="_normalize",
+        expressions=[
+            node.this,
+            exp.Literal.string(form.name if form else "NFC"),
+            exp.Boolean(this=bool(node.args.get("is_casefold"))),
+        ],
+    )
+
+
+def _binary(node: exp.Expression) -> bool:
+    if isinstance(node, exp.Anonymous) and node.name.lower() == "from_hex":
+        return True
+    binary = (exp.DataType.Type.BINARY, exp.DataType.Type.VARBINARY)
+    return isinstance(node, exp.ByteString) or _type(node).is_type(*binary)
+
+
+def upper(node: exp.Expression, context) -> exp.Expression:
+    if isinstance(node, exp.Upper) and not _binary(node.this):
+        sharp = [node.this, exp.Literal.string("ß"), exp.Literal.string("SS")]
+        node.set("this", exp.Anonymous(this="replace", expressions=sharp))
+    return node
+
+
+def concat(node: exp.Expression, context) -> exp.Expression:
+    if isinstance(node, exp.Concat) and _type(node).is_type(*TEXT):
+        return exp.cast(node, exp.DataType.build("VARCHAR"), copy=False)
     return node
 
 
@@ -106,4 +141,6 @@ NODE_RULES = [
     like_escape,
     float_to_string,
     normalize,
+    upper,
+    concat,
 ]

@@ -142,6 +142,14 @@ CASES = [
         "SELECT NUMERIC '99999999999999999999999999999.999999999' + 1",
         error="(?i)overflow",
     ),
+    q(
+        "SELECT ROUND(COTH(1.0), 6), ROUND(CSCH(-2.0), 6), ROUND(SECH(1.0), 6)",
+        rows=[(1.313035, -0.275721, 0.648054)],
+    ),
+    q(
+        f"SELECT SIGN(CAST('inf' AS FLOAT64)), SIGN(CAST('-inf' AS FLOAT64)), SIGN({NAN})",
+        rows=[(1.0, -1.0, float("nan"))],
+    ),
 ]
 
 

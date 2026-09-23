@@ -141,6 +141,13 @@ CASES = [
         5.0,
     ),
     q("SELECT ROW_NUMBER() OVER () FROM scores WHERE FALSE", rows=[]),
+    q(
+        "CREATE TEMP TABLE e (u INT64, t STRING, ts TIMESTAMP, amount NUMERIC); "
+        "INSERT INTO e VALUES (1, 'view', '2024-01-01 09:00:00+00', 0), "
+        "(1, 'buy', '2024-01-01 09:05:00+00', 5); "
+        "SELECT t, FIRST_VALUE(t) OVER (PARTITION BY u ORDER BY ts) FROM e ORDER BY ts",
+        rows=[("view", "view"), ("buy", "view")],
+    ),
 ]
 
 

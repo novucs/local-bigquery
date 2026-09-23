@@ -7,6 +7,7 @@ from collections.abc import Iterator
 import duckdb
 
 from local_bigquery.settings import settings
+from local_bigquery.sql import native
 from local_bigquery.sql.dialect import FUNCTIONS, MACRO
 
 EMULATOR_SCHEMA = """
@@ -73,6 +74,7 @@ def _connect() -> duckdb.DuckDBPyConnection:
     con.execute(f"ATTACH '{settings.data_dir / 'emulator.duckdb'}' AS emulator")
     con.execute(EMULATOR_SCHEMA)
     con.execute("ATTACH ':memory:' AS bq")
+    native.register(con)
     for path in FUNCTIONS:
         con.execute(MACRO.sub(r"CREATE MACRO bq.main.\1", path.read_text()))
     for path in sorted(settings.data_dir.glob("*.ducklake")):

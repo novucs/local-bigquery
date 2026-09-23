@@ -94,25 +94,44 @@ def hll_count(tree: exp.Expression, context) -> exp.Expression:
     return tree
 
 
+def _projection(tree: exp.Expression) -> exp.Select | None:
+    while isinstance(tree, (exp.SetOperation, exp.Create)):
+        tree = tree.this if isinstance(tree, exp.SetOperation) else tree.expression
+    return tree if isinstance(tree, exp.Select) else None
+
+
 def duplicate_columns(tree: exp.Expression, context) -> exp.Expression:
-    select = tree
-    while isinstance(select, exp.SetOperation):
-        select = select.this
-    if not isinstance(select, exp.Select):
+    select = _projection(tree)
+    if select is None:
         return tree
     seen = set()
     for expression in select.expressions:
-        name = expression.alias_or_name.casefold()
+        name = expression.alias_or_name
         if isinstance(expression, exp.Star) or not name:
             continue
-        if name in seen:
+        if name.casefold() in seen and isinstance(tree, exp.Create):
             raise BigQueryError(
                 "invalidQuery",
                 "Duplicate column names in the result are not supported. "
-                f"Found duplicate(s): {expression.alias_or_name}",
+                f"Found duplicate(s): {name}",
             )
-        seen.add(name)
+        unique, suffix = name, 0
+        while unique.casefold() in seen:
+            suffix += 1
+            unique = f"{name}_{suffix}"
+        if unique != name:
+            target = (
+                expression.this if isinstance(expression, exp.Alias) else expression
+            )
+            expression.replace(exp.alias_(target.copy(), unique))
+        seen.add(unique.casefold())
     return tree
+
+
+def approx_count_distinct(node: exp.Expression, context) -> exp.Expression:
+    if isinstance(node, exp.ApproxDistinct):
+        return exp.Count(this=exp.Distinct(expressions=[node.this]))
+    return node
 
 
 STATEMENT_RULES = [
@@ -123,3 +142,4 @@ STATEMENT_RULES = [
     unpivot_order,
     hll_count,
 ]
+NODE_RULES = [approx_count_distinct]

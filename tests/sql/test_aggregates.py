@@ -203,6 +203,15 @@ CASES = [
         "SELECT g, COUNT(*) FROM t GROUP BY GROUPING SETS ((g), ()) ORDER BY g NULLS LAST",
         rows=[("a", 2), ("b", 2), ("c", 1), (None, 5)],
     ),
+    q(
+        "SELECT APPROX_COUNT_DISTINCT(x) FROM UNNEST(GENERATE_ARRAY(1, 10)) AS x",
+        10,
+    ),
+    q(
+        "SELECT STRING_AGG(DISTINCT CAST(MOD(x, 3) AS STRING), ',' "
+        "ORDER BY CAST(MOD(x, 3) AS STRING)) FROM UNNEST(GENERATE_ARRAY(1, 10)) AS x",
+        "0,1,2",
+    ),
 ]
 
 
