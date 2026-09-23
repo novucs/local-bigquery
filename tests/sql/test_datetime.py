@@ -68,7 +68,6 @@ CASES = [
     q(
         "SELECT CURRENT_DATE(), CURRENT_DATETIME(), CURRENT_TIME(), CURRENT_TIMESTAMP()",
         types=("DATE", "DATETIME", "TIME", "TIMESTAMP"),
-        xfail="CURRENT_DATETIME missing",
     ),
     q("SELECT CURRENT_DATE() = DATE(CURRENT_TIMESTAMP())", True),
     q(
@@ -88,19 +87,16 @@ CASES = [
             (2015, 53, 2016, 0),
             (2016, 1, 2016, 1),
         ],
-        xfail="WEEK and ISOWEEK numbering differ",
     ),
     q(
         "SELECT EXTRACT(WEEK(SUNDAY) FROM DATE '2017-11-05'),"
         " EXTRACT(WEEK(MONDAY) FROM DATE '2017-11-05')",
         rows=[(45, 44)],
-        xfail="WEEK(weekday) unsupported",
     ),
     q(
         "SELECT EXTRACT(DAYOFWEEK FROM DATE '2008-12-28'),"
         " EXTRACT(DAYOFWEEK FROM DATE '2008-12-27')",
         rows=[(1, 7)],
-        xfail="DAYOFWEEK is zero-based",
     ),
     q("SELECT EXTRACT(DAYOFYEAR FROM DATE '2020-12-31')", 366),
     q("SELECT EXTRACT(QUARTER FROM DATE '2020-08-15')", 3),
@@ -118,51 +114,42 @@ CASES = [
         "SELECT EXTRACT(DATE FROM TIMESTAMP '2020-01-01 23:30:00+00'"
         " AT TIME ZONE 'Asia/Tokyo')",
         date(2020, 1, 2),
-        xfail="EXTRACT(DATE) unsupported",
     ),
     q(
         "SELECT EXTRACT(DATE FROM TIMESTAMP '2020-01-01 23:30:00+00')",
         date(2020, 1, 1),
-        xfail="EXTRACT(DATE) unsupported",
     ),
     q(
         "SELECT EXTRACT(TIME FROM DATETIME '2020-01-01 12:34:56')",
         time(12, 34, 56),
-        xfail="EXTRACT(TIME) unsupported",
     ),
     q(
         "SELECT EXTRACT(DAYOFWEEK FROM TIMESTAMP '2020-01-04 23:00:00+00'"
         " AT TIME ZONE 'Asia/Tokyo')",
         1,
-        xfail="DAYOFWEEK is zero-based",
     ),
     q("SELECT EXTRACT(YEAR FROM CAST(NULL AS DATE))", None),
     q(
         "SELECT DATE_ADD(DATE '2008-12-25', INTERVAL 5 DAY)",
         date(2008, 12, 30),
         types="DATE",
-        xfail="DATE_ADD returns TIMESTAMP",
     ),
     q(
         "SELECT DATE_SUB(DATE '2008-12-25', INTERVAL 5 DAY)",
         date(2008, 12, 20),
-        xfail="DATE_SUB returns TIMESTAMP",
     ),
     q(
         "SELECT DATE_ADD(DATE '2020-01-31', INTERVAL 1 MONTH)",
         date(2020, 2, 29),
-        xfail="DATE_ADD returns TIMESTAMP",
     ),
     q(
         "SELECT DATE_ADD(DATE '2020-02-29', INTERVAL 1 YEAR)",
         date(2021, 2, 28),
-        xfail="DATE_ADD returns TIMESTAMP",
     ),
     q(
         "SELECT DATE_ADD(DATE '2020-01-01', INTERVAL 1 QUARTER),"
         " DATE_ADD(DATE '2020-01-01', INTERVAL 2 WEEK)",
         rows=[(date(2020, 4, 1), date(2020, 1, 15))],
-        xfail="DATE_ADD returns TIMESTAMP",
     ),
     q("SELECT DATE_ADD(CAST(NULL AS DATE), INTERVAL 1 DAY)", None),
     q(
@@ -191,7 +178,6 @@ CASES = [
     q(
         "SELECT TIMESTAMP_ADD(TIMESTAMP '2020-01-01 00:00:00+00', INTERVAL 1 MONTH)",
         error="invalidQuery",
-        xfail="MONTH accepted by TIMESTAMP_ADD",
     ),
     q(
         "SELECT TIME_ADD(TIME '23:30:00', INTERVAL 60 MINUTE)",
@@ -227,7 +213,6 @@ CASES = [
         "SELECT TIMESTAMP_DIFF(TIMESTAMP '2010-07-07 10:20:00+00',"
         " TIMESTAMP '2008-12-25 15:30:00+00', HOUR)",
         13410,
-        xfail="counts boundaries instead of whole units",
     ),
     q(
         "SELECT TIMESTAMP_DIFF(TIMESTAMP '2018-08-14', TIMESTAMP '2018-10-14', DAY)",
@@ -237,7 +222,6 @@ CASES = [
         "SELECT TIMESTAMP_DIFF(TIMESTAMP '2001-02-01 01:00:00',"
         " TIMESTAMP '2001-02-01 00:00:01', HOUR)",
         0,
-        xfail="counts boundaries instead of whole units",
     ),
     q(
         "SELECT TIMESTAMP_DIFF(TIMESTAMP '2020-03-09 00:00:00 America/Los_Angeles',"
@@ -249,24 +233,20 @@ CASES = [
         "SELECT DATE_TRUNC(DATE '2008-12-25', MONTH)",
         date(2008, 12, 1),
         types="DATE",
-        xfail="DATE_TRUNC returns TIMESTAMP",
     ),
     q(
         "SELECT DATE_TRUNC(DATE '2017-11-05', WEEK),"
         " DATE_TRUNC(DATE '2017-11-05', WEEK(MONDAY))",
         rows=[(date(2017, 11, 5), date(2017, 10, 30))],
-        xfail="DATE_TRUNC returns TIMESTAMP",
     ),
     q(
         "SELECT DATE_TRUNC(DATE '2015-06-15', ISOYEAR),"
         " DATE_TRUNC(DATE '2015-06-18', ISOWEEK)",
         rows=[(date(2014, 12, 29), date(2015, 6, 15))],
-        xfail="DATE_TRUNC returns TIMESTAMP",
     ),
     q(
         "SELECT DATE_TRUNC(DATE '2020-08-15', QUARTER)",
         date(2020, 7, 1),
-        xfail="DATE_TRUNC returns TIMESTAMP",
     ),
     q(
         "SELECT DATETIME_TRUNC(DATETIME '2008-12-25 15:30:00', DAY)",
@@ -291,7 +271,6 @@ CASES = [
     q(
         "SELECT TIME_TRUNC(TIME '15:30:45', MINUTE)",
         time(15, 30),
-        xfail="TIME_TRUNC missing",
     ),
     q(
         "SELECT LAST_DAY(DATE '2008-11-25'), LAST_DAY(DATE '2008-11-25', YEAR)",
@@ -310,13 +289,11 @@ CASES = [
     q(
         "SELECT FORMAT_DATE('%Q', DATE '2008-12-25')",
         "4",
-        xfail="%Q format element unsupported",
     ),
     q("SELECT FORMAT_DATE('%G-W%V-%u', DATE '2008-12-29')", "2009-W01-1"),
     q(
         "SELECT FORMAT_DATE('%E4Y', DATE '0099-01-01')",
         "0099",
-        xfail="%E4Y format element unsupported",
     ),
     q(
         "SELECT FORMAT_DATETIME('%c', DATETIME '2008-12-25 15:30:00')",
@@ -325,7 +302,6 @@ CASES = [
     q(
         "SELECT FORMAT_TIME('%R', TIME '15:30:00')",
         "15:30",
-        xfail="FORMAT_TIME on TIME unsupported",
     ),
     q(
         "SELECT FORMAT_TIMESTAMP('%F %T', TIMESTAMP '2020-07-01 00:00:00+00')",
@@ -339,17 +315,14 @@ CASES = [
         "SELECT FORMAT_TIMESTAMP('%Ez %z', TIMESTAMP '2020-01-01 00:00:00+00',"
         " 'Asia/Kolkata')",
         "+05:30 +0530",
-        xfail="%Ez format element unsupported",
     ),
     q(
         "SELECT FORMAT_TIMESTAMP('%H:%M:%E3S', TIMESTAMP '2020-01-01 00:00:00.123456+00')",
         "00:00:00.123",
-        xfail="%E3S format element unsupported",
     ),
     q(
         "SELECT FORMAT_TIMESTAMP('%s', TIMESTAMP '2020-01-01 00:00:00+00')",
         "1577836800",
-        xfail="%s format element unsupported",
     ),
     q("SELECT PARSE_DATE('%Y%m%d', '20081225')", date(2008, 12, 25), types="DATE"),
     q("SELECT PARSE_DATE('%F', '2000-12-30')", date(2000, 12, 30)),
@@ -372,17 +345,14 @@ CASES = [
         "SELECT PARSE_TIMESTAMP('%c', 'Thu Dec 25 07:30:00 2008')",
         utc(2008, 12, 25, 7, 30),
         types="TIMESTAMP",
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S%Ez', '2020-01-01 00:00:00+05:30')",
         utc(2019, 12, 31, 18, 30),
-        xfail="%Ez format element unsupported",
     ),
     q(
         "SELECT PARSE_TIMESTAMP('%Y-%m-%d %H:%M', '2020-07-01 00:00', 'America/New_York')",
         utc(2020, 7, 1, 4),
-        xfail="time zone argument ignored",
     ),
     q("SELECT PARSE_DATE('%Y-%m-%d', '2019-02-29')", error="invalidQuery"),
     q("SELECT PARSE_DATE('%Y-%m-%d', 'not a date')", error="invalidQuery"),
@@ -395,7 +365,6 @@ CASES = [
         "SELECT DATE_FROM_UNIX_DATE(14238)",
         date(2008, 12, 25),
         types="DATE",
-        xfail="returns TIMESTAMP instead of DATE",
     ),
     q(
         "SELECT UNIX_SECONDS(t), UNIX_MILLIS(t), UNIX_MICROS(t)"
@@ -405,14 +374,12 @@ CASES = [
     q(
         "SELECT UNIX_SECONDS(TIMESTAMP '1970-01-01 00:00:01.8+00')",
         1,
-        xfail="rounds instead of truncating",
     ),
     q(
         "SELECT TIMESTAMP_SECONDS(1230219000), TIMESTAMP_MILLIS(1230219000000),"
         " TIMESTAMP_MICROS(1230219000000000)",
         rows=[(utc(2008, 12, 25, 15, 30),) * 3],
         types=("TIMESTAMP",) * 3,
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT GENERATE_DATE_ARRAY('2016-10-05', '2016-10-08')",
@@ -433,34 +400,28 @@ CASES = [
         " '2016-10-05 00:02:00', INTERVAL 1 MINUTE)",
         [utc(2016, 10, 5, 0, m) for m in range(3)],
         types="ARRAY<TIMESTAMP>",
-        xfail="host time zone leaks into results",
     ),
     q(
         "SELECT CAST(INTERVAL 1 DAY AS STRING)",
         "0-0 1 0:0:0",
-        xfail="INTERVAL to STRING format differs",
     ),
     q(
         "SELECT CAST(INTERVAL '1-2 3 4:5:6' YEAR TO SECOND AS STRING)",
         "1-2 3 4:5:6",
-        xfail="INTERVAL to STRING format differs",
     ),
     q(
         "SELECT CAST(MAKE_INTERVAL(1, 2, 3) AS STRING)",
         "1-2 3 0:0:0",
-        xfail="MAKE_INTERVAL unsupported",
     ),
     q(
         "SELECT CAST(DATE '2021-05-20' - DATE '2020-04-19' AS STRING)",
         "0-0 396 0:0:0",
-        xfail="DATE subtraction returns INT64",
     ),
     q(
         "SELECT CAST(JUSTIFY_HOURS(INTERVAL 29 HOUR) AS STRING),"
         " CAST(JUSTIFY_DAYS(INTERVAL 35 DAY) AS STRING),"
         " CAST(JUSTIFY_INTERVAL(INTERVAL '29 49:00:00' DAY TO SECOND) AS STRING)",
         rows=[("0-0 1 5:0:0", "0-1 5 0:0:0", "0-1 1 1:0:0")],
-        xfail="JUSTIFY_* unsupported",
     ),
     q(
         "SELECT CAST(TIMESTAMP '2020-07-01 00:00:00+00' AS STRING)",
@@ -469,7 +430,6 @@ CASES = [
     q(
         "SELECT STRING(TIMESTAMP '2008-12-25 15:30:00+00', 'America/Los_Angeles')",
         "2008-12-25 07:30:00-08",
-        xfail="STRING(timestamp, zone) unsupported",
     ),
     q(
         "SELECT CAST(DATETIME '2020-01-01 12:00:00' AS STRING),"
@@ -506,7 +466,6 @@ CASES = [
     q(
         "SELECT DATETIME(TIMESTAMP '2020-01-01 00:00:00+00', '+05:45')",
         datetime(2020, 1, 1, 5, 45),
-        xfail="offset time zones unsupported",
     ),
     q(
         "SELECT DATETIME(TIMESTAMP '2020-01-01 00:00:00+00', 'Etc/UTC')",

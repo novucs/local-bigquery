@@ -103,12 +103,10 @@ CASES = [
     q(
         "SELECT INTERVAL '1-2' YEAR TO MONTH",
         relativedelta(years=1, months=2),
-        xfail="compound INTERVAL literals unsupported",
     ),
     q(
         "SELECT INTERVAL '1 6' DAY TO HOUR",
         relativedelta(days=1, hours=6),
-        xfail="compound INTERVAL literals unsupported",
     ),
     q(
         "SELECT INTERVAL -3 MINUTE",
@@ -126,17 +124,14 @@ CASES = [
     q(
         "SELECT JUSTIFY_DAYS(INTERVAL 35 DAY)",
         relativedelta(months=1, days=5),
-        xfail="missing function",
     ),
     q(
         "SELECT JUSTIFY_HOURS(INTERVAL 29 HOUR)",
         relativedelta(days=1, hours=5),
-        xfail="missing function",
     ),
     q(
         "SELECT EXTRACT(HOUR FROM INTERVAL '1 6' DAY TO HOUR)",
         6,
-        xfail="compound INTERVAL literals unsupported",
     ),
     q(
         "SELECT DATE '2020-01-31' + INTERVAL 1 MONTH",
@@ -271,7 +266,7 @@ CASES = [
         xfail="NUMERIC reported as FLOAT",
     ),
     q("SELECT CURRENT_DATE()", types="DATE"),
-    q("SELECT CURRENT_DATETIME()", types="DATETIME", xfail="missing function"),
+    q("SELECT CURRENT_DATETIME()", types="DATETIME"),
     q("SELECT CURRENT_TIMESTAMP()", types="TIMESTAMP"),
     q("SELECT CURRENT_TIME()", types="TIME"),
     q(

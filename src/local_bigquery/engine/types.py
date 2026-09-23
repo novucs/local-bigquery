@@ -155,16 +155,7 @@ def _encode(x: str, t: DuckDBPyType, int64: bool, names: itertools.count) -> str
         case "JSON":
             return f"CAST(json({x}) AS VARCHAR)"
         case "INTERVAL":
-            parts = ", ".join(
-                f"datepart('{part}', {x})"
-                for part in ("year", "month", "day", "hour", "minute", "second")
-            )
-            micros = f"datepart('microsecond', {x}) % 1000000"
-            fraction = f"rtrim(printf('.%06d', {micros}), '0')"
-            return (
-                f"printf('%d-%d %d %d:%d:%d', {parts}) "
-                f"|| CASE WHEN {micros} = 0 THEN '' ELSE {fraction} END"
-            )
+            return f"bq.main._interval_string({x})"
     return f"CAST({x} AS VARCHAR)"
 
 
