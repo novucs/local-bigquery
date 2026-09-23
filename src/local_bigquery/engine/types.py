@@ -77,7 +77,7 @@ def _scalar(t: DuckDBPyType) -> tuple[str, str]:
         return "JSON", "JSON"
     if t.id == "decimal":
         precision, scale = (value for _, value in t.children)
-        if scale <= 9 and precision - scale <= 29:
+        if scale <= 9:
             return "NUMERIC", "DECIMAL(38,9)"
         return "BIGNUMERIC", str(t)
     if t.id not in SCALARS:
@@ -155,17 +155,25 @@ def _encode(x: str, t: DuckDBPyType, int64: bool, names: itertools.count) -> str
         case "JSON":
             return f"CAST(json({x}) AS VARCHAR)"
         case "INTERVAL":
-            parts = ", ".join(
-                f"datepart('{part}', {x})"
-                for part in ("year", "month", "day", "hour", "minute", "second")
-            )
-            micros = f"datepart('microsecond', {x}) % 1000000"
-            fraction = f"rtrim(printf('.%06d', {micros}), '0')"
-            return (
-                f"printf('%d-%d %d %d:%d:%d', {parts}) "
-                f"|| CASE WHEN {micros} = 0 THEN '' ELSE {fraction} END"
-            )
+            return _interval(x)
     return f"CAST({x} AS VARCHAR)"
+
+
+def _interval(x: str) -> str:
+    months = f"(datepart('year', {x}) * 12 + datepart('month', {x}))"
+    micros = (
+        f"(datepart('hour', {x}) * 3600000000 + datepart('minute', {x}) * 60000000 "
+        f"+ datepart('microsecond', {x}))"
+    )
+    fraction = f"rtrim(printf('.%06d', abs({micros}) % 1000000), '0')"
+    return (
+        f"printf('%s%d-%d %d %s%d:%d:%d', "
+        f"CASE WHEN {months} < 0 THEN '-' ELSE '' END, "
+        f"abs({months}) // 12, abs({months}) % 12, datepart('day', {x}), "
+        f"CASE WHEN {micros} < 0 THEN '-' ELSE '' END, abs({micros}) // 3600000000, "
+        f"abs({micros}) // 60000000 % 60, abs({micros}) // 1000000 % 60) "
+        f"|| CASE WHEN {micros} % 1000000 = 0 THEN '' ELSE {fraction} END"
+    )
 
 
 def _micros(x: str, width: int) -> str:

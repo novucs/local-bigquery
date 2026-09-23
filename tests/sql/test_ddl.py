@@ -202,7 +202,6 @@ def test_alter_table_set_options(bq, table):
     assert fetched.labels == {"a": "b"}
 
 
-@pytest.mark.xfail(reason="NUMERIC mapped to DECIMAL(18,3)")
 def test_alter_column(bq, table):
     run(bq, f"CREATE TABLE {table} (x INT64 NOT NULL)")
     run(bq, f"ALTER TABLE {table} ALTER COLUMN x DROP NOT NULL")

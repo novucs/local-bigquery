@@ -9,7 +9,7 @@ CASES = [
     q("SELECT CONCAT(b'a', b'b')", b"ab", types="BYTES"),
     q("SELECT LENGTH('héllo')", 5, types="INT64"),
     q("SELECT CHAR_LENGTH('héllo')", 5),
-    q("SELECT BYTE_LENGTH('héllo')", 6, xfail="BYTE_LENGTH on STRING not bound"),
+    q("SELECT BYTE_LENGTH('héllo')", 6),
     q("SELECT LENGTH(b'abc')", 3),
     q("SELECT LOWER('AbC'), UPPER('AbC')", rows=[("abc", "ABC")]),
     q("SELECT LOWER(NULL)", None),

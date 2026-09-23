@@ -131,7 +131,6 @@ CASES = [
         "SELECT @s + 1",
         error="No matching signature",
         params=[Scalar("s", "STRING", "a")],
-        xfail="type errors surface as DuckDB messages",
     ),
 ]
 

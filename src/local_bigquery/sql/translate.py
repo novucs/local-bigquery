@@ -28,13 +28,26 @@ def translate(tree: exp.Expression, context: Context) -> tuple[str, dict]:
     tree = tree.copy()
     for rule in STATEMENT_RULES:
         tree = rule(tree, context)
-    tree = tree.transform(lambda node: _rewrite(node, context))
+    tree = _rewrite(tree, context)
     return tree.sql(dialect=DuckDBDialect), {
         name: context.values[name] for name in context.used
     }
 
 
 def _rewrite(node: exp.Expression, context: Context) -> exp.Expression:
+    for key, value in list(node.args.items()):
+        if isinstance(value, exp.Expression):
+            node.set(key, _rewrite(value, context))
+        elif isinstance(value, list):
+            node.set(
+                key,
+                [
+                    _rewrite(item, context)
+                    if isinstance(item, exp.Expression)
+                    else item
+                    for item in value
+                ],
+            )
     for rule in NODE_RULES:
         node = rule(node, context)
     return node

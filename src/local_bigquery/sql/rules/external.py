@@ -37,4 +37,10 @@ def external_query(node: exp.Expression, context) -> exp.Expression:
     return exp.Table(this=function, alias=node.args.get("alias"))
 
 
-NODE_RULES = [external_query]
+def external_queries(tree: exp.Expression, context) -> exp.Expression:
+    for table in list(tree.find_all(exp.Table)):
+        table.replace(external_query(table, context))
+    return tree
+
+
+STATEMENT_RULES = [external_queries]
