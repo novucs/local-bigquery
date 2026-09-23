@@ -9,6 +9,7 @@ from sqlglot import exp
 from local_bigquery.catalog import (
     datasets,
     models,
+    indexes,
     row_access,
     routines,
     tables,
@@ -230,16 +231,16 @@ def _statement(
 
 
 def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
-    if isinstance(tree, exp.Command) and (
-        policy := row_access.ddl(
+    if isinstance(tree, exp.Command):
+        command = (
             tree.text("expression").strip(),
             tree.text("this").upper(),
             context.project_id,
             context.dataset_id,
             dry_run,
         )
-    ):
-        return policy
+        if statistics := row_access.ddl(*command) or indexes.ddl(*command):
+            return statistics
     statistics = {"statementType": statement_type(tree)}
     if isinstance(tree, DDL):
         statistics |= _ddl(tree, context)

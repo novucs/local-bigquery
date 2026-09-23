@@ -1,4 +1,5 @@
 import pytest
+from google.cloud import bigquery
 
 from tests.cases import FAST_RETRY, rows, run, unique
 
@@ -189,6 +190,15 @@ def test_legacy_tables_meta(bq, dataset):
         ("INFORMATION_SCHEMA.PARTITIONS", "table_name = 'x' AND total_rows > 0"),
         ("INFORMATION_SCHEMA.ROUTINES", "routine_name = 'x'"),
         ("INFORMATION_SCHEMA.TABLE_OPTIONS", "option_name = 'x'"),
+        ("INFORMATION_SCHEMA.TABLE_CONSTRAINTS", "table_name = 'x'"),
+        ("INFORMATION_SCHEMA.KEY_COLUMN_USAGE", "ordinal_position > 0"),
+        ("INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE", "column_name = 'x'"),
+        ("INFORMATION_SCHEMA.MATERIALIZED_VIEWS", "last_refresh_time IS NULL"),
+        ("INFORMATION_SCHEMA.PARAMETERS", "ordinal_position > 0"),
+        ("INFORMATION_SCHEMA.ROUTINE_OPTIONS", "option_name = 'x'"),
+        ("INFORMATION_SCHEMA.TABLE_SNAPSHOTS", "snapshot_time IS NULL"),
+        ("INFORMATION_SCHEMA.SEARCH_INDEXES", "creation_time IS NULL"),
+        ("INFORMATION_SCHEMA.VECTOR_INDEXES", "creation_time IS NULL"),
         ("__TABLES__", "table_id = 'x' AND row_count > 0"),
     ],
 )
@@ -196,3 +206,131 @@ def test_empty_views_keep_column_types(bq, view, where):
     dataset_id = unique("empty")
     bq.create_dataset(dataset_id)
     assert rows(bq, f"SELECT * FROM {dataset_id}.{view} WHERE {where}") == []
+
+
+def test_table_constraints(bq, dataset):
+    ds, parent, child = dataset.dataset_id, unique("parent"), unique("child")
+    run(
+        bq,
+        f"""
+        CREATE TABLE {ds}.{parent} (id INT64, PRIMARY KEY (id) NOT ENFORCED);
+        CREATE TABLE {ds}.{child} (
+            a INT64, b INT64, PRIMARY KEY (a, b) NOT ENFORCED,
+            CONSTRAINT fk FOREIGN KEY (b) REFERENCES {ds}.{parent}(id) NOT ENFORCED
+        );
+        """,
+    )
+    where = f"WHERE table_name IN ('{parent}', '{child}')"
+    assert sorted(
+        rows(
+            bq,
+            "SELECT constraint_schema, constraint_name, table_name, constraint_type, "
+            f"is_deferrable, enforced FROM {ds}.INFORMATION_SCHEMA.TABLE_CONSTRAINTS "
+            + where,
+        )
+    ) == sorted(
+        [
+            (ds, f"{child}.pk$", child, "PRIMARY KEY", "NO", "NO"),
+            (ds, "fk", child, "FOREIGN KEY", "NO", "NO"),
+            (ds, f"{parent}.pk$", parent, "PRIMARY KEY", "NO", "NO"),
+        ]
+    )
+    assert sorted(
+        rows(
+            bq,
+            "SELECT constraint_name, table_name, column_name, ordinal_position, "
+            "position_in_unique_constraint "
+            f"FROM {ds}.INFORMATION_SCHEMA.KEY_COLUMN_USAGE " + where,
+        )
+    ) == sorted(
+        [
+            (f"{child}.pk$", child, "a", 1, None),
+            (f"{child}.pk$", child, "b", 2, None),
+            ("fk", child, "b", 1, 1),
+            (f"{parent}.pk$", parent, "id", 1, None),
+        ]
+    )
+    assert sorted(
+        rows(
+            bq,
+            "SELECT table_name, column_name, constraint_name "
+            f"FROM {ds}.INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE " + where,
+        )
+    ) == sorted(
+        [
+            (child, "a", f"{child}.pk$"),
+            (child, "b", f"{child}.pk$"),
+            (parent, "id", "fk"),
+            (parent, "id", f"{parent}.pk$"),
+        ]
+    )
+
+
+def test_materialized_views(bq, dataset):
+    ds, view = dataset.dataset_id, unique("mv")
+    run(bq, f"CREATE MATERIALIZED VIEW {ds}.{view} AS SELECT COUNT(*) AS n FROM {ds}.t")
+    assert rows(
+        bq,
+        "SELECT table_name, last_refresh_time IS NOT NULL "
+        f"FROM {ds}.INFORMATION_SCHEMA.MATERIALIZED_VIEWS",
+    ) == [(view, True)]
+
+
+def test_table_snapshots(bq, dataset):
+    ds, snapshot = dataset.dataset_id, unique("snap")
+    run(bq, f"CREATE SNAPSHOT TABLE {ds}.{snapshot} CLONE {ds}.t")
+    assert rows(
+        bq,
+        "SELECT table_name, base_table_schema, base_table_name, "
+        f"snapshot_time IS NOT NULL FROM {ds}.INFORMATION_SCHEMA.TABLE_SNAPSHOTS",
+    ) == [(snapshot, ds, "t", True)]
+
+
+def test_table_storage(bq, dataset):
+    ds, table = dataset.dataset_id, unique("stored")
+    run(bq, f"CREATE TABLE {ds}.{table} AS SELECT 1 AS x UNION ALL SELECT 2")
+    assert rows(
+        bq,
+        "SELECT table_schema, table_type, total_rows, total_logical_bytes > 0, "
+        "deleted FROM `region-us`.INFORMATION_SCHEMA.TABLE_STORAGE "
+        f"WHERE table_name = '{table}'",
+    ) == [(ds, "BASE TABLE", 2, True, False)]
+
+
+def test_schemata_options(bq, dataset):
+    ds = unique("described")
+    created = bigquery.Dataset(f"{bq.project}.{ds}")
+    created.description = "about"
+    created.labels = {"k": "v"}
+    bq.create_dataset(created)
+    assert rows(
+        bq,
+        "SELECT option_name, option_type, option_value "
+        "FROM `region-us`.INFORMATION_SCHEMA.SCHEMATA_OPTIONS "
+        f"WHERE schema_name = '{ds}' ORDER BY option_name",
+    ) == [
+        ("description", "STRING", '"about"'),
+        ("labels", "ARRAY<STRUCT<STRING, STRING>>", '[STRUCT("k", "v")]'),
+    ]
+    bq.delete_dataset(ds)
+
+
+def test_routine_parameters_and_options(bq, dataset):
+    ds, routine = dataset.dataset_id, unique("f")
+    run(
+        bq,
+        f"CREATE FUNCTION {ds}.{routine}(x INT64, y STRING) RETURNS INT64 "
+        "OPTIONS (description = 'adds') AS (x)",
+    )
+    assert rows(
+        bq,
+        "SELECT ordinal_position, is_result, parameter_name, data_type "
+        f"FROM {ds}.INFORMATION_SCHEMA.PARAMETERS WHERE specific_name = '{routine}' "
+        "ORDER BY ordinal_position",
+    ) == [(0, "YES", None, "INT64"), (1, "NO", "x", "INT64"), (2, "NO", "y", "STRING")]
+    assert rows(
+        bq,
+        "SELECT specific_name, option_name, option_type, option_value "
+        f"FROM {ds}.INFORMATION_SCHEMA.ROUTINE_OPTIONS "
+        f"WHERE specific_name = '{routine}'",
+    ) == [(routine, "description", "STRING", '"adds"')]

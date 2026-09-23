@@ -11,6 +11,7 @@ KEYS = {
     "routines": ("project_id", "dataset_id", "routine_id"),
     "row_access_policies": ("project_id", "dataset_id", "table_id", "policy_id"),
     "models": ("project_id", "dataset_id", "model_id"),
+    "indexes": ("project_id", "dataset_id", "table_id", "index_id"),
 }
 COLLECTIONS = {
     "project_id": "projects",
@@ -19,6 +20,7 @@ COLLECTIONS = {
     "routine_id": "routines",
     "policy_id": "rowAccessPolicies",
     "model_id": "models",
+    "index_id": "indexes",
 }
 
 

@@ -67,7 +67,13 @@ def unpivot_order(tree: exp.Expression, context) -> exp.Expression:
         if not pivot.args.get("unpivot"):
             continue
         source = pivot.parent
-        values = [value.name for value in pivot.expressions]
+        values = [
+            value.name
+            for column in pivot.expressions
+            for value in (
+                column.expressions if isinstance(column, exp.Tuple) else [column]
+            )
+        ]
         name = pivot.args["fields"][0].this.name
         columns = ", ".join(
             exp.to_identifier(c).sql("bigquery") for c in [*values, name]

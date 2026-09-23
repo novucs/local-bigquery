@@ -213,6 +213,16 @@ def syntax_error(error: Exception, sql: str) -> BigQueryError:
     )
 
 
+def _table(name: str, context, tree) -> str:
+    if context is None or "." in name:
+        return name
+    tables = tree.find_all(sqlglot.exp.Table) if tree is not None else []
+    found = next((t for t in tables if t.name == name and t.db), None)
+    if found is None:
+        return f"{context.project_id}:{context.dataset_id}.{name}"
+    return f"{found.catalog or context.project_id}:{found.db}.{name}"
+
+
 def from_duckdb(error: Exception, context=None, tree=None) -> BigQueryError:
     message = str(error)
     first = message.split("\n")[0]
@@ -220,9 +230,7 @@ def from_duckdb(error: Exception, context=None, tree=None) -> BigQueryError:
     for pattern, reason, template in DUCKDB_ERRORS:
         if match := pattern.search(first):
             name = match["name"].strip("!\"'")
-            table = name
-            if context is not None and "." not in name:
-                table = f"{context.project_id}:{context.dataset_id}.{name}"
+            table = _table(name, context, tree)
             function_name, function_position = _function(tree, name, context)
             arguments = ", ".join(
                 ARGUMENT_TYPES.get(argument.split("(")[0], argument.split("(")[0])

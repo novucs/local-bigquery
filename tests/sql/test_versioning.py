@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from google.api_core.exceptions import BadRequest, NotFound
 
@@ -119,3 +121,36 @@ def test_time_travel_before_creation(bq, source):
             f"SELECT id FROM {source} "
             "FOR SYSTEM_TIME AS OF TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)",
         )
+
+
+def test_table_decorator_reads_earlier_state(bq, source):
+    time.sleep(0.2)
+    [(before,)] = rows(bq, "SELECT UNIX_MILLIS(CURRENT_TIMESTAMP())")
+    run(bq, f"DELETE FROM {source} WHERE TRUE")
+    assert rows(bq, f"SELECT id FROM `{source}@{before}`") == [(1,)]
+    offset = int(time.time() * 1000) - before
+    assert rows(bq, f"SELECT id FROM `{source}@-{offset}`") == [(1,)]
+    assert rows(bq, f"SELECT id FROM {source}") == []
+
+
+def test_undelete_with_table_decorator(bq, source):
+    [(before,)] = rows(bq, "SELECT UNIX_MILLIS(CURRENT_TIMESTAMP())")
+    run(bq, f"DROP TABLE {source}")
+    with fails(NotFound, "notFound"):
+        run(bq, f"SELECT id FROM {source}")
+    run(bq, f"CREATE TABLE {source} AS SELECT * FROM `{source}@{before}`")
+    assert rows(bq, f"SELECT id, grp, v FROM {source}") == [(1, "a", 10)]
+
+
+@pytest.mark.parametrize("kind", ["SNAPSHOT TABLE", "TABLE"])
+def test_clone_as_of_earlier_state(bq, source, name, kind):
+    time.sleep(0.2)
+    [(before,)] = rows(bq, "SELECT CURRENT_TIMESTAMP()")
+    run(bq, f"INSERT {source} VALUES (2, 'b', 20)")
+    target = name("asof")
+    run(
+        bq,
+        f"CREATE {kind} {target} CLONE {source} "
+        f"FOR SYSTEM_TIME AS OF '{before.isoformat()}'",
+    )
+    assert rows(bq, f"SELECT id FROM {target}") == [(1,)]

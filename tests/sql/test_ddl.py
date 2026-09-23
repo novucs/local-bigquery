@@ -1,4 +1,5 @@
 import datetime
+import time
 
 import pytest
 from google.api_core.exceptions import BadRequest, Conflict, NotFound
@@ -389,3 +390,203 @@ def test_create_table_as_select_rejects_duplicate_columns(bq, table, select):
     with fails(BadRequest, "invalidQuery") as info:
         run(bq, f"CREATE TABLE {table} AS {select}")
     assert "Duplicate column names" in info.value.message
+
+
+def constraints(bq, table) -> tuple:
+    found = bq.get_table(table).table_constraints
+    if found is None:
+        return None, []
+    keys = [
+        (
+            key.name,
+            key.referenced_table.table_id,
+            [
+                (c.referencing_column, c.referenced_column)
+                for c in key.column_references
+            ],
+        )
+        for key in found.foreign_keys or []
+    ]
+    return found.primary_key and found.primary_key.columns, keys
+
+
+def test_create_table_with_unenforced_keys(bq, dataset, table):
+    parent = unique("parent")
+    run(
+        bq,
+        f"CREATE TABLE {dataset.dataset_id}.{parent} (id INT64 PRIMARY KEY NOT ENFORCED)",
+    )
+    run(
+        bq,
+        f"""
+        CREATE TABLE {table} (
+            a INT64, b INT64,
+            c INT64 REFERENCES {dataset.dataset_id}.{parent}(id) NOT ENFORCED,
+            PRIMARY KEY (a, b) NOT ENFORCED,
+            CONSTRAINT fk FOREIGN KEY (b) REFERENCES {parent}(id) NOT ENFORCED
+        )
+        """,
+    )
+    run(bq, f"INSERT {table} VALUES (1, 1, 7), (1, 1, 8)")
+    assert constraints(bq, f"{dataset.dataset_id}.{parent}") == (["id"], [])
+    assert constraints(bq, table) == (
+        ["a", "b"],
+        [
+            (f"{table.split('.')[1]}.fk$1", parent, [("c", "id")]),
+            ("fk", parent, [("b", "id")]),
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "columns",
+    [
+        "id INT64 PRIMARY KEY",
+        "id INT64, PRIMARY KEY (id)",
+        "id INT64 REFERENCES other(id)",
+    ],
+)
+def test_keys_must_not_be_enforced(bq, table, columns):
+    with fails(BadRequest, "invalidQuery") as info:
+        run(bq, f"CREATE TABLE {table} ({columns})")
+    assert "NOT ENFORCED" in info.value.message
+
+
+def test_alter_table_keys(bq, dataset, table):
+    parent = unique("parent")
+    run(bq, f"CREATE TABLE {dataset.dataset_id}.{parent} (id INT64)")
+    run(bq, f"CREATE TABLE {table} (a INT64, b INT64)")
+    run(bq, f"ALTER TABLE {table} ADD PRIMARY KEY (a) NOT ENFORCED")
+    run(
+        bq,
+        f"ALTER TABLE {table} "
+        f"ADD CONSTRAINT fk FOREIGN KEY (b) REFERENCES {parent}(id) NOT ENFORCED",
+    )
+    assert constraints(bq, table) == (["a"], [("fk", parent, [("b", "id")])])
+    run(bq, f"ALTER TABLE {table} DROP PRIMARY KEY")
+    assert constraints(bq, table) == (None, [("fk", parent, [("b", "id")])])
+    run(bq, f"ALTER TABLE {table} DROP CONSTRAINT fk")
+    run(bq, f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS fk")
+    assert constraints(bq, table) == (None, [])
+    with fails(BadRequest, "invalidQuery"):
+        run(bq, f"ALTER TABLE {table} DROP PRIMARY KEY")
+
+
+def test_table_constraints_via_api(bq, dataset):
+    table = bigquery.Table(
+        f"{bq.project}.{dataset.dataset_id}.{unique('api')}",
+        schema=[bigquery.SchemaField("id", "INT64")],
+    )
+    table.table_constraints = bigquery.table.TableConstraints(
+        primary_key=bigquery.table.PrimaryKey(columns=["id"]), foreign_keys=None
+    )
+    created = bq.create_table(table)
+    assert created.table_constraints.primary_key.columns == ["id"]
+
+
+def test_alter_column_set_options(bq, table):
+    run(bq, f"CREATE TABLE {table} (x INT64, y STRUCT<z INT64>)")
+    run(bq, f"ALTER TABLE {table} ALTER COLUMN x SET OPTIONS (description = 'ex')")
+    run(bq, f"ALTER TABLE {table} ALTER COLUMN y SET OPTIONS (description = 'why')")
+    run(bq, f"ALTER TABLE {table} ALTER COLUMN x SET OPTIONS (description = 'new')")
+    fetched = bq.get_table(table)
+    assert [f.description for f in fetched.schema] == ["new", "why"]
+    assert fetched.schema[1].fields[0].name == "z"
+
+
+def test_parameterized_types(bq, table):
+    run(
+        bq,
+        f"CREATE TABLE {table} "
+        "(s STRING(10), b BYTES(4), n NUMERIC(10, 2), bn BIGNUMERIC(50, 10))",
+    )
+    fields = [
+        (f.name, type_name(f), f.max_length, f.precision, f.scale)
+        for f in bq.get_table(table).schema
+    ]
+    assert fields == [
+        ("s", "STRING", 10, None, None),
+        ("b", "BYTES", 4, None, None),
+        ("n", "NUMERIC", None, 10, 2),
+        ("bn", "BIGNUMERIC", None, 50, 10),
+    ]
+    run(bq, f"INSERT {table} (s, n) VALUES ('short', 1.235)")
+    assert rows(bq, f"SELECT s, CAST(n AS STRING) FROM {table}") == [("short", "1.24")]
+    with fails(BadRequest, "invalidQuery"):
+        run(bq, f"INSERT {table} (n) VALUES (123456789)")
+
+
+@pytest.mark.xfail(strict=True, reason="STRING/BYTES lengths are not enforced on write")
+def test_parameterized_string_length_is_enforced(bq, table):
+    run(bq, f"CREATE TABLE {table} (s STRING(3))")
+    with fails(BadRequest, "invalidQuery"):
+        run(bq, f"INSERT {table} VALUES ('too long')")
+
+
+def test_create_or_replace_clone(bq, dataset, table):
+    run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x")
+    clone = f"{dataset.dataset_id}.{unique('clone')}"
+    run(bq, f"CREATE TABLE {clone} AS SELECT 2 AS x")
+    replace = run_job(bq, f"CREATE OR REPLACE TABLE {clone} CLONE {table}")
+    assert replace.ddl_operation_performed == "REPLACE"
+    assert rows(bq, f"SELECT x FROM {clone}") == [(1,)]
+    with fails(Conflict, "duplicate") as info:
+        run(bq, f"CREATE TABLE {clone} CLONE {table}")
+    assert f"{bq.project}:{clone}" in info.value.message
+
+
+def test_search_and_vector_indexes(bq, dataset, table):
+    ds, name = dataset.dataset_id, table.split(".")[1]
+    run(bq, f"CREATE TABLE {table} (s STRING, e ARRAY<FLOAT64>)")
+    run(bq, f"CREATE SEARCH INDEX si ON {table}(ALL COLUMNS)")
+    run(bq, f"CREATE SEARCH INDEX IF NOT EXISTS si ON {table}(s)")
+    run(
+        bq,
+        f"CREATE VECTOR INDEX vi ON {table}(e) "
+        "OPTIONS (index_type = 'IVF', distance_type = 'COSINE')",
+    )
+    assert rows(
+        bq,
+        f"SELECT index_name, table_name, index_status "
+        f"FROM {ds}.INFORMATION_SCHEMA.SEARCH_INDEXES WHERE table_name = '{name}'",
+    ) == [("si", name, "ACTIVE")]
+    assert rows(
+        bq,
+        f"SELECT index_name, table_name, index_status "
+        f"FROM {ds}.INFORMATION_SCHEMA.VECTOR_INDEXES WHERE table_name = '{name}'",
+    ) == [("vi", name, "ACTIVE")]
+    run(bq, f"DROP SEARCH INDEX si ON {table}")
+    run(bq, f"DROP VECTOR INDEX vi ON {table}")
+    run(bq, f"DROP SEARCH INDEX IF EXISTS si ON {table}")
+    assert rows(
+        bq,
+        f"SELECT COUNT(*) FROM {ds}.INFORMATION_SCHEMA.SEARCH_INDEXES "
+        f"WHERE table_name = '{name}'",
+    ) == [(0,)]
+
+
+def test_expired_table_behaves_as_deleted(bq, table):
+    run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x")
+    fetched = bq.get_table(table)
+    fetched.expires = datetime.datetime.now(datetime.UTC) + datetime.timedelta(
+        milliseconds=300
+    )
+    bq.update_table(fetched, ["expires"])
+    assert rows(bq, f"SELECT x FROM {table}") == [(1,)]
+    time.sleep(0.4)
+    with fails(NotFound, "notFound"):
+        bq.get_table(table)
+    with fails(NotFound, "notFound"):
+        run(bq, f"SELECT x FROM {table}")
+    run(bq, f"CREATE TABLE {table} AS SELECT 2 AS x")
+    assert rows(bq, f"SELECT x FROM {table}") == [(2,)]
+
+
+def test_dataset_default_table_expiration(bq):
+    dataset = bigquery.Dataset(f"{bq.project}.{unique('expiring')}")
+    dataset.default_table_expiration_ms = 3_600_000
+    dataset = bq.create_dataset(dataset)
+    run(bq, f"CREATE TABLE {dataset.dataset_id}.t (x INT64)")
+    table = bq.get_table(f"{dataset.dataset_id}.t")
+    assert table.expires - table.created == datetime.timedelta(hours=1)
+    bq.delete_dataset(dataset, delete_contents=True)

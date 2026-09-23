@@ -88,6 +88,11 @@ CASES = [
         "UNPIVOT (sales FOR quarter IN (q1, q2)) ORDER BY quarter",
         rows=[(1, 10, "q1"), (1, 20, "q2")],
     ),
+    q(
+        "SELECT * FROM (SELECT 1 AS id, 1 AS a1, 'x' AS b1, 2 AS a2, 'y' AS b2) "
+        "UNPIVOT ((a, b) FOR k IN ((a1, b1) AS 'one', (a2, b2) AS 'two')) ORDER BY k",
+        rows=[(1, 1, "x", "one"), (1, 2, "y", "two")],
+    ),
     q("SELECT * EXCEPT (b) FROM (SELECT 1 AS a, 2 AS b, 3 AS c)", rows=[(1, 3)]),
     q("SELECT * REPLACE (b * 10 AS b) FROM (SELECT 1 AS a, 2 AS b)", rows=[(1, 20)]),
     q(

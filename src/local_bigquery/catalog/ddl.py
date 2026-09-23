@@ -4,6 +4,9 @@ from collections.abc import Callable
 from sqlglot import exp
 
 from local_bigquery.catalog import datasets, metadata, tables
+from local_bigquery.errors import BigQueryError
+from local_bigquery.sql.dialect import AlterColumnOptions
+from local_bigquery.sql.rules.ddl import drops_primary_key
 
 TABLE_OPTIONS = {
     "description": "description",
@@ -18,6 +21,12 @@ DATASET_OPTIONS = {
     "labels": "labels",
     "location": "location",
     "default_table_expiration_days": "defaultTableExpirationMs",
+}
+PARAMETERS = {
+    exp.DataType.Type.TEXT: ("maxLength",),
+    exp.DataType.Type.BINARY: ("maxLength",),
+    exp.DataType.Type.DECIMAL: ("precision", "scale"),
+    exp.DataType.Type.BIGDECIMAL: ("precision", "scale"),
 }
 Evaluate = Callable[[exp.Expression], object]
 
@@ -63,18 +72,98 @@ def _partitioning(node: exp.PartitionedByProperty) -> dict:
     return {"timePartitioning": partitioning}
 
 
+def _parameters(kind: exp.DataType | None) -> dict:
+    values = [param.name for param in kind.expressions] if kind else []
+    names = PARAMETERS.get(kind.this, ()) if values else ()
+    return dict(zip(names, values))
+
+
 def _fields(schema: exp.Expression, evaluate: Evaluate) -> list[dict]:
     fields = []
     for column in schema.expressions if isinstance(schema, exp.Schema) else []:
         extras = options(
             column.find(exp.Properties), {"description": "description"}, evaluate
-        )
+        ) | _parameters(column.args.get("kind"))
         if extras:
             fields.append({"name": column.name} | extras)
     return fields
 
 
-def _table(tree: exp.Create, evaluate: Evaluate) -> dict:
+def _foreign_key(reference: exp.Reference, table: tuple, position: int) -> dict:
+    key = reference.parent
+    columns = (
+        [column.name for column in key.expressions]
+        if isinstance(key, exp.ForeignKey)
+        else [reference.find_ancestor(exp.ColumnDef).name]
+    )
+    target = _reference(reference.this.this, *table[:2])
+    pairs = zip(columns, reference.this.expressions)
+    constraint = key.parent if isinstance(key.parent, exp.Constraint) else None
+    return {
+        "name": constraint.name if constraint else f"{table[2]}.fk${position}",
+        "referencedTable": dict(zip(("projectId", "datasetId", "tableId"), target)),
+        "columnReferences": [
+            {"referencingColumn": column, "referencedColumn": referenced.name}
+            for column, referenced in pairs
+        ],
+    }
+
+
+def _keys(node: exp.Expression, table: tuple, foreign: int = 0) -> dict:
+    keys = {}
+    for key in node.find_all(
+        exp.PrimaryKey, exp.PrimaryKeyColumnConstraint, exp.Reference, bfs=False
+    ):
+        if isinstance(key, exp.Reference):
+            foreign += 1
+            keys.setdefault("foreignKeys", []).append(_foreign_key(key, table, foreign))
+        elif isinstance(key, exp.PrimaryKey):
+            keys["primaryKey"] = {"columns": [e.name for e in key.expressions]}
+        else:
+            keys["primaryKey"] = {"columns": [key.find_ancestor(exp.ColumnDef).name]}
+    return keys
+
+
+def _alteration(
+    stored: dict, action: exp.Expression, reference: tuple, evaluate: Evaluate
+) -> dict:
+    if isinstance(action, exp.AlterSet):
+        return options(action, TABLE_OPTIONS, evaluate)
+    if isinstance(action, AlterColumnOptions):
+        extras = options(action, {"description": "description"}, evaluate)
+        fields = [
+            field | extras
+            if field["name"].casefold() == action.name.casefold()
+            else field
+            for field in stored["schema"]["fields"]
+        ]
+        return {"schema": {"fields": fields}}
+    keys = stored.get("tableConstraints") or {}
+    foreign = keys.get("foreignKeys") or []
+    label = "{}:{}.{}".format(*reference)
+    if isinstance(action, exp.AddConstraint):
+        added = _keys(action, reference, len(foreign))
+        foreign = foreign + added.get("foreignKeys", [])
+        return {"tableConstraints": added | {"foreignKeys": foreign or None}}
+    if isinstance(action, exp.Drop) and action.args.get("kind") == "CONSTRAINT":
+        name = action.find(exp.Table).name
+        kept = [key for key in foreign if key.get("name") != name]
+        if len(kept) == len(foreign) and not action.args.get("exists"):
+            raise BigQueryError(
+                "invalidQuery", f"Constraint {name} does not exist in table {label}"
+            )
+        return {"tableConstraints": {"foreignKeys": kept or None}}
+    if drops_primary_key(action):
+        exists = action.text("expression").upper().endswith("IF EXISTS")
+        if "primaryKey" not in keys and not exists:
+            raise BigQueryError(
+                "invalidQuery", f"Primary key does not exist in table {label}"
+            )
+        return {"tableConstraints": {"primaryKey": None}}
+    return {}
+
+
+def _table(tree: exp.Create, reference: tuple, evaluate: Evaluate) -> dict:
     properties = tree.args.get("properties")
     resource = options(properties, TABLE_OPTIONS, evaluate)
     for node in properties.expressions if properties else []:
@@ -84,6 +173,8 @@ def _table(tree: exp.Create, evaluate: Evaluate) -> dict:
             resource["clustering"] = {"fields": [e.name for e in node.expressions]}
     if fields := _fields(tree.this, evaluate):
         resource["schema"] = {"fields": fields}
+    if keys := _keys(tree.this, reference):
+        resource["tableConstraints"] = keys
     return resource
 
 
@@ -134,9 +225,9 @@ def apply(tree: exp.Expression, project_id: str, dataset_id: str, evaluate: Eval
         return
     reference = _reference(target, project_id, dataset_id)
     if isinstance(tree, exp.Create):
-        resource = _table(tree, evaluate) | _definition(tree, project_id, dataset_id)
-        now = metadata.now()
-        resource |= {"creationTime": now, "lastModifiedTime": now}
+        resource = _table(tree, reference, evaluate) | _definition(
+            tree, project_id, dataset_id
+        )
         tables.record(*reference, tables.defaults(*reference) | resource)
     elif isinstance(tree, exp.Drop):
         tables.forget(*reference)
@@ -144,7 +235,7 @@ def apply(tree: exp.Expression, project_id: str, dataset_id: str, evaluate: Eval
         for action in tree.args.get("actions") or []:
             if isinstance(action, exp.AlterRename):
                 tables.rename(*reference, action.this.name)
-            elif isinstance(action, exp.AlterSet):
-                stored = tables.load(*reference)
-                changes = options(action, TABLE_OPTIONS, evaluate)
+            elif changes := _alteration(
+                stored := tables.load(*reference), action, reference, evaluate
+            ):
                 tables.record(*reference, metadata.merge(stored, changes))
