@@ -169,7 +169,6 @@ CASES = [
     q(
         "SELECT no_such_function(1)",
         error="Function not found",
-        xfail="unknown function error wording differs",
     ),
 ]
 
@@ -223,7 +222,6 @@ def test_persistent_function_duplicate(bq, routine):
         run(bq, f"CREATE FUNCTION {routine}(x INT64) AS (x + 1)")
 
 
-@pytest.mark.xfail(reason="unknown function error wording differs")
 def test_drop_function(bq, routine):
     run(bq, f"CREATE FUNCTION {routine}(x INT64) AS (x + 1)")
     run(bq, f"DROP FUNCTION {routine}")

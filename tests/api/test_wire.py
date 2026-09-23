@@ -162,7 +162,6 @@ def test_statistics_times_are_milliseconds(api):
     assert int(statistics["startTime"]) <= int(statistics["endTime"])
 
 
-@pytest.mark.xfail(reason="bad SQL rejected at jobs.insert")
 def test_insert_bad_sql_returns_failed_job(api):
     job = insert_job(api, "SELEC 1")
     assert job["status"]["state"] == "DONE"

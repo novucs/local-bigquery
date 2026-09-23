@@ -42,21 +42,18 @@ def test_syntax_error(bq):
     assert "[1:1]" in info.value.message
 
 
-@pytest.mark.xfail(reason="unknown function reported as notFound")
 def test_unknown_function(bq):
     with fails(BadRequest, "invalidQuery") as info:
         run(bq, "SELECT no_such_function(1)")
     assert "Function not found: no_such_function" in info.value.message
 
 
-@pytest.mark.xfail(reason="unknown column reported as notFound")
 def test_unknown_column(bq):
     with fails(BadRequest, "invalidQuery") as info:
         run(bq, "SELECT nope FROM (SELECT 1 AS x)")
     assert "Unrecognized name: nope" in info.value.message
 
 
-@pytest.mark.xfail(reason="type errors leak DuckDB message")
 def test_type_error(bq):
     with fails(BadRequest, "invalidQuery") as info:
         run(bq, "SELECT 1 + TRUE")
@@ -82,7 +79,6 @@ def test_error_function(bq):
     assert "boom" in info.value.message
 
 
-@pytest.mark.xfail(reason="invalid project ids are accepted")
 def test_invalid_project(bq):
     with fails(Forbidden, "accessDenied"):
         bq.query_and_wait(
@@ -90,12 +86,10 @@ def test_invalid_project(bq):
         )
 
 
-@pytest.mark.xfail(reason="models.list not implemented")
 def test_list_models_empty(bq, dataset):
     assert list(bq.list_models(dataset, retry=FAST_RETRY)) == []
 
 
-@pytest.mark.xfail(reason="models.get not implemented")
 def test_get_missing_model(bq, dataset):
     with fails(NotFound, "notFound"):
         bq.get_model(f"{dataset.dataset_id}.missing_model", retry=FAST_RETRY)

@@ -3,15 +3,16 @@ import logging
 import pathlib
 import re
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from local_bigquery.api import datasets, jobs, projects, tables
+from local_bigquery.api import datasets, jobs, models, projects, tables
 from local_bigquery.errors import BigQueryError, from_exception, not_implemented
 
 DISCOVERY = json.loads((pathlib.Path(__file__).parent / "discovery.json").read_text())
 PREFIX = "/" + DISCOVERY["servicePath"].rstrip("/")
+PROJECT_ID = re.compile(r"^(?:[a-z0-9.-]+:)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 app = FastAPI(title=DISCOVERY["title"], version=DISCOVERY["version"])
 
@@ -36,6 +37,12 @@ def discovery():
     return DISCOVERY
 
 
+def valid_project(request: Request):
+    project_id = request.path_params.get("project_id")
+    if project_id is not None and not PROJECT_ID.match(project_id):
+        raise BigQueryError("accessDenied", f"Access Denied: Project {project_id}")
+
+
 def methods(resource: dict):
     for child in resource.get("resources", {}).values():
         yield from child.get("methods", {}).values()
@@ -49,8 +56,10 @@ def stub(method_id: str):
     return handler
 
 
-for module in (projects, datasets, tables, jobs):
-    app.include_router(module.router, prefix=PREFIX)
+for module in (projects, datasets, tables, jobs, models):
+    app.include_router(
+        module.router, prefix=PREFIX, dependencies=[Depends(valid_project)]
+    )
 
 for method in methods(DISCOVERY):
     path = re.sub(r"\{\+resource\}", "{resource:path}", method["path"])

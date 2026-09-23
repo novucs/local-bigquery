@@ -9,11 +9,25 @@ from local_bigquery.errors import (
     BigQueryError,
     already_exists,
     not_found,
-    not_implemented,
 )
 from local_bigquery.models import Table, TableFieldSchema
 
 DERIVED = ("schema", "numRows", "numBytes", "type")
+RESULTS = "_results"
+
+
+def physical(project_id: str, dataset_id: str, table_id: str) -> tuple[str, str, str]:
+    if dataset_id == RESULTS:
+        return "emulator", RESULTS, f"{project_id}:{table_id}"
+    return project_id, dataset_id, table_id
+
+
+def name(project_id: str, dataset_id: str, table_id: str) -> str:
+    return quote(*physical(project_id, dataset_id, table_id))
+
+
+def exists(project_id: str, dataset_id: str, table_id: str) -> bool:
+    return _lookup(project_id, dataset_id, table_id) is not None
 
 
 def _lookup(project_id: str, dataset_id: str, table_id: str) -> tuple[str, int] | None:
@@ -22,9 +36,13 @@ def _lookup(project_id: str, dataset_id: str, table_id: str) -> tuple[str, int] 
         "WHERE database_name = ? AND schema_name = ? AND table_name = ? "
         "UNION ALL SELECT 'VIEW', 0 FROM duckdb_views() "
         "WHERE database_name = ? AND schema_name = ? AND view_name = ? AND NOT internal",
-        [project_id, dataset_id, table_id] * 2,
+        list(physical(project_id, dataset_id, table_id)) * 2,
     )
-    return rows[0] if rows else None
+    if rows:
+        return rows[0]
+    if metadata.load("tables", project_id, dataset_id, table_id):
+        return "EMPTY", 0
+    return None
 
 
 def _defaults(project_id: str, dataset_id: str, table_id: str) -> dict:
@@ -56,15 +74,15 @@ def _overlay(fields: list[dict], extras: list[dict]) -> list[dict]:
 
 
 def columns(project_id: str, dataset_id: str, table_id: str) -> list[TableFieldSchema]:
-    name = quote(project_id, dataset_id, table_id)
+    table = name(project_id, dataset_id, table_id)
     required = database.fetch(
         "SELECT column_name FROM duckdb_columns() WHERE database_name = ? "
         "AND schema_name = ? AND table_name = ? AND NOT is_nullable",
-        [project_id, dataset_id, table_id],
+        list(physical(project_id, dataset_id, table_id)),
     )
     required = {column for (column,) in required}
     with database.cursor() as cur:
-        relation = cur.sql(f"SELECT * FROM {name} LIMIT 0")
+        relation = cur.sql(f"SELECT * FROM {table} LIMIT 0")
         return [
             types.field(column, t, column in required)
             for column, t in zip(relation.columns, relation.types)
@@ -78,10 +96,15 @@ def load(project_id: str, dataset_id: str, table_id: str) -> dict:
     kind, num_rows = found
     stored = metadata.load("tables", project_id, dataset_id, table_id)
     resource = stored or _defaults(project_id, dataset_id, table_id)
-    fields = [
-        field.model_dump(exclude_none=True)
-        for field in columns(project_id, dataset_id, table_id)
-    ]
+    fields = (
+        [
+            field.model_dump(exclude_none=True)
+            for field in columns(project_id, dataset_id, table_id)
+        ]
+        if kind != "EMPTY"
+        else []
+    )
+    kind = "TABLE" if kind == "EMPTY" else kind
     extras = resource.get("schema", {}).get("fields", [])
     return resource | {
         "type": kind,
@@ -104,8 +127,14 @@ def list_(project_id: str, dataset_id: str) -> list[dict]:
         "WHERE database_name = ? AND schema_name = ? AND NOT internal ORDER BY 1",
         [project_id, dataset_id] * 2,
     )
+    physical_ids = {table_id for table_id, _ in rows}
+    rows += [
+        (resource["tableReference"]["tableId"], "TABLE")
+        for resource in metadata.list_("tables", project_id, dataset_id)
+        if resource["tableReference"]["tableId"] not in physical_ids
+    ]
     summaries = []
-    for table_id, kind in rows:
+    for table_id, kind in sorted(rows):
         stored = metadata.load("tables", project_id, dataset_id, table_id)
         resource = stored or _defaults(project_id, dataset_id, table_id)
         summaries.append(
@@ -130,26 +159,24 @@ def create(project_id: str, dataset_id: str, body: dict, translate) -> Table:
     datasets.load(project_id, dataset_id)
     if _lookup(project_id, dataset_id, table_id):
         raise already_exists("Table", f"{project_id}:{dataset_id}.{table_id}")
-    name = quote(project_id, dataset_id, table_id)
+    table = name(project_id, dataset_id, table_id)
     fields = [
         TableFieldSchema.model_validate(field)
         for field in body.get("schema", {}).get("fields", [])
     ]
     if view := body.get("view"):
         query = translate(project_id, dataset_id, view["query"])
-        database.execute(f"CREATE VIEW {name} AS {query}")
+        database.execute(f"CREATE VIEW {table} AS {query}")
     elif fields:
         database.execute(
-            f"CREATE TABLE {name} ({', '.join(types.column(f) for f in fields)})"
+            f"CREATE TABLE {table} ({', '.join(types.column(f) for f in fields)})"
         )
-    else:
-        raise not_implemented("Tables without a schema")
     resource = _defaults(project_id, dataset_id, table_id) | body
     return _store(project_id, dataset_id, table_id, resource)
 
 
 def _alter(project_id: str, dataset_id: str, table_id: str, fields: list[dict]):
-    name = quote(project_id, dataset_id, table_id)
+    table = name(project_id, dataset_id, table_id)
     current = {f.name.casefold(): f for f in columns(project_id, dataset_id, table_id)}
     given = {field["name"].casefold() for field in fields}
     if removed := [f.name for key, f in current.items() if key not in given]:
@@ -162,11 +189,11 @@ def _alter(project_id: str, dataset_id: str, table_id: str, fields: list[dict]):
         existing = current.get(field.name.casefold())
         if existing is None:
             database.execute(
-                f"ALTER TABLE {name} ADD COLUMN {types.column(field, nested=True)}"
+                f"ALTER TABLE {table} ADD COLUMN {types.column(field, nested=True)}"
             )
         elif existing.mode == "REQUIRED" and field.mode != "REQUIRED":
             database.execute(
-                f"ALTER TABLE {name} ALTER COLUMN {quote(field.name)} DROP NOT NULL"
+                f"ALTER TABLE {table} ALTER COLUMN {quote(field.name)} DROP NOT NULL"
             )
 
 
@@ -181,7 +208,15 @@ def update(
     current = load(project_id, dataset_id, table_id)
     metadata.check_etag(current, etag)
     if fields := body.get("schema", {}).get("fields"):
-        _alter(project_id, dataset_id, table_id, fields)
+        if _lookup(project_id, dataset_id, table_id)[0] == "EMPTY":
+            columns_sql = ", ".join(
+                types.column(TableFieldSchema.model_validate(f)) for f in fields
+            )
+            database.execute(
+                f"CREATE TABLE {name(project_id, dataset_id, table_id)} ({columns_sql})"
+            )
+        else:
+            _alter(project_id, dataset_id, table_id, fields)
     stored = metadata.load("tables", project_id, dataset_id, table_id) or current
     identity = {
         key: current[key] for key in _defaults(project_id, dataset_id, table_id)
@@ -199,7 +234,8 @@ def delete(project_id: str, dataset_id: str, table_id: str):
     kind, _ = _lookup(project_id, dataset_id, table_id) or (None, None)
     if kind is None:
         raise not_found("Table", f"{project_id}:{dataset_id}.{table_id}")
-    database.execute(f"DROP {kind} {quote(project_id, dataset_id, table_id)}")
+    if kind != "EMPTY":
+        database.execute(f"DROP {kind} {name(project_id, dataset_id, table_id)}")
     metadata.delete("tables", project_id, dataset_id, table_id)
 
 
@@ -230,9 +266,9 @@ def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> d
                 translate=None,
             )
     load(project_id, dataset_id, table_id)
-    name = quote(project_id, dataset_id, table_id)
+    table = name(project_id, dataset_id, table_id)
     with database.cursor() as cur:
-        relation = cur.sql(f"SELECT * FROM {name} LIMIT 0")
+        relation = cur.sql(f"SELECT * FROM {table} LIMIT 0")
         schema = {
             c.casefold(): (c, t) for c, t in zip(relation.columns, relation.types)
         }
@@ -278,11 +314,11 @@ def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> d
         stopped = {"reason": "stopped", "location": "", "message": ""}
         errors += [{"index": index, "errors": [stopped]} for index, _ in valid]
         return {"insertErrors": sorted(errors, key=lambda e: e["index"])}
-    errors += _insert(name, schema, valid)
+    errors += _insert(table, schema, valid)
     return {"insertErrors": sorted(errors, key=lambda e: e["index"])} if errors else {}
 
 
-def _insert(name: str, schema: dict, rows: list[tuple[int, dict]]) -> list[dict]:
+def _insert(table: str, schema: dict, rows: list[tuple[int, dict]]) -> list[dict]:
     keys = list(dict.fromkeys(key for _, data in rows for key in data))
     if not keys:
         return []
@@ -291,7 +327,7 @@ def _insert(name: str, schema: dict, rows: list[tuple[int, dict]]) -> list[dict]
         [f"STRUCT({', '.join(f'{c} {_spec_type(t)}' for c, t in columns)})"]
     )
     sql = (
-        f"INSERT INTO {name} ({', '.join(c for c, _ in columns)}) "
+        f"INSERT INTO {table} ({', '.join(c for c, _ in columns)}) "
         f"SELECT {', '.join(_select(c, t) for c, t in columns)} "
         "FROM (SELECT unnest(from_json($payload, $spec)) AS r)"
     )
@@ -332,9 +368,9 @@ def list_rows(
         if selected_fields
         else None
     )
-    name = quote(project_id, dataset_id, table_id)
+    table = name(project_id, dataset_id, table_id)
     with database.cursor() as cur:
-        page = results.page(cur, name, max_results, start, fields, int64_timestamps)
+        page = results.page(cur, table, max_results, start, fields, int64_timestamps)
     schema = [
         f
         for f in columns(project_id, dataset_id, table_id)

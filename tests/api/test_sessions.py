@@ -21,12 +21,10 @@ def new_session(bq):
     return job.session_info.session_id
 
 
-@pytest.mark.xfail(reason="sessions not supported")
 def test_create_session(bq):
     assert new_session(bq)
 
 
-@pytest.mark.xfail(reason="sessions not supported")
 def test_jobs_report_their_session(bq):
     session_id = new_session(bq)
     job, _ = in_session(bq, "SELECT 1", session_id)
@@ -39,7 +37,6 @@ def test_jobs_outside_sessions_have_none(bq):
     assert job.session_info is None
 
 
-@pytest.mark.xfail(reason="sessions not supported")
 def test_temp_table_persists(bq):
     session_id = new_session(bq)
     in_session(bq, "CREATE TEMP TABLE t AS SELECT 1 AS x", session_id)
@@ -53,7 +50,6 @@ def test_variables_persist(bq):
     assert in_session(bq, "SELECT x", session_id)[1] == [(5,)]
 
 
-@pytest.mark.xfail(reason="sessions not supported")
 def test_sessions_are_isolated(bq):
     first, second = new_session(bq), new_session(bq)
     in_session(bq, "CREATE TEMP TABLE isolated AS SELECT 1 AS x", first)
@@ -61,7 +57,6 @@ def test_sessions_are_isolated(bq):
         in_session(bq, "SELECT x FROM isolated", second)
 
 
-@pytest.mark.xfail(reason="sessions not supported")
 def test_abort_session(bq):
     session_id = new_session(bq)
     in_session(bq, "CALL BQ.ABORT_SESSION()", session_id)
@@ -69,13 +64,11 @@ def test_abort_session(bq):
         in_session(bq, "SELECT 1", session_id)
 
 
-@pytest.mark.xfail(reason="session ids are not validated")
 def test_unknown_session(bq):
     with fails(BadRequest, "invalid"):
         in_session(bq, "SELECT 1", "not-a-session")
 
 
-@pytest.mark.xfail(reason="sessions not supported")
 def test_transaction_spans_jobs(bq, dataset):
     table_id = f"{dataset.dataset_id}.{unique('t')}"
     run(bq, f"CREATE TABLE {table_id} (x INT64)")

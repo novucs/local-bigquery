@@ -26,6 +26,9 @@ CREATE TABLE IF NOT EXISTS emulator.tables (
 CREATE TABLE IF NOT EXISTS emulator.jobs (
     project_id VARCHAR,
     job_id VARCHAR,
+    parent_job_id VARCHAR,
+    state VARCHAR NOT NULL,
+    creation_time BIGINT NOT NULL,
     resource JSON NOT NULL,
     PRIMARY KEY (project_id, job_id)
 );

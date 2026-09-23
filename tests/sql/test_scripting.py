@@ -122,9 +122,17 @@ CASES = [
         1,
         xfail="scripting not supported",
     ),
-    q("BEGIN DECLARE x INT64 DEFAULT 1; END; SELECT x", error="invalidQuery"),
-    q("SELECT 1; DECLARE x INT64", error="invalidQuery"),
-    q("SET y = 1", error="invalidQuery"),
+    q(
+        "BEGIN DECLARE x INT64 DEFAULT 1; END; SELECT x",
+        error="Unrecognized name: x",
+        xfail="scripting not supported",
+    ),
+    q(
+        "SELECT 1; DECLARE x INT64",
+        error="(?i)declarations are allowed only at the start",
+        xfail="scripting not supported",
+    ),
+    q("SET y = 1", error="Undeclared variable: y", xfail="scripting not supported"),
     q("SELECT 1; RETURN; SELECT 2", 1, xfail="scripting not supported"),
     q(
         "BEGIN SELECT ERROR('boom'); "
@@ -138,7 +146,7 @@ CASES = [
         "nope",
         xfail="scripting not supported",
     ),
-    q("RAISE USING MESSAGE = 'nope'", error="nope"),
+    q("RAISE USING MESSAGE = 'nope'", error="nope", xfail="scripting not supported"),
     q(
         "BEGIN EXECUTE IMMEDIATE 'SELECT 1 / 0'; "
         "EXCEPTION WHEN ERROR THEN SELECT 'caught'; END",
@@ -146,7 +154,11 @@ CASES = [
         xfail="scripting not supported",
     ),
     q("ASSERT 1 = 1; SELECT 'ok'", "ok", xfail="ASSERT not supported"),
-    q("ASSERT 1 = 2 AS 'custom failure'", error="custom failure"),
+    q(
+        "ASSERT 1 = 2 AS 'custom failure'",
+        error="custom failure",
+        xfail="ASSERT not supported",
+    ),
     q(
         "ASSERT (SELECT COUNT(*) FROM UNNEST([1])) = 2",
         error="Assertion failed",
@@ -225,7 +237,6 @@ def test_statement_type_is_script(bq):
     assert job.statement_type == "SCRIPT"
 
 
-@pytest.mark.xfail(reason="scripting not supported")
 def test_script_child_jobs(bq):
     job = bq.query("SELECT 1; SELECT 2")
     job.result()

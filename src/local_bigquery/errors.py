@@ -12,6 +12,7 @@ STATUSES = {
     "notFound": (404, "NOT_FOUND"),
     "duplicate": (409, "ALREADY_EXISTS"),
     "conditionNotMet": (412, "FAILED_PRECONDITION"),
+    "stopped": (400, "CANCELLED"),
     "notImplemented": (501, "UNIMPLEMENTED"),
     "dontRetry": (500, "INTERNAL"),
 }
@@ -59,6 +60,68 @@ def not_implemented(feature: str) -> BigQueryError:
     )
 
 
+DUCKDB_ERRORS = [
+    (
+        re.compile(r'Table with name "?(?P<name>[^"\s]+)"? already exists'),
+        "duplicate",
+        "Already Exists: Table {table}",
+    ),
+    (
+        re.compile(r"Table with name (?P<name>\S+) does not exist"),
+        "notFound",
+        "Not found: Table {table} was not found in location US",
+    ),
+    (
+        re.compile(
+            r"(?:Scalar|Aggregate|Table) Function with name (?P<name>\S+) does not exist"
+        ),
+        "invalidQuery",
+        "Function not found: {name}",
+    ),
+    (
+        re.compile(r'Referenced column "(?P<name>[^"]+)" not found'),
+        "invalidQuery",
+        "Unrecognized name: {name}",
+    ),
+    (
+        re.compile(r"syntax error at or near (?P<name>.+)"),
+        "invalidQuery",
+        "Syntax error: Unexpected {name} at [{line}:{column}]",
+    ),
+]
+DUCKDB_PREFIX = re.compile(r"^[A-Za-z ]+ Error: ")
+
+
+def _position(message: str) -> tuple[int, int]:
+    match = re.search(r"\nLINE (\d+): (.*)\n( *)\^", message)
+    if not match:
+        return 1, 1
+    return int(match[1]), len(match[3]) - len(f"LINE {match[1]}: ") + 1
+
+
+def from_duckdb(error: Exception, context=None) -> BigQueryError:
+    message = str(error)
+    first = message.split("\n")[0]
+    line, column = _position(message)
+    for pattern, reason, template in DUCKDB_ERRORS:
+        if match := pattern.search(first):
+            name = match["name"].strip("!\"'")
+            table = name
+            if context is not None and "." not in name:
+                table = f"{context.project_id}:{context.dataset_id}.{name}"
+            return BigQueryError(
+                reason,
+                template.format(name=name, table=table, line=line, column=column),
+            )
+    if "already exists" in first:
+        reason = "duplicate"
+    elif MISSING.search(first):
+        reason = "notFound"
+    else:
+        reason = "invalidQuery"
+    return BigQueryError(reason, DUCKDB_PREFIX.sub("", first))
+
+
 def from_exception(error: Exception) -> BigQueryError:
     message = str(error).split("\n\nLINE ")[0]
     match error:
@@ -66,12 +129,15 @@ def from_exception(error: Exception) -> BigQueryError:
             return error
         case NotImplementedError():
             return not_implemented(message)
-        case duckdb.CatalogException() if "already exists" in message:
-            return BigQueryError("duplicate", message)
-        case duckdb.CatalogException() | duckdb.BinderException() if MISSING.search(
-            message
-        ):
-            return BigQueryError("notFound", message)
-        case duckdb.Error() | sqlglot.errors.SqlglotError():
-            return BigQueryError("invalidQuery", message)
+        case duckdb.Error():
+            return from_duckdb(error)
+        case sqlglot.errors.ParseError() if error.errors:
+            detail = error.errors[0]
+            return BigQueryError(
+                "invalidQuery",
+                f"Syntax error: {detail['description']} "
+                f"at [{detail['line']}:{detail['col']}]",
+            )
+        case sqlglot.errors.SqlglotError():
+            return BigQueryError("invalidQuery", f"Syntax error: {message}")
     return BigQueryError("dontRetry", f"Internal error: {error!r}")

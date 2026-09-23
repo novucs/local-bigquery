@@ -72,14 +72,12 @@ def test_list_jobs_pages(bq):
     assert {p.num_items for p in bq.list_jobs(page_size=1, max_results=2).pages} == {1}
 
 
-@pytest.mark.xfail(reason="list_jobs ignores stateFilter")
 def test_list_jobs_state_filter(bq):
     job = run_job(bq, "SELECT 1")
     assert job.job_id in [j.job_id for j in bq.list_jobs(state_filter="done")]
     assert job.job_id not in [j.job_id for j in bq.list_jobs(state_filter="running")]
 
 
-@pytest.mark.xfail(reason="list_jobs ignores creation time filters")
 def test_list_jobs_creation_time_filters(bq):
     job = run_job(bq, "SELECT 1")
     after = job.created + datetime.timedelta(seconds=1)
@@ -111,7 +109,6 @@ def test_delete_job_metadata(bq):
         bq.get_job(job.job_id, location=job.location, retry=FAST_RETRY)
 
 
-@pytest.mark.xfail(reason="dry run executes and omits statistics")
 def test_dry_run(bq):
     job = bq.query(
         "SELECT 1 AS a, 'x' AS b", job_config=bigquery.QueryJobConfig(dry_run=True)
@@ -122,7 +119,6 @@ def test_dry_run(bq):
     assert [f.name for f in job.schema] == ["a", "b"]
 
 
-@pytest.mark.xfail(reason="dry run executes DML")
 def test_dry_run_does_not_execute(bq, table):
     config = bigquery.QueryJobConfig(dry_run=True)
     job = bq.query(f"INSERT INTO {table} VALUES (1)", job_config=config)
@@ -150,7 +146,6 @@ def test_job_timeout_is_echoed(bq):
     assert int(bq.get_job(job.job_id).configuration.job_timeout_ms) == 60_000
 
 
-@pytest.mark.xfail(reason="cacheHit not reported")
 def test_cache_hit_reported(bq):
     assert run_job(bq, "SELECT 1", use_query_cache=False).cache_hit is False
 
@@ -173,7 +168,6 @@ def test_cache_hit_reported(bq):
         ("SELECT 1; SELECT 2", "SCRIPT"),
     ],
 )
-@pytest.mark.xfail(reason="statementType always SELECT")
 def test_statement_type(bq, table, sql, statement_type):
     assert run_job(bq, sql.format(t=table)).statement_type == statement_type
 
@@ -182,7 +176,6 @@ def test_select_statement_type(bq):
     assert run_job(bq, "SELECT 1").statement_type == "SELECT"
 
 
-@pytest.mark.xfail(reason="DML statistics not reported")
 def test_dml_statistics(bq, table):
     job = run_job(bq, f"INSERT INTO {table} VALUES (1), (2), (3)")
     assert job.num_dml_affected_rows == 3
@@ -194,7 +187,6 @@ def test_dml_statistics(bq, table):
     assert job.dml_stats.deleted_row_count == 1
 
 
-@pytest.mark.xfail(reason="DDL statistics not reported")
 def test_ddl_statistics(bq, dataset):
     table_id = f"{dataset.dataset_id}.{unique('ddl')}"
     created = run_job(bq, f"CREATE TABLE {table_id} (x INT64)")
@@ -212,7 +204,6 @@ def test_script_returns_last_statement(bq):
     assert [tuple(r.values()) for r in job.result()] == [(2,)]
 
 
-@pytest.mark.xfail(reason="scripts do not create child jobs")
 def test_script_child_jobs(bq):
     job = run_job(bq, "SELECT 1; SELECT 2")
     assert job.num_child_jobs == 2
@@ -221,7 +212,6 @@ def test_script_child_jobs(bq):
     assert {child.parent_job_id for child in children} == {job.job_id}
 
 
-@pytest.mark.xfail(reason="no anonymous destination table")
 def test_anonymous_destination_table(bq):
     job = run_job(bq, "SELECT 1 AS a")
     assert job.destination.dataset_id.startswith("_")
@@ -229,7 +219,6 @@ def test_anonymous_destination_table(bq):
     assert [tuple(r.values()) for r in rows] == [(1,)]
 
 
-@pytest.mark.xfail(reason="destination table not supported")
 def test_destination_write_dispositions(bq, dataset):
     destination = f"{bq.project}.{dataset.dataset_id}.{unique('dest')}"
     truncate = bigquery.WriteDisposition.WRITE_TRUNCATE
@@ -248,7 +237,6 @@ def test_destination_write_dispositions(bq, dataset):
         )
 
 
-@pytest.mark.xfail(reason="destination table not supported")
 def test_destination_create_never_missing_table(bq, dataset):
     destination = f"{bq.project}.{dataset.dataset_id}.{unique('missing')}"
     with fails(NotFound, "notFound"):
@@ -301,7 +289,6 @@ def test_large_result(bq):
     assert sum(1 for _ in rows) == 20000
 
 
-@pytest.mark.xfail(reason="failed queries are rejected at insert")
 def test_failed_query_is_done_job_with_error(bq):
     job = bq.query("SELECT nope", retry=FAST_RETRY, job_retry=None)
     with fails(BadRequest, "invalidQuery"):

@@ -94,8 +94,11 @@ CASES = [
         "CREATE TEMP TABLE g AS SELECT ST_GEOGPOINT(1, 2) AS p; SELECT ST_ASTEXT(p) FROM g",
         "POINT(1 2)",
     ),
-    q("SELECT ST_GEOGPOINT(0, 91)", error="invalidQuery"),
-    q("SELECT ST_GEOGFROMTEXT('POINT(1')", error="invalidQuery"),
+    q("SELECT ST_GEOGPOINT(0, 91)", error="invalidQuery.*(?i:latitude)"),
+    q(
+        "SELECT ST_GEOGFROMTEXT('POINT(1')",
+        error="invalidQuery.*(?i:st_geogfromtext failed)",
+    ),
 ]
 
 

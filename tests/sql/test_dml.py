@@ -12,7 +12,6 @@ def table(bq, dataset):
     return table
 
 
-@pytest.mark.xfail(reason="DML statistics not reported")
 def test_insert_values(bq, table):
     insert = run_job(bq, f"INSERT INTO {table} (id, name) VALUES (4, 'd'), (5, 'e')")
     assert insert.statement_type == "INSERT"
@@ -62,7 +61,6 @@ def test_insert_null_into_required_column(bq, dataset):
         run(bq, f"INSERT {table} (id) VALUES (NULL)")
 
 
-@pytest.mark.xfail(reason="DML statistics not reported")
 def test_update(bq, table):
     update = run_job(bq, f"UPDATE {table} SET qty = qty + 1 WHERE qty IS NOT NULL")
     assert update.statement_type == "UPDATE"
@@ -216,7 +214,6 @@ def test_merge_rejects_multiple_source_matches(bq, table):
         )
 
 
-@pytest.mark.xfail(reason="statement type always SELECT")
 def test_truncate(bq, table):
     truncate = run_job(bq, f"TRUNCATE TABLE {table}")
     assert truncate.statement_type == "TRUNCATE_TABLE"

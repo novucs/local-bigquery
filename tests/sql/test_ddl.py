@@ -44,7 +44,6 @@ def test_create_table_types(bq, table):
     ]
 
 
-@pytest.mark.xfail(reason="statement type always SELECT")
 def test_create_table_statistics(bq, table):
     create = run_job(bq, f"CREATE TABLE {table} (x INT64)")
     assert create.statement_type == "CREATE_TABLE"
@@ -52,7 +51,6 @@ def test_create_table_statistics(bq, table):
     assert create.ddl_target_table.table_id == table.split(".")[1]
 
 
-@pytest.mark.xfail(reason="ddlOperationPerformed not reported")
 def test_create_table_if_not_exists_skips(bq, table):
     run(bq, f"CREATE TABLE {table} (x INT64)")
     create = run_job(bq, f"CREATE TABLE IF NOT EXISTS {table} (y STRING)")
@@ -60,7 +58,6 @@ def test_create_table_if_not_exists_skips(bq, table):
     assert schema(bq, table) == [("x", "INT64", "NULLABLE")]
 
 
-@pytest.mark.xfail(reason="ddlOperationPerformed not reported")
 def test_create_or_replace_table(bq, table):
     run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x")
     replace = run_job(bq, f"CREATE OR REPLACE TABLE {table} AS SELECT 'a' AS y")
@@ -113,7 +110,6 @@ def test_create_table_partitioned_and_clustered(bq, table):
     assert fetched.clustering_fields == ["k"]
 
 
-@pytest.mark.xfail(reason="statement type always SELECT")
 def test_create_table_as_select(bq, table):
     create = run_job(bq, f"CREATE TABLE {table} AS SELECT 1 AS x, 'a' AS y")
     assert create.statement_type == "CREATE_TABLE_AS_SELECT"
@@ -234,7 +230,6 @@ def test_alter_missing_table(bq, table):
         run(bq, f"ALTER TABLE {table} ADD COLUMN y STRING")
 
 
-@pytest.mark.xfail(reason="statement type always SELECT")
 def test_drop_table(bq, table):
     run(bq, f"CREATE TABLE {table} (x INT64)")
     drop = run_job(bq, f"DROP TABLE {table}")
@@ -256,7 +251,6 @@ def test_drop_missing_table(bq, table):
         run(bq, f"DROP TABLE {table}")
 
 
-@pytest.mark.xfail(reason="statement type always SELECT")
 def test_drop_view(bq, dataset):
     view = f"{dataset.dataset_id}.{unique('v')}"
     run(bq, f"CREATE VIEW {view} AS SELECT 1 AS x")

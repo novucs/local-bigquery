@@ -17,7 +17,12 @@ class Page:
 
 
 def materialise(
-    cur: duckdb.DuckDBPyConnection, query: str, name: str, params: dict | None = None
+    cur: duckdb.DuckDBPyConnection,
+    query: str,
+    name: str,
+    params: dict | None = None,
+    append: bool = False,
+    writer: duckdb.DuckDBPyConnection | None = None,
 ):
     relation = cur.sql(query, params=params)
     positions = [f"c{index}" for index in range(len(relation.columns))]
@@ -25,11 +30,20 @@ def materialise(
         f"{types.cast(position, t)} AS {quote(column)}"
         for position, column, t in zip(positions, relation.columns, relation.types)
     )
-    cur.execute(
-        f"CREATE OR REPLACE TABLE {name} AS SELECT {columns} "
-        f"FROM ({query}) AS q({', '.join(positions)})",
-        params,
+    select = f"SELECT {columns} FROM ({query}) AS q({', '.join(positions)})"
+    statement = (
+        f"INSERT INTO {name} BY NAME"
+        if append
+        else f"CREATE OR REPLACE TABLE {name} AS"
     )
+    if writer is None:
+        cur.execute(f"{statement} {select}", params)
+        return
+    writer.register("result", cur.sql(select, params=params).to_arrow_reader())
+    try:
+        writer.execute(f"{statement} SELECT * FROM result")
+    finally:
+        writer.unregister("result")
 
 
 def schema(cur: duckdb.DuckDBPyConnection, source: str) -> list[TableFieldSchema]:

@@ -193,7 +193,6 @@ def test_get_reports_row_count_and_size(bq, dataset):
     assert fetched.num_bytes > 0
 
 
-@pytest.mark.xfail(reason="schemaless table create returns 500")
 def test_table_ids_are_case_sensitive(bq, dataset):
     name = unique("case")
     lower = bq.create_table(table_ref(dataset, name))
