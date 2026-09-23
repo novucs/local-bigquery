@@ -19,6 +19,12 @@ from local_bigquery.models import TableFieldSchema
 
 Type = types.WriteStream.Type
 EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
+STORAGE_TYPES = {
+    "INTEGER": "INT64",
+    "FLOAT": "DOUBLE",
+    "BOOLEAN": "BOOL",
+    "RECORD": "STRUCT",
+}
 
 
 class StorageError(Exception):
@@ -33,7 +39,7 @@ class Stream:
     name: str
     table: tuple[str, str, str]
     type: Type
-    created: timestamp_pb2.Timestamp
+    created: timestamp_pb2.Timestamp | None
     rows: list[dict] = field(default_factory=list)
     count: int = 0
     flushed: int = 0
@@ -50,13 +56,12 @@ def _now() -> timestamp_pb2.Timestamp:
     return now
 
 
-def _resource(stream: Stream) -> types.WriteStream:
-    return types.WriteStream(
-        name=stream.name,
-        type_=stream.type,
-        create_time=stream.created,
-        commit_time=stream.committed,
-        write_mode=types.WriteStream.WriteMode.INSERT,
+def _field(field: TableFieldSchema) -> types.TableFieldSchema:
+    return types.TableFieldSchema(
+        name=field.name,
+        type_=STORAGE_TYPES.get(field.type, field.type),
+        mode=field.mode,
+        fields=[_field(child) for child in field.fields or []],
     )
 
 
@@ -64,9 +69,11 @@ def _stream(name: str) -> Stream:
     if name.endswith("/streams/_default") and name not in _streams:
         path = name.removesuffix("/streams/_default")
         tables.load(*table(path))
-        _streams[name] = Stream(name, table(path), Type.COMMITTED, _now())
+        _streams[name] = Stream(name, table(path), Type.COMMITTED, None)
     if name not in _streams:
-        raise StorageError(grpc.StatusCode.INVALID_ARGUMENT, f"Unknown stream: {name}")
+        raise StorageError(
+            grpc.StatusCode.INVALID_ARGUMENT, f"Invalid stream name. Entity: {name}"
+        )
     return _streams[name]
 
 
@@ -74,12 +81,30 @@ def create(request: types.CreateWriteStreamRequest) -> types.WriteStream:
     reference = table(request.parent)
     tables.load(*reference)
     name = f"{request.parent}/streams/{uuid.uuid4().hex}"
-    _streams[name] = Stream(name, reference, request.write_stream.type_, _now())
-    return _resource(_streams[name])
+    kind, now = request.write_stream.type_, _now()
+    stream = Stream(
+        name, reference, kind, now, committed=now if kind == Type.COMMITTED else None
+    )
+    _streams[name] = stream
+    schema = types.TableSchema(fields=[_field(f) for f in tables.columns(*reference)])
+    return types.WriteStream(
+        name=name,
+        type_=kind,
+        create_time=stream.created,
+        commit_time=stream.committed,
+        table_schema=schema,
+    )
 
 
 def get(request: types.GetWriteStreamRequest) -> types.WriteStream:
-    return _resource(_stream(request.name))
+    stream = _stream(request.name)
+    return types.WriteStream(
+        name=stream.name,
+        type_=stream.type,
+        create_time=stream.created,
+        commit_time=stream.committed,
+        location="us",
+    )
 
 
 def _message_class(proto: descriptor_pb2.DescriptorProto):
@@ -202,7 +227,8 @@ def finalize(
 ) -> types.FinalizeWriteStreamResponse:
     if request.name.endswith("/streams/_default"):
         raise StorageError(
-            grpc.StatusCode.NOT_FOUND, "The _default stream cannot be finalized"
+            grpc.StatusCode.NOT_FOUND,
+            f"Requested entity was not found. Entity: {request.name}",
         )
     stream = _stream(request.name)
     stream.finalized = True
@@ -240,7 +266,8 @@ def flush(request: types.FlushRowsRequest) -> types.FlushRowsResponse:
         or offset < stream.flushed
     ):
         raise StorageError(
-            grpc.StatusCode.OUT_OF_RANGE, f"Offset {offset} cannot be flushed"
+            grpc.StatusCode.OUT_OF_RANGE,
+            f"Offset {offset} is beyond the end of the stream Entity: {stream.name}",
         )
     _insert(stream, stream.rows[stream.flushed : offset + 1])
     stream.flushed = offset + 1

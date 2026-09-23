@@ -183,19 +183,16 @@ def test_read_from_offset(bqstorage, numbers):
     assert len(read(bqstorage, read_session, stream, offset=4)) == 6
 
 
-@pytest.mark.xfail(reason="small tables are split into several streams")
 def test_small_table_reads_as_one_stream(bqstorage, numbers):
     assert len(session(bqstorage, numbers, streams=4).streams) == 1
     assert len(session(bqstorage, numbers, streams=4, preferred=2).streams) == 1
 
 
-@pytest.mark.xfail(reason="read sessions omit their expiry")
 def test_session_expires_in_the_future(bqstorage, numbers):
     expires = session(bqstorage, numbers).expire_time
     assert expires > datetime.datetime.now(UTC)
 
 
-@pytest.mark.xfail(reason="read responses omit stats and set batch row counts")
 def test_read_rows_response_fields(bqstorage, numbers):
     stream = session(bqstorage, numbers).streams[0]
     response = next(iter(bqstorage.read_rows(stream.name)))
@@ -204,12 +201,10 @@ def test_read_rows_response_fields(bqstorage, numbers):
     assert types.ReadRowsResponse.pb(response).stats.HasField("progress")
 
 
-@pytest.mark.xfail(reason="AVRO read sessions not supported")
 def test_avro_rows(bqstorage, numbers):
     assert xs(avro(bqstorage, numbers)) == list(range(1, 11))
 
 
-@pytest.mark.xfail(reason="AVRO read sessions not supported")
 def test_avro_every_type(bq, bqstorage, dataset):
     table = f"{dataset.project}.{dataset.dataset_id}.{unique('avro')}"
     run(
@@ -238,14 +233,12 @@ def test_avro_every_type(bq, bqstorage, dataset):
     ]
 
 
-@pytest.mark.xfail(reason="AVRO read sessions not supported")
 def test_avro_selected_fields(bqstorage, numbers):
     rows = avro(bqstorage, numbers, selected_fields=["s"])
     assert sorted(row["s"] for row in rows) == sorted(str(x) for x in range(1, 11))
     assert {tuple(row) for row in rows} == {("s",)}
 
 
-@pytest.mark.xfail(reason="AVRO read sessions not supported")
 def test_avro_split_read_stream(bqstorage, numbers):
     read_session = session(bqstorage, numbers, data_format=types.DataFormat.AVRO)
     split = bqstorage.split_read_stream(

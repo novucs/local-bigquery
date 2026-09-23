@@ -182,7 +182,6 @@ def test_row_errors(bq, bqwrite, dataset):
     assert rows(bq, f"SELECT x FROM {dataset.dataset_id}.{table_id}") == []
 
 
-@pytest.mark.xfail(reason="created write streams report an INSERT write mode")
 def test_created_stream_fields(bqwrite, table):
     created = bqwrite.create_write_stream(
         parent=table, write_stream=types.WriteStream(type_=COMMITTED)
@@ -192,7 +191,6 @@ def test_created_stream_fields(bqwrite, table):
     assert [field.name for field in created.table_schema.fields] == ["x", "s"]
 
 
-@pytest.mark.xfail(reason="fetched write streams omit their location")
 def test_fetched_stream_fields(bqwrite, table):
     fetched = bqwrite.get_write_stream(name=create(bqwrite, table, COMMITTED))
     assert (fetched.write_mode, fetched.location) == (UNSPECIFIED, "us")
@@ -201,14 +199,12 @@ def test_fetched_stream_fields(bqwrite, table):
     assert (default.type_, default.location) == (COMMITTED, "us")
 
 
-@pytest.mark.xfail(reason="storage error messages differ from BigQuery")
 def test_unknown_stream_message(bqwrite, table):
     name = f"{table}/streams/does-not-exist"
     with pytest.raises(InvalidArgument, match=f"Invalid stream name. Entity: {name}"):
         bqwrite.get_write_stream(name=name)
 
 
-@pytest.mark.xfail(reason="storage error messages differ from BigQuery")
 def test_finalize_default_stream_message(bqwrite, table):
     name = f"{table}/streams/_default"
     message = f"Requested entity was not found. Entity: {name}"
@@ -216,7 +212,6 @@ def test_finalize_default_stream_message(bqwrite, table):
         bqwrite.finalize_write_stream(name=name)
 
 
-@pytest.mark.xfail(reason="storage error messages differ from BigQuery")
 def test_flush_empty_buffered_stream(bqwrite, table):
     stream = create(bqwrite, table, BUFFERED)
     message = f"Offset 0 is beyond the end of the stream Entity: {stream}"
