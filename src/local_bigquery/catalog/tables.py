@@ -13,6 +13,7 @@ from local_bigquery.errors import (
 from local_bigquery.models import Table, TableFieldSchema
 
 DERIVED = ("schema", "numRows", "numBytes", "type")
+STORED_TYPES = ("MATERIALIZED_VIEW", "SNAPSHOT")
 RESULTS = "_results"
 
 
@@ -45,7 +46,7 @@ def _lookup(project_id: str, dataset_id: str, table_id: str) -> tuple[str, int] 
     return None
 
 
-def _defaults(project_id: str, dataset_id: str, table_id: str) -> dict:
+def defaults(project_id: str, dataset_id: str, table_id: str) -> dict:
     now = metadata.now()
     return {
         "kind": "bigquery#table",
@@ -95,7 +96,7 @@ def load(project_id: str, dataset_id: str, table_id: str) -> dict:
         raise not_found("Table", f"{project_id}:{dataset_id}.{table_id}")
     kind, num_rows = found
     stored = metadata.load("tables", project_id, dataset_id, table_id)
-    resource = stored or _defaults(project_id, dataset_id, table_id)
+    resource = stored or defaults(project_id, dataset_id, table_id)
     fields = (
         [
             field.model_dump(exclude_none=True)
@@ -107,11 +108,15 @@ def load(project_id: str, dataset_id: str, table_id: str) -> dict:
     kind = "TABLE" if kind == "EMPTY" else kind
     extras = resource.get("schema", {}).get("fields", [])
     return resource | {
-        "type": kind,
+        "type": _type(resource, kind),
         "schema": {"fields": _overlay(fields, extras)},
         "numRows": str(num_rows),
         "numBytes": str(num_rows * len(fields) * 8),
     }
+
+
+def _type(resource: dict, kind: str) -> str:
+    return resource["type"] if resource.get("type") in STORED_TYPES else kind
 
 
 def get(project_id: str, dataset_id: str, table_id: str) -> Table:
@@ -136,20 +141,41 @@ def list_(project_id: str, dataset_id: str) -> list[dict]:
     summaries = []
     for table_id, kind in sorted(rows):
         stored = metadata.load("tables", project_id, dataset_id, table_id)
-        resource = stored or _defaults(project_id, dataset_id, table_id)
+        resource = stored or defaults(project_id, dataset_id, table_id)
         summaries.append(
             {key: value for key, value in resource.items() if key not in DERIVED}
-            | {"type": kind}
+            | {"type": _type(resource, kind)}
         )
     return summaries
 
 
-def _store(project_id: str, dataset_id: str, table_id: str, resource: dict) -> Table:
+def record(project_id: str, dataset_id: str, table_id: str, resource: dict):
     if partitioning := resource.get("timePartitioning"):
         partitioning.setdefault("type", "DAY")
-    stored = {key: value for key, value in resource.items() if key not in DERIVED[1:]}
+    stored = {
+        key: value
+        for key, value in resource.items()
+        if key not in DERIVED[1:] or value in STORED_TYPES
+    }
     metadata.save("tables", stored, project_id, dataset_id, table_id)
+
+
+def _store(project_id: str, dataset_id: str, table_id: str, resource: dict) -> Table:
+    record(project_id, dataset_id, table_id, resource)
     return get(project_id, dataset_id, table_id)
+
+
+def forget(project_id: str, dataset_id: str, table_id: str):
+    metadata.delete("tables", project_id, dataset_id, table_id)
+
+
+def rename(project_id: str, dataset_id: str, table_id: str, new_id: str):
+    stored = metadata.load("tables", project_id, dataset_id, table_id)
+    forget(project_id, dataset_id, table_id)
+    if stored:
+        fresh = defaults(project_id, dataset_id, new_id)
+        identity = {key: fresh[key] for key in ("id", "selfLink", "tableReference")}
+        record(project_id, dataset_id, new_id, stored | identity)
 
 
 def create(project_id: str, dataset_id: str, body: dict, translate) -> Table:
@@ -171,7 +197,7 @@ def create(project_id: str, dataset_id: str, body: dict, translate) -> Table:
         database.execute(
             f"CREATE TABLE {table} ({', '.join(types.column(f) for f in fields)})"
         )
-    resource = _defaults(project_id, dataset_id, table_id) | body
+    resource = defaults(project_id, dataset_id, table_id) | body
     return _store(project_id, dataset_id, table_id, resource)
 
 
@@ -218,9 +244,7 @@ def update(
         else:
             _alter(project_id, dataset_id, table_id, fields)
     stored = metadata.load("tables", project_id, dataset_id, table_id) or current
-    identity = {
-        key: current[key] for key in _defaults(project_id, dataset_id, table_id)
-    }
+    identity = {key: current[key] for key in defaults(project_id, dataset_id, table_id)}
     resource = identity | body if replace else metadata.merge(stored, body)
     return _store(
         project_id,

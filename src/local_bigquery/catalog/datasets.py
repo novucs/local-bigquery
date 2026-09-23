@@ -92,18 +92,31 @@ def update(
     return save(project_id, dataset_id, resource)
 
 
-def delete(project_id: str, dataset_id: str, delete_contents: bool):
-    load(project_id, dataset_id)
+def record(project_id: str, dataset_id: str, resource: dict) -> Dataset:
+    return save(project_id, dataset_id, _defaults(project_id, dataset_id) | resource)
+
+
+def check_empty(project_id: str, dataset_id: str):
     tables = database.fetch(
         "SELECT 1 FROM duckdb_tables() WHERE database_name = ? AND schema_name = ? "
         "UNION ALL SELECT 1 FROM duckdb_views() WHERE database_name = ? "
         "AND schema_name = ? AND NOT internal",
         [project_id, dataset_id] * 2,
     )
-    if tables and not delete_contents:
+    if tables:
         raise BigQueryError(
             "resourceInUse", f"Dataset {project_id}:{dataset_id} is still in use"
         )
-    database.execute(f"DROP SCHEMA {quote(project_id, dataset_id)} CASCADE")
+
+
+def forget(project_id: str, dataset_id: str):
     metadata.delete("tables", project_id, dataset_id)
     metadata.delete("datasets", project_id, dataset_id)
+
+
+def delete(project_id: str, dataset_id: str, delete_contents: bool):
+    load(project_id, dataset_id)
+    if not delete_contents:
+        check_empty(project_id, dataset_id)
+    database.execute(f"DROP SCHEMA {quote(project_id, dataset_id)} CASCADE")
+    forget(project_id, dataset_id)

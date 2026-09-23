@@ -19,7 +19,6 @@ def seed(bq, dataset):
     )
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
 def test_schemata(bq, dataset):
     ds = dataset.dataset_id
     assert rows(
@@ -29,7 +28,6 @@ def test_schemata(bq, dataset):
     ) == [(ds, "US")]
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
 def test_tables(bq, project, dataset):
     ds = dataset.dataset_id
     assert rows(
@@ -40,7 +38,6 @@ def test_tables(bq, project, dataset):
     ) == [(project, ds, "t", "BASE TABLE"), (project, ds, "v", "VIEW")]
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
 def test_dropped_table_disappears(bq, dataset):
     ds = dataset.dataset_id
     table = unique("dropped")
@@ -51,7 +48,6 @@ def test_dropped_table_disappears(bq, dataset):
     ) == [(0,)]
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
 def test_columns(bq, dataset):
     assert rows(
         bq,
@@ -65,7 +61,6 @@ def test_columns(bq, dataset):
     ]
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
 def test_column_field_paths(bq, dataset):
     assert rows(
         bq,
@@ -81,7 +76,6 @@ def test_column_field_paths(bq, dataset):
     ]
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
 def test_views(bq, dataset):
     ds = dataset.dataset_id
     assert rows(
@@ -91,7 +85,6 @@ def test_views(bq, dataset):
     ) == [("v", f"SELECT id FROM {ds}.t", "YES")]
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
 def test_table_options(bq, dataset):
     ds = dataset.dataset_id
     table = unique("options")
@@ -111,7 +104,6 @@ def test_table_options(bq, dataset):
     ]
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
 def test_partitions(bq, dataset):
     ds = dataset.dataset_id
     table = unique("partitioned")
@@ -130,7 +122,7 @@ def test_partitions(bq, dataset):
     ) == [("20200101", 2), ("20200102", 1)]
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
+@pytest.mark.xfail(reason="routine return types not recorded")
 def test_routines(bq, dataset):
     ds = dataset.dataset_id
     routine = unique("f")
@@ -142,7 +134,6 @@ def test_routines(bq, dataset):
     ) == [(routine, "FUNCTION", "SQL", "INT64")]
 
 
-@pytest.mark.xfail(reason="INFORMATION_SCHEMA unsupported")
 @pytest.mark.parametrize("view", ["JOBS", "JOBS_BY_PROJECT"])
 def test_jobs(bq, view):
     job = bq.query("SELECT 1", job_id=unique("job"), retry=FAST_RETRY, job_retry=None)
@@ -154,7 +145,6 @@ def test_jobs(bq, view):
     ) == [(job.job_id, "QUERY", "SELECT", "DONE")]
 
 
-@pytest.mark.xfail(reason="__TABLES__ unsupported")
 def test_legacy_tables_meta(bq, dataset):
     assert rows(
         bq,

@@ -16,7 +16,6 @@ def name(dataset):
     return lambda prefix: f"{dataset.dataset_id}.{unique(prefix)}"
 
 
-@pytest.mark.xfail(reason="CREATE SNAPSHOT TABLE unsupported")
 def test_snapshot_is_frozen(bq, source, name):
     snapshot = name("snapshot")
     run(bq, f"CREATE SNAPSHOT TABLE {snapshot} CLONE {source}")
@@ -30,7 +29,6 @@ def test_snapshot_is_frozen(bq, source, name):
     )
 
 
-@pytest.mark.xfail(reason="CREATE SNAPSHOT TABLE unsupported")
 def test_snapshot_survives_dropping_source(bq, source, name):
     snapshot = name("snapshot")
     run(bq, f"CREATE SNAPSHOT TABLE {snapshot} CLONE {source}")
@@ -38,7 +36,6 @@ def test_snapshot_survives_dropping_source(bq, source, name):
     assert rows(bq, f"SELECT id FROM {snapshot}") == [(1,)]
 
 
-@pytest.mark.xfail(reason="CREATE SNAPSHOT TABLE unsupported")
 def test_snapshot_rejects_dml(bq, source, name):
     snapshot = name("snapshot")
     run(bq, f"CREATE SNAPSHOT TABLE {snapshot} CLONE {source}")
@@ -46,7 +43,6 @@ def test_snapshot_rejects_dml(bq, source, name):
         run(bq, f"INSERT {snapshot} VALUES (2, 'b', 20)")
 
 
-@pytest.mark.xfail(reason="CREATE SNAPSHOT TABLE unsupported")
 def test_drop_snapshot(bq, source, name):
     snapshot = name("snapshot")
     run(bq, f"CREATE SNAPSHOT TABLE {snapshot} CLONE {source}")
@@ -55,7 +51,6 @@ def test_drop_snapshot(bq, source, name):
         bq.get_table(snapshot)
 
 
-@pytest.mark.xfail(reason="CREATE TABLE CLONE unsupported")
 def test_clone_diverges_from_source(bq, source, name):
     clone = name("clone")
     run(bq, f"CREATE TABLE {clone} CLONE {source}")
@@ -67,13 +62,11 @@ def test_clone_diverges_from_source(bq, source, name):
     assert base.table_id == source.split(".")[1]
 
 
-@pytest.mark.xfail(reason="CREATE TABLE CLONE unsupported")
 def test_clone_of_missing_table(bq, name):
     with fails(NotFound, "notFound"):
         run(bq, f"CREATE TABLE {name('clone')} CLONE {name('missing')}")
 
 
-@pytest.mark.xfail(reason="SUM of INT64 returned as string")
 def test_materialized_view_tracks_base_table(bq, source, name):
     view = name("mv")
     run(
@@ -96,7 +89,6 @@ def test_materialized_view_rejects_dml(bq, source, name):
         run(bq, f"DELETE FROM {view} WHERE TRUE")
 
 
-@pytest.mark.xfail(reason="FOR SYSTEM_TIME AS OF mistranslated")
 def test_time_travel_reads_earlier_state(bq, source):
     [(before,)] = rows(bq, "SELECT CURRENT_TIMESTAMP()")
     run(bq, f"DELETE FROM {source} WHERE TRUE")

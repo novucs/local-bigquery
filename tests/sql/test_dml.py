@@ -69,7 +69,6 @@ def test_update(bq, table):
     assert rows(bq, f"SELECT qty FROM {table} ORDER BY id") == [(11,), (21,), (None,)]
 
 
-@pytest.mark.xfail(reason="missing WHERE not rejected")
 def test_update_requires_where(bq, table):
     with fails(BadRequest, "invalidQuery"):
         run(bq, f"UPDATE {table} SET qty = 0")
@@ -92,7 +91,6 @@ def test_update_from_join(bq, dataset, table):
     assert rows(bq, f"SELECT qty FROM {table} ORDER BY id") == [(10,), (99,), (None,)]
 
 
-@pytest.mark.xfail(reason="nested field UPDATE unsupported")
 def test_update_nested_field(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('t')}"
     run(bq, f"CREATE TABLE {table} (id INT64, info STRUCT<a INT64, b STRING>)")
@@ -101,7 +99,6 @@ def test_update_nested_field(bq, dataset):
     assert rows(bq, f"SELECT info FROM {table}") == [({"a": 5, "b": "p"},)]
 
 
-@pytest.mark.xfail(reason="DELETE without FROM mistranslated")
 def test_delete_without_from_keyword(bq, table):
     delete = run_job(bq, f"DELETE {table} WHERE id = 1")
     assert delete.statement_type == "DELETE"
@@ -123,13 +120,11 @@ def test_delete_null_predicate_deletes_nothing(bq, table):
     assert run(bq, f"DELETE FROM {table} WHERE qty > NULL").num_dml_affected_rows == 0
 
 
-@pytest.mark.xfail(reason="missing WHERE not rejected")
 def test_delete_requires_where(bq, table):
     with fails(BadRequest, "invalidQuery"):
         run(bq, f"DELETE FROM {table}")
 
 
-@pytest.mark.xfail(reason="multi-action MERGE unsupported on DuckLake")
 def test_merge_upsert(bq, table):
     merge = run_job(
         bq,
@@ -153,7 +148,6 @@ def test_merge_upsert(bq, table):
     ]
 
 
-@pytest.mark.xfail(reason="MERGE INSERT ROW unsupported")
 def test_merge_insert_row_and_delete_not_matched_by_source(bq, table):
     merge = run(
         bq,
@@ -172,7 +166,6 @@ def test_merge_insert_row_and_delete_not_matched_by_source(bq, table):
     ]
 
 
-@pytest.mark.xfail(reason="multi-action MERGE unsupported on DuckLake")
 def test_merge_first_matching_clause_wins(bq, table):
     run(
         bq,
@@ -200,7 +193,6 @@ def test_merge_null_keys_never_match(bq, table):
     assert rows(bq, f"SELECT name FROM {table} WHERE id IS NULL") == [("new",)]
 
 
-@pytest.mark.xfail(reason="duplicate source matches not rejected")
 def test_merge_rejects_multiple_source_matches(bq, table):
     with fails(BadRequest, "invalidQuery"):
         run(

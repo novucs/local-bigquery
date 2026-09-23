@@ -53,7 +53,6 @@ def test_get_missing(bq):
         bq.get_dataset(unique("missing"))
 
 
-@pytest.mark.xfail(reason="CREATE SCHEMA OPTIONS dropped")
 def test_created_by_sql_is_visible(bq, dataset_id):
     bq.query_and_wait(f"CREATE SCHEMA {dataset_id} OPTIONS (description = 'sql')")
     assert bq.get_dataset(dataset_id).description == "sql"

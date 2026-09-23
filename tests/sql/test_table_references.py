@@ -31,7 +31,6 @@ CASES = [
     q(
         "SELECT * FROM `events_*` ORDER BY id",
         rows=[(1,), (2,), (3,), (4,)],
-        xfail="SELECT * includes _TABLE_SUFFIX",
     ),
     q("SELECT id FROM `events_2020*` ORDER BY id", rows=[(1,), (2,), (3,)]),
     q("SELECT COUNT(*) FROM `events_*` WHERE _TABLE_SUFFIX = '20200102'", 2),
@@ -44,7 +43,7 @@ CASES = [
         "SELECT _TABLE_SUFFIX AS s, COUNT(*) FROM `events_*` GROUP BY s ORDER BY s",
         rows=[("20200101", 1), ("20200102", 2), ("2021", 1)],
     ),
-    q("SELECT id FROM T", error="notFound", xfail="table names case-insensitive"),
+    q("SELECT id FROM T", error="notFound"),
     q(
         "SELECT * FROM missing",
         error="notFound",
@@ -56,7 +55,6 @@ CASES = [
     q(
         "SELECT id FROM t FOR SYSTEM_TIME AS OF CURRENT_TIMESTAMP() ORDER BY id",
         rows=[(1,), (2,)],
-        xfail="FOR SYSTEM_TIME AS OF mistranslated",
     ),
 ]
 
@@ -70,10 +68,7 @@ def test_table_references(check, case):
     "reference",
     [
         "{dataset}.t",
-        pytest.param(
-            "{project}.{dataset}.t",
-            marks=pytest.mark.xfail(reason="unquoted dashed project ids unsupported"),
-        ),
+        "{project}.{dataset}.t",
         "`{project}.{dataset}.t`",
         "`{project}`.{dataset}.t",
         "`{project}`.`{dataset}`.`t`",
@@ -85,7 +80,6 @@ def test_reference_forms(bq, project, dataset, reference):
     assert [r.id for r in run(bq, f"SELECT id FROM {table} ORDER BY id")] == [1, 2]
 
 
-@pytest.mark.xfail(reason="unquoted dashed project ids unsupported")
 def test_same_dataset_name_in_two_projects(bq, dataset):
     other = unique("other-project").replace("_", "-")
     ds = dataset.dataset_id
@@ -98,19 +92,17 @@ def test_same_dataset_name_in_two_projects(bq, dataset):
         bq.delete_dataset(f"{other}.{ds}", delete_contents=True)
 
 
-@pytest.mark.xfail(reason="@@project_id unsupported")
 def test_project_id_system_variable(bq, project):
     assert [tuple(r.values()) for r in run(bq, "SELECT @@project_id")] == [(project,)]
 
 
-@pytest.mark.xfail(reason="notFound message leaks DuckDB error")
 def test_missing_table_message(bq, project, dataset):
     with fails(NotFound, "notFound") as info:
         run(bq, f"SELECT * FROM {dataset.dataset_id}.missing")
     assert f"Not found: Table {project}:{dataset.dataset_id}.missing" in str(info.value)
 
 
-@pytest.mark.xfail(reason="_PARTITIONTIME pseudo-column unsupported")
+@pytest.mark.xfail(reason="ingestion-time pseudo-columns unsupported")
 def test_ingestion_time_pseudo_columns(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('ingested')}"
     run(bq, f"CREATE TABLE {table} (x INT64) PARTITION BY _PARTITIONDATE")
@@ -129,7 +121,6 @@ def test_ingestion_time_pseudo_columns(bq, dataset):
     assert list(before) == []
 
 
-@pytest.mark.xfail(reason="require_partition_filter not enforced")
 def test_require_partition_filter(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('filtered')}"
     run(
