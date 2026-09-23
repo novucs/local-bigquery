@@ -4,6 +4,17 @@ A local BigQuery implementation written in Python.
 
 Uses [SQLGlot](https://github.com/tobymao/sqlglot) for translation, and [DuckDB](https://github.com/duckdb/duckdb) for execution.
 
+## What's supported
+
+- **REST API v2**: datasets, tables, tabledata, routines, projects and jobs (query, load,
+  copy, extract; paging, dry runs, cancellation, sessions, script child jobs), plus
+  multipart and resumable uploads. Every other discovery method answers `501`.
+- **GoogleSQL** translated to DuckDB: standard functions, DML and DDL including `MERGE`,
+  scripting and procedures, SQL/JavaScript UDFs and table functions,
+  `INFORMATION_SCHEMA`, wildcard tables, time travel, snapshots and clones,
+  `GEOGRAPHY`, `RANGE`, `EXPORT DATA` and `EXTERNAL_QUERY` against Postgres.
+- **Known gaps** are the strict `xfail` cases in [`tests/`](tests), each with its reason.
+
 ## Usage
 
 Grab the container, run it, and hit it with a BigQuery client.

@@ -29,9 +29,16 @@ src/local_bigquery/
   models.py         generated from discovery.json by scripts/generate_models.py
   api/              thin HTTP handlers, one module per resource
   engine/           the DuckDB instance, cursors, sessions, BigQuery ↔ DuckDB types
-  catalog/          datasets, tables and routines metadata
-  sql/              translation rules, functions.sql macros, scripting, JS UDFs
-  jobs/             runner, query/load/copy/extract handlers, result paging
+  catalog/          datasets, tables, routines, DDL side effects on metadata
+  sql/
+    dialect.py      BigQuery/DuckDB sqlglot dialects; macros auto-wired as functions
+    translate.py    statement rules, then node rules (bottom-up), then DuckDB SQL
+    rules/          one module per concern, registered in rules/__init__.py
+    functions/      BigQuery functions as DuckDB macros, one file per area
+    script.py       procedural SQL interpreter (variables, control flow, CALL)
+    params.py       typed query parameter binding
+    js.py           JavaScript UDFs as vectorised Arrow UDFs
+  jobs/             runner (lifecycle), query/load/copy/extract/merge handlers
   grpc/             Storage Read/Write APIs
   repl.py           interactive shell, a client of the HTTP API
 ```
@@ -42,8 +49,9 @@ src/local_bigquery/
   data directory. DuckLake gives time travel, snapshots, clones and table stats.
 - `emulator.duckdb` holds typed tables for BigQuery-only metadata (labels, options,
   etags), jobs, sessions, and `_results` tables for query results.
-- An in-memory `bq` catalog holds the macro library loaded from `functions.sql`,
-  on every cursor's `search_path`.
+- An in-memory `bq` catalog holds the macro library from `sql/functions/*.sql`;
+  translated SQL calls macros fully qualified (`bq.main.<name>`). Macros whose
+  names start with `_` are helpers and are not exposed as BigQuery functions.
 - One server process owns the data directory; the REPL talks to it over HTTP.
 
 ## Query lifecycle
@@ -80,8 +88,9 @@ getQueryResults / tabledata.list
 ## Contributing a feature
 
 1. Add or un-xfail a case in `tests/` that shows the BigQuery behaviour.
-2. Implement it in the one place it belongs: a macro in `functions.sql`, a rule
-   in `sql/rules/`, a type in `engine/types.py`, or a handler in `api/`/`jobs/`.
+2. Implement it in the one place it belongs: a macro in `sql/functions/<area>.sql`
+   (named like the BigQuery function), a rule in `sql/rules/<area>.py`, a type in
+   `engine/types.py`, or a handler in `api/`/`jobs/`.
 3. `uv run pytest` — fixed xfails fail loudly until their marker is removed.
 
 Regenerate API models after a discovery revision with
