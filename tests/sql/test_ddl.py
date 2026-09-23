@@ -2,6 +2,7 @@ import datetime
 
 import pytest
 from google.api_core.exceptions import BadRequest, Conflict, NotFound
+from google.cloud import bigquery
 
 from tests.cases import fails, rows, run, run_job, type_name, unique
 
@@ -272,3 +273,109 @@ def test_drop_non_empty_schema_requires_cascade(bq):
     run(bq, f"DROP SCHEMA {schema_id} CASCADE")
     with fails(NotFound, "notFound"):
         bq.get_dataset(schema_id)
+
+
+def test_schema_ddl_with_quoted_project_path(bq, project):
+    path = f"{project}.{unique('schema')}"
+    create = run_job(bq, f"CREATE SCHEMA `{path}`")
+    assert create.ddl_operation_performed == "CREATE"
+    run_job(bq, f"CREATE TABLE `{path}.t` (x INT64)")
+    with fails(BadRequest, "resourceInUse"):
+        run(bq, f"DROP SCHEMA `{path}`")
+    drop = run_job(bq, f"DROP SCHEMA `{path}` CASCADE")
+    assert drop.ddl_operation_performed == "DROP"
+    with fails(NotFound, "notFound"):
+        bq.get_dataset(path)
+
+
+@pytest.mark.parametrize(
+    "sql, fields",
+    [
+        (
+            "CREATE TABLE {t} (id INT64 NOT NULL, name STRING)",
+            [("id", "INT64", "REQUIRED"), ("name", "STRING", "NULLABLE")],
+        ),
+        (
+            "CREATE TABLE {t} (tags ARRAY<STRING>, info STRUCT<a INT64, b STRING>)",
+            [
+                ("tags", "ARRAY<STRING>", "REPEATED"),
+                ("info", "STRUCT<a INT64, b STRING>", "NULLABLE"),
+            ],
+        ),
+        (
+            "CREATE OR REPLACE TABLE {t} AS SELECT 1 AS id, 'x' AS name",
+            [("id", "INT64", "NULLABLE"), ("name", "STRING", "NULLABLE")],
+        ),
+        (
+            "CREATE VIEW {t} AS SELECT 1 AS id, 'x' AS name",
+            [("id", "INT64", "NULLABLE"), ("name", "STRING", "NULLABLE")],
+        ),
+    ],
+)
+def test_ddl_result_schema(bq, table, sql, fields):
+    result = run(bq, sql.format(t=table))
+    assert [(f.name, type_name(f), f.mode) for f in result.schema] == fields
+    assert list(result) == []
+
+
+def test_skipped_create_reports_declared_schema(bq, table):
+    run(bq, f"CREATE TABLE {table} (x INT64)")
+    result = run(bq, f"CREATE TABLE IF NOT EXISTS {table} (x INT64, y STRING)")
+    assert [f.name for f in result.schema] == ["x", "y"]
+
+
+def test_schema_ddl_result_has_no_schema(bq):
+    schema_id = unique("schema")
+    assert run(bq, f"CREATE SCHEMA {schema_id}").schema == []
+    assert run(bq, f"DROP SCHEMA {schema_id}").schema == []
+
+
+def test_dry_runs_report_target_schema(bq, table):
+    dry = bigquery.QueryJobConfig(dry_run=True)
+    job = bq.query(f"CREATE TABLE {table} (id INT64, label STRING)", job_config=dry)
+    assert [f.name for f in job.schema] == ["id", "label"]
+    with fails(NotFound, "notFound"):
+        bq.get_table(table)
+    run(bq, f"CREATE TABLE {table} (id INT64, label STRING)")
+    job = bq.query(f"INSERT INTO {table} VALUES (1, 'x')", job_config=dry)
+    assert [f.name for f in job.schema] == ["id", "label"]
+    assert rows(bq, f"SELECT * FROM {table}") == []
+
+
+@pytest.mark.parametrize(
+    "option, message",
+    [
+        (
+            {"clustering_fields": ["nope"]},
+            "The field specified for clustering cannot be found in the schema",
+        ),
+        (
+            {"time_partitioning": bigquery.TimePartitioning(field="nope")},
+            "The field specified for partitioning cannot be found in the schema",
+        ),
+    ],
+)
+def test_destination_layout_must_name_result_columns(bq, dataset, option, message):
+    destination = f"{bq.project}.{dataset.dataset_id}.{unique('dest')}"
+    with fails(BadRequest, "invalid") as info:
+        run_job(bq, "SELECT 1 AS id", destination=destination, **option)
+    assert message in info.value.message
+
+
+def test_destination_layout_is_recorded(bq, dataset):
+    destination = f"{bq.project}.{dataset.dataset_id}.{unique('dest')}"
+    run_job(
+        bq,
+        "SELECT DATE '2020-01-01' AS d, 'x' AS k",
+        destination=destination,
+        time_partitioning=bigquery.TimePartitioning(field="d"),
+        clustering_fields=["k"],
+    )
+    table = bq.get_table(destination)
+    assert (table.time_partitioning.field, table.clustering_fields) == ("d", ["k"])
+
+
+def test_create_table_as_select_rejects_duplicate_columns(bq, table):
+    with fails(BadRequest, "invalidQuery") as info:
+        run(bq, f"CREATE TABLE {table} AS SELECT 1 AS a, 2 AS a")
+    assert "Duplicate column names" in info.value.message

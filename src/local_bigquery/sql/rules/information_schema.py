@@ -104,17 +104,50 @@ def schemata(project_id: str, dataset_id: str | None):
 
 
 def table_list(project_id: str, dataset_id: str | None):
-    columns = [*IDENTITY, "table_type", "creation_time"]
+    columns = [
+        *IDENTITY,
+        "table_type",
+        "is_insertable_into",
+        "is_typed",
+        "creation_time",
+    ]
     rows = [
         _identity(t)
-        + [TABLE_TYPES.get(t["type"], t["type"]), _timestamp(t.get("creationTime"))]
+        + [
+            TABLE_TYPES.get(t["type"], t["type"]),
+            "YES" if t["type"] == "TABLE" else "NO",
+            "NO",
+            _timestamp(t.get("creationTime")),
+        ]
         for t in _tables(project_id, dataset_id)
     ]
     return columns, rows
 
 
+def _partitioning_column(table: dict) -> str | None:
+    partitioning = table.get("timePartitioning") or table.get("rangePartitioning")
+    return (partitioning or {}).get("field")
+
+
+def _clustering_position(table: dict, name: str) -> exp.Expression:
+    fields = [f.casefold() for f in (table.get("clustering") or {}).get("fields", [])]
+    position = fields.index(name.casefold()) + 1 if name.casefold() in fields else None
+    return exp.cast(exp.convert(position), "BIGINT")
+
+
 def column_list(project_id: str, dataset_id: str | None):
-    columns = [*IDENTITY, "column_name", "ordinal_position", "is_nullable", "data_type"]
+    columns = [
+        *IDENTITY,
+        "column_name",
+        "ordinal_position",
+        "is_nullable",
+        "data_type",
+        "is_generated",
+        "is_hidden",
+        "is_system_defined",
+        "is_partitioning_column",
+        "clustering_ordinal_position",
+    ]
     rows = [
         _identity(t)
         + [
@@ -122,6 +155,11 @@ def column_list(project_id: str, dataset_id: str | None):
             position,
             "NO" if f.get("mode") == "REQUIRED" else "YES",
             _type(f),
+            "NEVER",
+            "NO",
+            "NO",
+            "YES" if f["name"] == _partitioning_column(t) else "NO",
+            _clustering_position(t, f["name"]),
         ]
         for t in _tables(project_id, dataset_id)
         for position, f in enumerate(t["schema"]["fields"], start=1)

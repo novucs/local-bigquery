@@ -545,6 +545,8 @@ class Interpreter:
         )
 
     def call(self, statement: Statement):
+        if statement.text.upper() == "BQ.REFRESH_MATERIALIZED_VIEW":
+            return
         project_id, dataset_id, routine_id = self.reference(statement.text)
         routine = routines.load(project_id, dataset_id, routine_id)
         if routine is None or routine.get("routineType") != "PROCEDURE":

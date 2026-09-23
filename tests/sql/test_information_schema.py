@@ -61,6 +61,34 @@ def test_columns(bq, dataset):
     ]
 
 
+def test_tables_insertable_and_typed(bq, dataset):
+    assert rows(
+        bq,
+        "SELECT table_name, is_insertable_into, is_typed "
+        f"FROM {dataset.dataset_id}.INFORMATION_SCHEMA.TABLES "
+        "WHERE table_name IN ('t', 'v') ORDER BY table_name",
+    ) == [("t", "YES", "NO"), ("v", "NO", "NO")]
+
+
+def test_columns_partitioning_and_clustering(bq, dataset):
+    ds, table = dataset.dataset_id, unique("layout")
+    run(
+        bq,
+        f"CREATE TABLE {ds}.{table} (dt DATE, k STRING, v INT64) "
+        "PARTITION BY dt CLUSTER BY k",
+    )
+    assert rows(
+        bq,
+        "SELECT column_name, is_partitioning_column, clustering_ordinal_position, "
+        f"is_hidden, is_generated FROM {ds}.INFORMATION_SCHEMA.COLUMNS "
+        f"WHERE table_name = '{table}' ORDER BY ordinal_position",
+    ) == [
+        ("dt", "YES", None, "NO", "NEVER"),
+        ("k", "NO", 1, "NO", "NEVER"),
+        ("v", "NO", None, "NO", "NEVER"),
+    ]
+
+
 def test_column_field_paths(bq, dataset):
     assert rows(
         bq,

@@ -159,6 +159,7 @@ CASES = [
         "CREATE TABLE dup AS SELECT 1 AS a, 2 AS a",
         error="(?i)duplicate column names",
     ),
+    q("SELECT 1 AS a, 2 AS a", rows=[(1, 2)]),
 ]
 
 
@@ -192,3 +193,8 @@ def test_duplicate_columns_are_suffixed(bq, dataset):
 
 def test_parenthesised_column_keeps_its_name(bq, dataset):
     assert names(bq, dataset, "SELECT DISTINCT(x) FROM UNNEST([1]) AS x") == ["x"]
+
+
+def test_duplicate_columns_get_suffixes(bq, dataset):
+    sql = "SELECT a.x, b.x, a.x FROM l AS a, l AS b LIMIT 1"
+    assert names(bq, dataset, sql) == ["x", "x_1", "x_2"]

@@ -2,6 +2,7 @@ import datetime
 
 import pytest
 from google.api_core.exceptions import BadRequest, NotFound
+from google.cloud import bigquery
 
 from tests.cases import fails, q, run, unique
 
@@ -64,6 +65,22 @@ def test_table_references(check, case):
     check(case)
 
 
+def test_wildcard_self_join_suffixes_duplicate_names(bq, dataset):
+    config = bigquery.QueryJobConfig(default_dataset=dataset.reference)
+    result = run(
+        bq,
+        "SELECT a._TABLE_SUFFIX, b._TABLE_SUFFIX FROM `events_*` AS a "
+        "JOIN `events_*` AS b ON a.id + 1 = b.id "
+        "WHERE a._TABLE_SUFFIX < b._TABLE_SUFFIX ORDER BY 1",
+        config,
+    )
+    assert [f.name for f in result.schema] == ["_TABLE_SUFFIX", "_TABLE_SUFFIX_1"]
+    assert [tuple(r.values()) for r in result] == [
+        ("20200101", "20200102"),
+        ("20200102", "2021"),
+    ]
+
+
 @pytest.mark.parametrize(
     "reference",
     [
@@ -102,7 +119,6 @@ def test_missing_table_message(bq, project, dataset):
     assert f"Not found: Table {project}:{dataset.dataset_id}.missing" in str(info.value)
 
 
-@pytest.mark.xfail(reason="ingestion-time pseudo-columns unsupported")
 def test_ingestion_time_pseudo_columns(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('ingested')}"
     run(bq, f"CREATE TABLE {table} (x INT64) PARTITION BY _PARTITIONDATE")
@@ -119,6 +135,20 @@ def test_ingestion_time_pseudo_columns(bq, dataset):
     ]
     before = run(bq, f"SELECT x FROM {table} WHERE _PARTITIONDATE < '2019-01-01'")
     assert list(before) == []
+
+
+def test_ingestion_time_defaults_to_now_and_stays_hidden(bq, dataset):
+    table = f"{dataset.dataset_id}.{unique('ingested')}"
+    run(bq, f"CREATE TABLE {table} (x INT64) PARTITION BY _PARTITIONDATE")
+    run(bq, f"INSERT {table} (x) VALUES (1)")
+    run(bq, f"INSERT {table} VALUES (2)")
+    today = f"SELECT x FROM {table} WHERE _PARTITIONDATE = CURRENT_DATE() ORDER BY x"
+    assert [tuple(r.values()) for r in run(bq, today)] == [(1,), (2,)]
+    assert [tuple(r.values()) for r in run(bq, f"SELECT * FROM {table}")] in (
+        [(1,), (2,)],
+        [(2,), (1,)],
+    )
+    assert [f.name for f in bq.get_table(table).schema] == ["x"]
 
 
 def test_require_partition_filter(bq, dataset):
