@@ -29,7 +29,8 @@ src/local_bigquery/
   models.py         generated from discovery.json by scripts/generate_models.py
   api/              thin HTTP handlers, one module per resource
   engine/           the DuckDB instance, cursors, sessions, BigQuery ↔ DuckDB types
-  catalog/          datasets, tables, tabledata, routines, DDL metadata effects
+  catalog/          datasets, tables, tabledata, routines, models, row access,
+                    IAM policies, indexes, DDL metadata effects
   sql/
     dialect.py      BigQuery/DuckDB sqlglot dialects; macros auto-wired as functions
     translate.py    statement rules, then node rules (bottom-up), then DuckDB SQL
