@@ -5,9 +5,10 @@ from local_bigquery.sql.rules import (
     parameters,
     safe,
     tables,
+    udfs,
 )
 
-MODULES = [columns, tables, external, parameters, literals, safe]
+MODULES = [columns, tables, udfs, external, parameters, literals, safe]
 STATEMENT_RULES = [
     rule for module in MODULES for rule in getattr(module, "STATEMENT_RULES", [])
 ]

@@ -102,7 +102,6 @@ CASES = [
 ]
 
 
-@pytest.mark.xfail(reason="GEOGRAPHY not supported")
 @pytest.mark.parametrize("case", CASES)
 def test_geography(check, case):
     check(case)

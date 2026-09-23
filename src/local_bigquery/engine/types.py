@@ -154,6 +154,8 @@ def _encode(x: str, t: DuckDBPyType, int64: bool, names: itertools.count) -> str
             return f"CAST(epoch_us({x}) / 1e6 AS VARCHAR)"
         case "JSON":
             return f"CAST(json({x}) AS VARCHAR)"
+        case "GEOGRAPHY":
+            return rf"regexp_replace(CAST({x} AS VARCHAR), '([A-Z]) \(', '\1(', 'g')"
         case "INTERVAL":
             parts = ", ".join(
                 f"datepart('{part}', {x})"

@@ -68,7 +68,6 @@ CASES = [
         "SELECT ST_GEOGPOINT(1, 2)",
         "POINT(1 2)",
         types="GEOGRAPHY",
-        xfail="GEOGRAPHY unsupported",
     ),
     q("SELECT NULL", None, types="INT64"),
     q("SELECT CAST(NULL AS STRING)", None, types="STRING"),

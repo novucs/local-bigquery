@@ -239,7 +239,6 @@ def test_drop_table(bq, table):
         bq.get_table(table)
 
 
-@pytest.mark.xfail(reason="ddlOperationPerformed not reported")
 def test_drop_table_if_exists_skips(bq, table):
     assert (
         run_job(bq, f"DROP TABLE IF EXISTS {table}").ddl_operation_performed == "SKIP"
