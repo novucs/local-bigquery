@@ -80,7 +80,21 @@ CASES = [
         error="invalidQuery",
     ),
     q(
-        """SELECT LAX_INT64(JSON '"10"'), LAX_FLOAT64(JSON '"1.5"'), LAX_BOOL(JSON '"true"'), LAX_STRING(JSON '1')""",
+        """SELECT INT64_ARRAY(JSON '[1, 2]'), FLOAT64_ARRAY(JSON '[1.5, 2]'), """
+        """BOOL_ARRAY(JSON '[true]'), STRING_ARRAY(JSON '["a", "b"]')""",
+        rows=[([1, 2], [1.5, 2.0], [True], ["a", "b"])],
+        types=("ARRAY<INT64>", "ARRAY<FLOAT64>", "ARRAY<BOOL>", "ARRAY<STRING>"),
+    ),
+    q("""SELECT INT64_ARRAY(JSON '1')""", error="not an array"),
+    q("""SELECT STRING_ARRAY(JSON '[1]')""", error="not a string"),
+    q("""SELECT JSON '{"a": {"b": 1}}'.a.b, JSON '{"a": 1}'.a""", rows=[(1, 1)]),
+    q(
+        """SELECT JSON_FLATTEN(JSON '[1, [2, 3], [[{"a": [4]}]]]')""",
+        [1, 2, 3, {"a": [4]}],
+        types="ARRAY<JSON>",
+    ),
+    q(
+        """SELECT LAX_INT64(JSON '"10"'),LAX_FLOAT64(JSON '"1.5"'), LAX_BOOL(JSON '"true"'), LAX_STRING(JSON '1')""",
         rows=[(10, 1.5, True, "1")],
     ),
     q(

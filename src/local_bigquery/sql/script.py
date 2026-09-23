@@ -19,8 +19,10 @@ CLOSE = {TokenType.R_PAREN, TokenType.R_BRACKET, TokenType.R_BRACE}
 QUOTED = {TokenType.STRING, TokenType.IDENTIFIER}
 RAISE_MESSAGE = re.compile(r"(?is)^USING\s+MESSAGE\s*=\s*(.*)$")
 TABLE_FUNCTION = re.compile(r"(?is)^(\s*\w+(?:\s+OR\s+REPLACE)?\s+)TABLE\s+(FUNCTION)")
+AGGREGATE = re.compile(r"(?i)\bAGGREGATE\s+(?=FUNCTION\b)|\s+NOT\s+AGGREGATE\b")
 ALIASES = {"LEAVE": "BREAK", "ITERATE": "CONTINUE"}
 STATEMENTS = {"SQL", "TABLE_FUNCTION", "DROP_PROCEDURE"}
+LABELLED = {"LOOP", "WHILE", "REPEAT", "FOR", "BEGIN"}
 
 
 class Tokenizer(BigQueryDialect.tokenizer_class):
@@ -36,6 +38,7 @@ class Statement:
     otherwise: list["Statement"] | None = None
     names: list[str] = field(default_factory=list)
     items: list[tuple[str, str | None]] = field(default_factory=list)
+    label: str = ""
 
 
 class Parser:
@@ -95,6 +98,13 @@ class Parser:
 
     def statement(self) -> Statement:
         word, following = self.word(), self.word(1)
+        if following == ":" and self.word(2) in LABELLED:
+            self.i += 2
+            statement = self.statement()
+            statement.label = word
+            if self.word() == word:
+                self.i += 1
+            return statement
         if word == "BEGIN" and following not in ("TRANSACTION", ";", None):
             return self.begin()
         if word == "EXECUTE" and following == "IMMEDIATE":
@@ -108,12 +118,27 @@ class Parser:
         ):
             text = TABLE_FUNCTION.sub(r"\1\2", self.until(), count=1)
             return Statement("TABLE_FUNCTION", text)
+        if word == "CREATE" and any(
+            self.word(n) == "AGGREGATE" and self.word(n + 1) == "FUNCTION"
+            for n in range(1, 5)
+        ):
+            return self.aggregate()
         if word in ("BREAK", "LEAVE", "CONTINUE", "ITERATE", "RETURN"):
             self.i += 1
-            return Statement(ALIASES.get(word, word))
+            label = self.word() if self.word() not in (";", None) else ""
+            self.i += bool(label)
+            return Statement(ALIASES.get(word, word), label)
         if parse := PARSERS.get(word):
             return parse(self)
         return Statement(word if word in ("DECLARE", "SET") else "SQL", self.until())
+
+    def aggregate(self) -> Statement:
+        text = self.until()
+        if re.search(r"(?i)\bLANGUAGE\s+js\b", text):
+            raise BigQueryError(
+                "invalidQuery", "JavaScript aggregate functions are not supported"
+            )
+        return Statement("SQL", AGGREGATE.sub("", text))
 
     def begin(self) -> Statement:
         self.take("BEGIN")
@@ -271,7 +296,9 @@ def is_script(statements: list[Statement]) -> bool:
 
 
 class Control(Exception):
-    pass
+    def __init__(self, label: str = ""):
+        super().__init__(label)
+        self.label = label
 
 
 class Break(Control):
@@ -346,7 +373,11 @@ class Interpreter:
             )
         for statement in statements:
             self.context.system["statement_text"] = statement.text
-            self.handlers[statement.kind](statement)
+            try:
+                self.handlers[statement.kind](statement)
+            except Break as signal:
+                if not signal.label or signal.label != statement.label:
+                    raise
 
     def scope(self, statements: list[Statement], variables: dict | None = None):
         saved = self.context.variables
@@ -419,6 +450,7 @@ class Interpreter:
 
     def set_system(self, name: str, value: exp.Expression):
         result = self.evaluate(value.sql(dialect=BigQueryDialect))
+        self.context.settings[name] = result
         if name in ("project_id", "dataset_id"):
             setattr(self.context, name, result)
         else:
@@ -431,21 +463,24 @@ class Interpreter:
         if statement.otherwise is not None:
             self.scope(statement.otherwise)
 
-    def iterate(self, body: list[Statement], variables: dict | None = None) -> bool:
+    def iterate(self, loop: Statement, variables: dict | None = None) -> bool:
         try:
-            self.scope(body, variables)
-        except Break:
+            self.scope(loop.body, variables)
+        except Break as signal:
+            if signal.label:
+                raise
             return False
-        except Continue:
-            pass
+        except Continue as signal:
+            if signal.label not in ("", loop.label):
+                raise
         return True
 
     def repeat_while(self, statement: Statement):
-        while self.test(statement.text) and self.iterate(statement.body):
+        while self.test(statement.text) and self.iterate(statement):
             pass
 
     def repeat_until(self, statement: Statement):
-        while self.iterate(statement.body) and not self.test(statement.text):
+        while self.iterate(statement) and not self.test(statement.text):
             pass
 
     def for_each(self, statement: Statement):
@@ -466,7 +501,7 @@ class Interpreter:
             self.cursor.execute(
                 f"CREATE TEMP TABLE {table} AS SELECT {VALUE} FROM {rows} WHERE __n = {index}"
             )
-            if not self.iterate(statement.body, {name: table}):
+            if not self.iterate(statement, {name: table}):
                 break
 
     def block(self, statement: Statement):
@@ -487,7 +522,7 @@ class Interpreter:
 
     def control(self, signal: type[Control]) -> Callable[[Statement], None]:
         def handler(statement: Statement):
-            raise signal()
+            raise signal(statement.text)
 
         return handler
 

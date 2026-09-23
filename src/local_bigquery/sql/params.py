@@ -2,12 +2,20 @@ import json
 from typing import Any
 
 from local_bigquery.engine.database import quote
-from local_bigquery.engine.types import TO_DUCKDB
+from local_bigquery.engine.types import RANGE_FIELDS, TO_DUCKDB
 from local_bigquery.errors import BigQueryError
+
+
+def _range(parameter_type: dict) -> dict:
+    element = parameter_type["rangeElementType"]
+    fields = [{"name": name, "type": element} for name in RANGE_FIELDS]
+    return {"type": "STRUCT", "structTypes": fields}
 
 
 def _duckdb_type(parameter_type: dict) -> str:
     match parameter_type.get("type"):
+        case "RANGE":
+            return _duckdb_type(_range(parameter_type))
         case "ARRAY":
             return f"{_duckdb_type(parameter_type['arrayType'])}[]"
         case "STRUCT":
@@ -23,6 +31,8 @@ def _duckdb_type(parameter_type: dict) -> str:
 
 def _spec(parameter_type: dict) -> Any:
     match parameter_type.get("type"):
+        case "RANGE":
+            return _spec(_range(parameter_type))
         case "ARRAY":
             return [_spec(parameter_type["arrayType"])]
         case "STRUCT":
@@ -37,6 +47,12 @@ def _plain(parameter_type: dict, value: dict | None) -> Any:
     if value is None:
         return None
     match parameter_type.get("type"):
+        case "RANGE":
+            bounds = value.get("rangeValue") or {}
+            return {
+                name: _plain(parameter_type["rangeElementType"], bounds.get(key))
+                for name, key in zip(RANGE_FIELDS, ("start", "end"))
+            }
         case "ARRAY":
             return [
                 _plain(parameter_type["arrayType"], item)
@@ -53,6 +69,8 @@ def _plain(parameter_type: dict, value: dict | None) -> Any:
 
 def _decode(expression: str, parameter_type: dict) -> str:
     match parameter_type.get("type"):
+        case "RANGE":
+            return _decode(expression, _range(parameter_type))
         case "ARRAY":
             element = _decode("e", parameter_type["arrayType"])
             return f"list_transform({expression}, e -> {element})"
@@ -76,7 +94,7 @@ def bind(parameters: list[dict]) -> tuple[dict[str, str], dict[str, Any]]:
             name, position = f"p{position}", position + 1
         parameter_type = parameter.get("parameterType") or {}
         value = _plain(parameter_type, parameter.get("parameterValue"))
-        if parameter_type.get("type") in ("ARRAY", "STRUCT"):
+        if parameter_type.get("type") in ("ARRAY", "STRUCT", "RANGE"):
             spec = json.dumps(_spec(parameter_type)).replace("'", "''")
             source = f"from_json(${name}, '{spec}')"
             values[name] = None if value is None else json.dumps(value)

@@ -119,6 +119,12 @@ def test_missing_table_message(bq, project, dataset):
     assert f"Not found: Table {project}:{dataset.dataset_id}.missing" in str(info.value)
 
 
+def test_unqualified_table_without_default_dataset(bq):
+    with fails(BadRequest, "invalid") as info:
+        run(bq, "SELECT * FROM missing")
+    assert 'Table "missing" must be qualified with a dataset' in str(info.value)
+
+
 def test_ingestion_time_pseudo_columns(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('ingested')}"
     run(bq, f"CREATE TABLE {table} (x INT64) PARTITION BY _PARTITIONDATE")

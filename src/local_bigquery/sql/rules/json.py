@@ -47,4 +47,15 @@ def wide_number_mode(node: exp.Expression, context) -> exp.Expression:
     return node
 
 
-NODE_RULES = [equality, string_input, string, wide_number_mode]
+def literal_field(node: exp.Expression, context) -> exp.Expression:
+    if not (isinstance(node, exp.ParseJSON) and isinstance(node.this, exp.Dot)):
+        return node
+    path = node.this
+    innermost = path
+    while isinstance(innermost.this, exp.Dot):
+        innermost = innermost.this
+    innermost.set("this", exp.ParseJSON(this=innermost.this))
+    return path
+
+
+NODE_RULES = [literal_field, equality, string_input, string, wide_number_mode]

@@ -4,27 +4,47 @@ CREATE MACRO int64(j) AS CASE
     WHEN j IS NULL OR json_type(j) = 'NULL' THEN NULL
     WHEN json_type(j) IN ('BIGINT', 'UBIGINT') THEN j::BIGINT
     WHEN json_type(j) = 'DOUBLE' AND j::DOUBLE = trunc(j::DOUBLE) THEN j::DOUBLE::BIGINT
-    ELSE error('The provided JSON input is not an integer')
+    ELSE _raise('The provided JSON input is not an integer')
 END;
 
 CREATE MACRO float64(j) AS CASE
     WHEN j IS NULL OR json_type(j) = 'NULL' THEN NULL
     WHEN bq.main._json_number(j) THEN j::DOUBLE
-    ELSE error('The provided JSON input is not a number')
+    ELSE _raise('The provided JSON input is not a number')
 END;
 
 CREATE MACRO bool(j) AS CASE
     WHEN j IS NULL OR json_type(j) = 'NULL' THEN NULL
     WHEN json_type(j) = 'BOOLEAN' THEN j::BOOLEAN
-    ELSE error('The provided JSON input is not a boolean')
+    ELSE _raise('The provided JSON input is not a boolean')
 END;
 
 CREATE MACRO _string(x) AS CASE
     WHEN typeof(x) <> 'JSON' THEN CAST(x AS VARCHAR)
     WHEN json_type(x::JSON) = 'VARCHAR' THEN json_extract_string(x::JSON, '$')
     WHEN json_type(x::JSON) = 'NULL' THEN NULL
-    ELSE error('The provided JSON input is not a string')
+    ELSE _raise('The provided JSON input is not a string')
 END;
+
+CREATE MACRO _json_array(j) AS CASE
+    WHEN j IS NULL OR json_type(j) = 'NULL' THEN NULL
+    WHEN json_type(j) = 'ARRAY' THEN CAST(j AS JSON[])
+    ELSE _raise('The provided JSON input is not an array')
+END;
+
+CREATE MACRO int64_array(j) AS list_transform(bq.main._json_array(j), e -> bq.main.int64(e));
+
+CREATE MACRO float64_array(j) AS list_transform(bq.main._json_array(j), e -> bq.main.float64(e));
+
+CREATE MACRO bool_array(j) AS list_transform(bq.main._json_array(j), e -> bq.main.bool(e));
+
+CREATE MACRO string_array(j) AS list_transform(bq.main._json_array(j), e -> bq.main._string(e));
+
+CREATE MACRO json_flatten(j) AS CASE WHEN j IS NOT NULL THEN (
+    SELECT coalesce(list(value ORDER BY id), [])
+    FROM json_tree(j)
+    WHERE type <> 'ARRAY' AND regexp_full_match(fullkey, '\$(\[\d+\])*')
+) END;
 
 CREATE MACRO lax_int64(j) AS CASE
     WHEN json_type(j) = 'BOOLEAN' THEN j::BOOLEAN::BIGINT
@@ -125,7 +145,7 @@ CREATE MACRO json_array_insert(j, path, value) AS bq.main._json_put(
 
 CREATE MACRO _parse_json_exact(s) AS CASE
     WHEN NOT _json_exact(s)
-        THEN error('Invalid input to PARSE_JSON: number cannot be stored without loss of precision')
+        THEN _raise('Invalid input to PARSE_JSON: number cannot be stored without loss of precision')
     ELSE json(s)
 END;
 
@@ -135,5 +155,5 @@ CREATE MACRO parse_json(s) AS bq.main._parse_json_exact(s),
     WHEN 'round' THEN CASE
         WHEN json_type(json(s)) IN ('DOUBLE', 'UBIGINT', 'HUGEINT') THEN to_json(CAST(json(s) AS DOUBLE))
         ELSE json(s) END
-    ELSE error('Invalid wide_number_mode: ' || mode)
+    ELSE _raise('Invalid wide_number_mode: ' || mode)
 END;

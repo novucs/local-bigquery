@@ -5,11 +5,38 @@ from sqlglot import exp
 from local_bigquery.errors import BigQueryError
 from local_bigquery.sql.dialect import macro
 
+Type = exp.DataType.Type
 WEEKDAYS = "SUNDAY MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY".split()
 TIMESTAMP_UNITS = {"MICROSECOND", "MILLISECOND", "SECOND", "MINUTE", "HOUR", "DAY"}
 INTERVAL_FIELDS = ["year", "month", "day", "hour", "minute", "second"]
 OFFSET = re.compile(r"^([+-])(\d{1,2})(?::?(\d{2}))?$")
-FORMAT_ELEMENTS = re.compile(r"(%E(?:\d|\*)S|%E4Y|%Ez|%Q|%s|%z|%R|%Y)")
+FORMAT_MODEL = re.compile(
+    r'"[^"]*"|YYYY|RRRR|YY|RR|MONTH|MON|MM|DDD|DD|DAY|DY|D|HH24|HH12|HH|MI|SSSSS|SS'
+    r"|FF[1-9]|AM|PM|TZH|TZM|[-.,/;: ]",
+    re.IGNORECASE,
+)
+FORMAT_MODEL_ELEMENTS = {
+    "YYYY": "%Y",
+    "RRRR": "%Y",
+    "YY": "%y",
+    "RR": "%y",
+    "MONTH": "%B",
+    "MON": "%b",
+    "MM": "%m",
+    "DDD": "%j",
+    "DD": "%d",
+    "DAY": "%A",
+    "DY": "%a",
+    "HH24": "%H",
+    "HH12": "%I",
+    "HH": "%I",
+    "MI": "%M",
+    "SS": "%S",
+    "AM": "%p",
+    "PM": "%p",
+}
+NAMED_ELEMENTS = {"MONTH", "MON", "DAY", "DY", "AM", "PM"}
+FORMAT_ELEMENTS = re.compile(r"(%E(?:\d|\*)S|%E4Y|%Ez|%Q|%s|%z|%Z|%R|%Y)")
 
 
 def call(name: str, *args) -> exp.Anonymous:
@@ -110,22 +137,21 @@ def _format(node: exp.TimeToStr) -> exp.Expression | None:
     for piece in FORMAT_ELEMENTS.split(template.this):
         if not piece:
             continue
-        pieces.append(_element(piece, local, instant))
+        pieces.append(_element(piece, local, instant, zone))
     return exp.cast(_concat(pieces), "VARCHAR")
 
 
-def _element(piece: str, local: exp.Expression, instant: exp.Expression | None):
-    offset = (
-        exp.cast(
-            exp.Sub(
-                this=call("epoch", local.copy()),
-                expression=call("epoch", instant.copy()),
-            ),
-            "BIGINT",
-        )
-        if instant is not None
-        else _node(0)
+def _offset_seconds(local: exp.Expression, instant: exp.Expression | None):
+    if instant is None:
+        return _node(0)
+    seconds = exp.Sub(
+        this=call("epoch", local.copy()), expression=call("epoch", instant.copy())
     )
+    return exp.cast(seconds, "BIGINT")
+
+
+def _element(piece: str, local, instant: exp.Expression | None, zone):
+    offset = _offset_seconds(local, instant)
     match piece:
         case "%Q":
             return exp.cast(call("quarter", local.copy()), "VARCHAR")
@@ -137,6 +163,8 @@ def _element(piece: str, local: exp.Expression, instant: exp.Expression | None):
             return macro("_offset", offset, _node(":"), exp.true())
         case "%z":
             return macro("_offset", offset, _node(""), exp.true())
+        case "%Z" if instant is not None:
+            return call("_zone_name", call("epoch", instant.copy()), zone or "UTC")
         case "%s":
             source = instant if instant is not None else local
             return exp.cast(exp.cast(call("epoch", source.copy()), "BIGINT"), "VARCHAR")
@@ -309,4 +337,81 @@ def _rewrite(node: exp.Expression) -> exp.Expression | None:
     return None
 
 
+def _model_element(token: str, local: exp.Expression, offset: exp.Expression):
+    element = token.upper()
+    if token.startswith('"'):
+        return _node(token[1:-1])
+    if element in FORMAT_MODEL_ELEMENTS:
+        text = call("strftime", local.copy(), FORMAT_MODEL_ELEMENTS[element])
+        if element in NAMED_ELEMENTS and token.isupper():
+            return call("upper", text)
+        if element in NAMED_ELEMENTS and token.islower():
+            return call("lower", text)
+        return text
+    if element == "D":
+        weekday = exp.Add(this=call("dayofweek", local.copy()), expression=_node(1))
+        return exp.cast(weekday, "VARCHAR")
+    if element == "SSSSS":
+        seconds = exp.cast(call("epoch", exp.cast(local.copy(), "TIME")), "BIGINT")
+        return call("lpad", exp.cast(seconds, "VARCHAR"), 5, "0")
+    if element.startswith("FF"):
+        return call("rpad", call("strftime", local.copy(), "%f"), int(element[2]), "0")
+    if element == "TZH":
+        sign = exp.If(
+            this=exp.LT(this=offset.copy(), expression=_node(0)),
+            true=_node("-"),
+            false=_node("+"),
+        )
+        return call(
+            "printf",
+            "%s%02d",
+            sign,
+            exp.IntDiv(this=call("abs", offset.copy()), expression=_node(3600)),
+        )
+    if element == "TZM":
+        minutes = exp.IntDiv(
+            this=exp.Mod(this=call("abs", offset.copy()), expression=_node(3600)),
+            expression=_node(60),
+        )
+        return call("printf", "%02d", minutes)
+    return _node(token)
+
+
+def format_cast(node: exp.Expression, context) -> exp.Expression:
+    if not (isinstance(node, exp.Cast) and node.args.get("format")):
+        return node
+    template, zone = node.args["format"], None
+    if isinstance(template, exp.AtTimeZone):
+        template, zone = template.this, template.args["zone"]
+    kind = node.this.type.this if node.this.type else None
+    instant = None
+    if kind == Type.TIMESTAMPTZ:
+        instant = exp.cast(node.this, "TIMESTAMPTZ")
+        local = to_local(instant, zone)
+    elif kind == Type.TIME:
+        local = exp.Add(
+            this=exp.cast(_node("1970-01-01"), "DATE"),
+            expression=exp.cast(node.this, "TIME"),
+        )
+    elif kind in (Type.DATE, Type.TIMESTAMP):
+        local = exp.cast(node.this, "TIMESTAMP")
+    else:
+        raise BigQueryError(
+            "invalidQuery",
+            f"CAST with FORMAT is not supported for {kind or 'this type'}",
+        )
+    text, pieces, position = template.name, [], 0
+    for match in FORMAT_MODEL.finditer(text):
+        if match.start() != position:
+            break
+        pieces.append(_model_element(match[0], local, _offset_seconds(local, instant)))
+        position = match.end()
+    if position != len(text):
+        raise BigQueryError(
+            "invalidQuery", f"Unsupported format element: {text[position:]}"
+        )
+    return exp.cast(_concat(pieces), "VARCHAR") if pieces else _node("")
+
+
 STATEMENT_RULES = [datetime]
+NODE_RULES = [format_cast]

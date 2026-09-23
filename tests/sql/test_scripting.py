@@ -87,6 +87,38 @@ CASES = [
         6,
     ),
     q(
+        "DECLARE i INT64 DEFAULT 0; DECLARE n INT64 DEFAULT 0; "
+        "outer_loop: LOOP SET i = i + 1; inner_loop: LOOP SET n = n + 1; "
+        "IF n >= 3 THEN BREAK outer_loop; END IF; END LOOP inner_loop; "
+        "END LOOP outer_loop; SELECT i, n",
+        rows=[(1, 3)],
+    ),
+    q(
+        "DECLARE i INT64 DEFAULT 0; DECLARE n INT64 DEFAULT 0; "
+        "outer_loop: WHILE i < 3 DO SET i = i + 1; "
+        "LOOP SET n = n + 1; CONTINUE outer_loop; END LOOP; END WHILE; SELECT n",
+        3,
+    ),
+    q(
+        "DECLARE i INT64 DEFAULT 0; DECLARE n INT64 DEFAULT 0; "
+        "Outer: REPEAT SET i = i + 1; "
+        "FOR r IN (SELECT 1 AS v) DO SET n = n + 1; ITERATE outer; END FOR; "
+        "UNTIL i >= 2 END REPEAT; SELECT n",
+        2,
+    ),
+    q(
+        "DECLARE n INT64 DEFAULT 0; "
+        "rows_loop: FOR r IN (SELECT v FROM UNNEST([1, 2, 3]) AS v) DO "
+        "SET n = n + r.v; WHILE TRUE DO LEAVE rows_loop; END WHILE; END FOR; "
+        "SELECT n",
+        1,
+    ),
+    q(
+        "DECLARE n INT64 DEFAULT 0; "
+        "block: BEGIN SET n = 1; LEAVE block; SET n = 2; END block; SELECT n",
+        1,
+    ),
+    q(
         "DECLARE s INT64 DEFAULT 0; "
         "FOR r IN (SELECT v FROM UNNEST(ARRAY<INT64>[]) AS v) DO SET s = s + r.v; "
         "END FOR; SELECT s",

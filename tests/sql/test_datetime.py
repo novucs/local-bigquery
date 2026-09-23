@@ -326,6 +326,76 @@ CASES = [
         "+05:30 +0530",
     ),
     q(
+        "SELECT CAST(DATE '2018-01-30' AS STRING FORMAT 'YYYY-MM-DD'), "
+        "CAST(DATE '2018-01-30' AS STRING FORMAT 'MON Mon mon MONTH Month'), "
+        "CAST(DATE '2018-01-30' AS STRING FORMAT 'DAY Dy D DDD YY'), "
+        """CAST(DATE '2018-01-30' AS STRING FORMAT 'YYYY"year"')""",
+        rows=[
+            (
+                "2018-01-30",
+                "JAN Jan jan JANUARY January",
+                "TUESDAY Tue 3 030 18",
+                "2018year",
+            )
+        ],
+    ),
+    q(
+        "SELECT CAST(TIME '21:30:25.16789' AS STRING FORMAT 'HH12:MI:SS.FF3 PM'), "
+        "CAST(DATETIME '2020-06-03 08:05:09' AS STRING FORMAT 'HH24 MI SSSSS am')",
+        rows=[("09:30:25.167 PM", "08 05 29109 am")],
+    ),
+    q(
+        "SELECT CAST(TIMESTAMP '2008-12-25 00:00:00+00' AS STRING "
+        "FORMAT 'YYYY-MM-DD HH24:MI:SS TZH:TZM' AT TIME ZONE 'Asia/Kolkata'), "
+        "CAST(TIMESTAMP '2008-12-25 00:00:00+00' AS STRING FORMAT 'HH24 TZH')",
+        rows=[("2008-12-25 05:30:00 +05:30", "00 +00")],
+    ),
+    q("SELECT CAST(DATE '2018-01-30' AS STRING FORMAT 'YYYY-QQ')", error="QQ"),
+    q(
+        "SELECT CAST('18-12-03' AS DATE FORMAT 'YY-MM-DD'), "
+        "CAST('2021-JAN-05' AS DATE FORMAT 'YYYY-MON-DD'), "
+        "CAST('2020-06-03 13:15:30' AS DATETIME FORMAT 'YYYY-MM-DD HH24:MI:SS'), "
+        "CAST('13:15:30' AS TIME FORMAT 'HH24:MI:SS')",
+        rows=[
+            (
+                date(2018, 12, 3),
+                date(2021, 1, 5),
+                datetime(2020, 6, 3, 13, 15, 30),
+                time(13, 15, 30),
+            )
+        ],
+    ),
+    q(
+        "SELECT ARRAY(SELECT DATE_BUCKET(d, INTERVAL 2 DAY) FROM UNNEST("
+        "GENERATE_DATE_ARRAY('1949-12-29', '1950-01-03')) AS d ORDER BY d)",
+        [date(1949, 12, 28), date(1949, 12, 30), date(1949, 12, 30)]
+        + [date(1950, 1, 1), date(1950, 1, 1), date(1950, 1, 3)],
+        types="ARRAY<DATE>",
+    ),
+    q(
+        "SELECT DATE_BUCKET(DATE '2000-12-20', INTERVAL 7 DAY, DATE '2000-12-24'), "
+        "DATE_BUCKET(DATE '2000-12-31', INTERVAL 7 DAY, DATE '2000-12-24')",
+        rows=[(date(2000, 12, 17), date(2000, 12, 31))],
+    ),
+    q(
+        "SELECT DATETIME_BUCKET(DATETIME '1949-12-30 13:00:00', INTERVAL 12 HOUR)",
+        datetime(1949, 12, 30, 12),
+        types="DATETIME",
+    ),
+    q(
+        "SELECT TIMESTAMP_BUCKET(TIMESTAMP '1949-12-30 13:00:00+00', INTERVAL 12 HOUR), "
+        "TIMESTAMP_BUCKET(TIMESTAMP '2000-12-20 01:00:00+00', INTERVAL 7 DAY, "
+        "TIMESTAMP '2000-12-22 12:00:00+00')",
+        rows=[(utc(1949, 12, 30, 12), utc(2000, 12, 15, 12))],
+        types=("TIMESTAMP", "TIMESTAMP"),
+    ),
+    q(
+        "SELECT FORMAT_TIMESTAMP('%Z',TIMESTAMP '2020-01-05 10:00:00+00', "
+        "'America/New_York'), FORMAT_TIMESTAMP('%H %Z', TIMESTAMP '2020-07-05 10:00:00+00', "
+        "'America/New_York'), FORMAT_TIMESTAMP('%Z', TIMESTAMP '2020-01-05 10:00:00+00')",
+        rows=[("EST", "06 EDT", "UTC")],
+    ),
+    q(
         "SELECT FORMAT_TIMESTAMP('%H:%M:%E3S', TIMESTAMP '2020-01-01 00:00:00.123456+00')",
         "00:00:00.123",
     ),

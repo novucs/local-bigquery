@@ -45,13 +45,13 @@ CREATE MACRO _parts(g, kind) AS list_transform(
 
 CREATE MACRO st_geogpoint(longitude, latitude) AS CASE
     WHEN latitude < -90 OR latitude > 90
-        THEN error('ST_GeogPoint failed: Latitude must be between -90 and 90 degrees.')
+        THEN _raise('ST_GeogPoint failed: Latitude must be between -90 and 90 degrees.')
     ELSE system.main.ST_Point(longitude, latitude)
 END;
 
 CREATE MACRO st_geogfromtext(wkt) AS CASE
     WHEN wkt IS NOT NULL AND TRY(system.main.ST_GeomFromText(wkt)) IS NULL
-        THEN error('ST_GeogFromText failed: Invalid WKT: ' || wkt)
+        THEN _raise('ST_GeogFromText failed: Invalid WKT: ' || wkt)
     ELSE system.main.ST_GeomFromText(wkt)
 END;
 

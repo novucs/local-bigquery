@@ -62,12 +62,25 @@ CREATE MACRO code_points_to_bytes(points) AS
 
 CREATE MACRO _max_length(value, size) AS CASE
     WHEN length(value) > size
-    THEN error('Value length ' || length(value) || ' exceeds the maximum length ' || size)
+    THEN _raise('Value length ' || length(value) || ' exceeds the maximum length ' || size)
     ELSE value
 END;
 
 CREATE MACRO _max_byte_length(value, size) AS CASE
     WHEN octet_length(value) > size
-    THEN error('Value length ' || octet_length(value) || ' exceeds the maximum length ' || size)
+    THEN _raise('Value length ' || octet_length(value) || ' exceeds the maximum length ' || size)
     ELSE value
 END;
+
+CREATE MACRO _search_tokens(s) AS list_filter(
+    regexp_split_to_array(lower(s), '[\s\[\]<>(){}|!;,''"`*&?+/:=@.\-$%\\_]+'), t -> t <> ''
+);
+
+CREATE MACRO search(data, query) AS list_has_all(
+    bq.main._search_tokens((
+        SELECT string_agg(json_extract_string(value, '$'), ' ')
+        FROM json_tree(to_json(data))
+        WHERE type = 'VARCHAR'
+    )),
+    bq.main._search_tokens(query)
+);

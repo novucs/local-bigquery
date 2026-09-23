@@ -146,6 +146,23 @@ CASES = [
         None,
         types="STRING",
     ),
+    q(
+        "SELECT SEARCH('Hello World', 'hello'), SEARCH('Hello World', 'world HELLO'), "
+        "SEARCH('Hello World', 'hell'), SEARCH('foo-bar@example.com', 'example bar')",
+        rows=[(True, True, False, True)],
+        types=("BOOL", "BOOL", "BOOL", "BOOL"),
+    ),
+    q(
+        "SELECT SEARCH(['alpha beta', 'gamma'], 'gamma alpha'), "
+        "SEARCH(t, 'bob'), SEARCH(t, 'name') "
+        "FROM (SELECT 'Bob Smith' AS name, 5 AS n) AS t",
+        rows=[(True, True, False)],
+    ),
+    q(
+        "SELECT SEARCH('foo bar baz', '`foo baz`')",
+        False,
+        xfail="backtick phrases are searched as separate terms",
+    ),
 ]
 
 

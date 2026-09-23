@@ -3,6 +3,11 @@ from sqlglot import exp
 from local_bigquery.errors import BigQueryError
 from local_bigquery.sql.dialect import macro
 
+FINDERS = {
+    f"bq.main.{name}"
+    for name in ("array_offset", "array_offsets", "array_find", "array_find_all")
+}
+
 
 def checked_offsets(tree: exp.Expression, context) -> exp.Expression:
     for bracket in list(tree.find_all(exp.Bracket)):
@@ -94,3 +99,41 @@ STATEMENT_RULES = [
     anonymous_structs,
     count_if_default,
 ]
+
+
+def _function(node: exp.Expression) -> str:
+    return node.name.lower() if isinstance(node, exp.Anonymous) else ""
+
+
+def find_matches(node: exp.Expression, context) -> exp.Expression:
+    if _function(node) not in FINDERS or len(node.expressions) < 2:
+        return node
+    array, target, *mode = node.expressions
+    if not isinstance(target, exp.Lambda):
+        element = exp.to_identifier("_e")
+        target = exp.Lambda(
+            this=exp.EQ(this=exp.column(element), expression=target),
+            expressions=[element],
+        )
+    matches = exp.func("list_transform", array.copy(), target)
+    node.set("expressions", [array, matches, *mode])
+    return node
+
+
+def zero_based_index(node: exp.Expression, context) -> exp.Expression:
+    if not isinstance(node, exp.Lambda) or len(node.expressions) != 2:
+        return node
+    if not isinstance(node.parent, exp.ArrayFilter) and (
+        _function(node.parent) != "array_transform"
+    ):
+        return node
+    index = node.expressions[1].name
+    for name in list(node.this.find_all(exp.Identifier, exp.Column)):
+        if name.name == index and not isinstance(name.parent, exp.Column):
+            name.replace(
+                exp.paren(exp.Sub(this=name.copy(), expression=exp.Literal.number(1)))
+            )
+    return node
+
+
+NODE_RULES = [find_matches, zero_based_index]

@@ -18,6 +18,7 @@ class Context:
     functions: dict[str, str] = field(default_factory=dict)
     variables: dict[str, str] = field(default_factory=dict)
     system: dict = field(default_factory=dict)
+    settings: dict = field(default_factory=dict)
     attach_postgres: callable = None
     used: set[str] = field(default_factory=set)
     referenced: set[tuple[str, str, str]] = field(default_factory=set)

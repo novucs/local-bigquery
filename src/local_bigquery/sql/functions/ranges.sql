@@ -1,5 +1,5 @@
 CREATE MACRO range(s, e) AS CASE
-    WHEN s >= e THEN error('Range start element must be less than the end element')
+    WHEN s >= e THEN _raise('Range start element must be less than the end element')
     ELSE {'__range_start': s, '__range_end': e}
 END;
 
@@ -21,7 +21,7 @@ CREATE MACRO range_overlaps(a, b) AS
 
 CREATE MACRO range_intersect(a, b) AS CASE
     WHEN NOT bq.main.range_overlaps(a, b)
-        THEN error('Provided RANGE inputs: ' || a || ' and ' || b || ' do not overlap.')
+        THEN _raise('Provided RANGE inputs: ' || a || ' and ' || b || ' do not overlap.')
     ELSE {
         '__range_start': CASE
             WHEN a.__range_start IS NULL THEN b.__range_start

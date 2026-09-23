@@ -49,6 +49,31 @@ def test_variables_persist(bq):
     assert in_session(bq, "SELECT x", session_id)[1] == [(5,)]
 
 
+def test_session_id_system_variable(bq):
+    session_id = new_session(bq)
+    assert in_session(bq, "SELECT @@session_id", session_id)[1] == [(session_id,)]
+    assert [tuple(r.values()) for r in run(bq, "SELECT @@session_id")] == [(None,)]
+
+
+def test_session_qualifier(bq):
+    session_id = new_session(bq)
+    in_session(bq, "CREATE TEMP TABLE _SESSION.q AS SELECT 1 AS x", session_id)
+    assert in_session(bq, "SELECT x FROM _SESSION.q", session_id)[1] == [(1,)]
+
+
+def test_system_variables_persist(bq, dataset):
+    table_id = unique("t")
+    run(bq, f"CREATE TABLE {dataset.dataset_id}.{table_id} AS SELECT 7 AS x")
+    session_id = new_session(bq)
+    in_session(
+        bq,
+        f"SET @@dataset_id = '{dataset.dataset_id}'; SET @@time_zone = 'Asia/Tokyo'",
+        session_id,
+    )
+    sql = f"SELECT x, @@time_zone FROM {table_id}"
+    assert in_session(bq, sql, session_id)[1] == [(7, "Asia/Tokyo")]
+
+
 def test_sessions_are_isolated(bq):
     first, second = new_session(bq), new_session(bq)
     in_session(bq, "CREATE TEMP TABLE isolated AS SELECT 1 AS x", first)

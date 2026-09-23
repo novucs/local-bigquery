@@ -60,6 +60,9 @@ def not_implemented(feature: str) -> BigQueryError:
     )
 
 
+UDF_ERROR = re.compile(
+    r"Python exception occurred while executing the UDF: \w+: (?P<message>.*)"
+)
 DUCKDB_ERRORS = [
     (
         re.compile(r"Overflow in (?P<name>\w+) of"),
@@ -97,13 +100,6 @@ DUCKDB_ERRORS = [
         ),
         "invalidQuery",
         "Function not found: {function_name} at [{function_position}]",
-    ),
-    (
-        re.compile(
-            r"Python exception occurred while executing the UDF: \w+: (?P<name>.*)"
-        ),
-        "invalidQuery",
-        "{name}",
     ),
     (
         re.compile(r'Referenced column "(?P<name>[^"]+)" (?:was )?not found'),
@@ -227,9 +223,18 @@ def from_duckdb(error: Exception, context=None, tree=None) -> BigQueryError:
     message = str(error)
     first = message.split("\n")[0]
     line, column = _position(message)
+    if match := UDF_ERROR.search(first):
+        return BigQueryError("invalidQuery", match["message"])
     for pattern, reason, template in DUCKDB_ERRORS:
         if match := pattern.search(first):
             name = match["name"].strip("!\"'")
+            unqualified = context is not None and "." not in name
+            if unqualified and context.dataset_id is None and reason == "notFound":
+                return BigQueryError(
+                    "invalid",
+                    f'Table "{name}" must be qualified with a dataset '
+                    "(e.g. dataset.table).",
+                )
             table = _table(name, context, tree)
             function_name, function_position = _function(tree, name, context)
             arguments = ", ".join(
