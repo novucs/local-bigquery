@@ -1,3 +1,4 @@
+import pytest
 from concurrent.futures import ThreadPoolExecutor
 
 from tests.cases import rows, run, scalar, unique
@@ -8,6 +9,7 @@ def parallel(work, count: int = 32):
         return list(pool.map(work, range(count)))
 
 
+@pytest.mark.emulator("projects are created on demand")
 def test_queries_and_catalog_calls_interleave(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('t')}"
     run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x")

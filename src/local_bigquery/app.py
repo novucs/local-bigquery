@@ -93,7 +93,7 @@ def discovery():
 def valid_project(request: Request):
     project_id = request.path_params.get("project_id")
     if project_id is not None and not PROJECT_ID.match(project_id):
-        raise BigQueryError("accessDenied", f"Access Denied: Project {project_id}")
+        raise BigQueryError("invalid", f"Invalid project ID: {project_id}")
 
 
 def methods(resource: dict):

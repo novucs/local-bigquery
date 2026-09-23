@@ -85,7 +85,7 @@ def test_error_function(bq):
 
 
 def test_invalid_project(bq):
-    with fails(Forbidden, "accessDenied"):
+    with pytest.raises(BadRequest):
         bq.query_and_wait(
             "SELECT 1", project="Invalid_Project!", retry=FAST_RETRY, job_retry=None
         )

@@ -135,6 +135,7 @@ def test_delete_missing(bq):
     bq.delete_dataset(unique("missing"), not_found_ok=True)
 
 
+@pytest.mark.emulator("projects are created on demand")
 def test_other_project(bq, dataset_id):
     other = unique("project").replace("_", "-")
     bq.create_dataset(f"{other}.{dataset_id}")

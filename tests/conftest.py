@@ -21,6 +21,13 @@ from tests.cases import Query, unique
 def pytest_configure(config):
     os.environ["TZ"] = "America/Los_Angeles"
     time.tzset()
+    config.addinivalue_line("markers", "emulator(reason): emulator-only behaviour")
+
+
+def pytest_runtest_setup(item):
+    marker = item.get_closest_marker("emulator")
+    if marker and item.config.getoption("--endpoint") == "google":
+        pytest.skip(marker.args[0])
 
 
 def pytest_addoption(parser):
