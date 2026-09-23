@@ -94,6 +94,71 @@ CASES = [
         "CREATE TEMP TABLE g AS SELECT ST_GEOGPOINT(1, 2) AS p; SELECT ST_ASTEXT(p) FROM g",
         "POINT(1 2)",
     ),
+    q(
+        "SELECT ST_DISTANCE(ST_GEOGPOINT(0, 0), ST_GEOGPOINT(0, 1))",
+        111195.10117748393,
+    ),
+    q(
+        "SELECT ST_DISTANCE(ST_GEOGPOINT(0, 60), ST_GEOGPOINT(20, 60))",
+        1107708.9902587456,
+    ),
+    q(
+        "SELECT ST_LENGTH(ST_GEOGFROMTEXT('LINESTRING(0 0, 1 0, 1 1)'))",
+        222390.20235496783,
+    ),
+    q(
+        f"SELECT ST_PERIMETER({SQUARE})",
+        444763.46872762055,
+    ),
+    q(
+        f"SELECT ST_AREA({SQUARE})",
+        12364036567.076408,
+    ),
+    q(
+        "SELECT ST_AREA(ST_GEOGFROMTEXT('POLYGON((10 40, 30 40, 30 50, 10 50, 10 40))'))",
+        1737447168082.65,
+    ),
+    q(
+        "SELECT ST_MAXDISTANCE(ST_GEOGPOINT(0, 0), "
+        "ST_GEOGFROMTEXT('LINESTRING(1 0, 0 2)'))",
+        222390.20235496786,
+    ),
+    q(
+        "SELECT ST_ISCOLLECTION(ST_GEOGFROMTEXT('MULTIPOINT(0 0, 1 1)')), "
+        "ST_ISCOLLECTION(ST_GEOGFROMTEXT('LINESTRING(0 0, 1 1, 0 0)'))",
+        rows=[(True, False)],
+    ),
+    q(
+        "SELECT ST_INTERSECTSBOX(ST_GEOGPOINT(3, 4), 2, 3, 5, 6), "
+        "ST_INTERSECTSBOX(ST_GEOGPOINT(9, 9), 2, 3, 5, 6)",
+        rows=[(True, False)],
+    ),
+    q(
+        "SELECT ST_GEOMETRYTYPE(ST_MAKEPOLYGONORIENTED("
+        "[ST_GEOGFROMTEXT('LINESTRING(0 0, 2 0, 2 2, 0 2, 0 0)')]))",
+        "ST_Polygon",
+    ),
+    q(
+        "SELECT ST_ASTEXT(ST_SNAPTOGRID(ST_GEOGPOINT(2.346, 7.891), 0.01))",
+        "POINT(2.35 7.89)",
+    ),
+    q(
+        "SELECT PARSE_JSON(ST_ASGEOJSON(ST_GEOGFROMTEXT('LINESTRING(0 0, 1 1, 2 2)')))",
+        {
+            "type": "LineString",
+            "coordinates": [
+                [0, 0],
+                [1, 1],
+                [1.49988573656168, 1.5000570914792],
+                [2, 2],
+            ],
+        },
+        xfail="ST_ASGEOJSON does not densify geodesic edges",
+    ),
+    q(
+        "SELECT PARSE_JSON(ST_ASGEOJSON(ST_GEOGFROMTEXT('POINT EMPTY')))",
+        {"type": "GeometryCollection", "geometries": []},
+    ),
     q("SELECT ST_GEOGPOINT(0, 91)", error="invalidQuery.*(?i:latitude)"),
     q(
         "SELECT ST_GEOGFROMTEXT('POINT(1')",

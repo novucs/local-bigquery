@@ -1,11 +1,32 @@
 import re
 
+import sqlglot
 from sqlglot import exp
 
 from local_bigquery.engine.types import range_type
 from local_bigquery.errors import BigQueryError
 from local_bigquery.sql.dialect import DuckDBDialect, macro
 
+MODES = {"MEETS": ">", "OVERLAPS": ">="}
+SESSIONIZE = """
+SELECT * EXCLUDE (__prev, __session), CASE WHEN {column} IS NULL THEN NULL ELSE {{
+    '__range_start': min({column}.__range_start) OVER (PARTITION BY {keys} __session),
+    '__range_end': max({column}.__range_end) OVER (PARTITION BY {keys} __session)
+}} END AS session_range
+FROM (
+    SELECT *, sum(CASE WHEN __prev IS NULL OR {column}.__range_start {compare} __prev
+        THEN 1 ELSE 0 END) OVER (PARTITION BY {keys} {column} IS NULL
+        ORDER BY {column}.__range_start, {column}.__range_end ROWS UNBOUNDED PRECEDING
+    ) AS __session
+    FROM (
+        SELECT *, max({column}.__range_end) OVER (PARTITION BY {keys} {column} IS NULL
+            ORDER BY {column}.__range_start, {column}.__range_end
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        ) AS __prev
+        FROM __source
+    )
+)
+"""
 LITERAL = re.compile(r"^\[\s*([^,]+?)\s*,\s*([^)]+?)\s*\)$")
 
 
@@ -39,7 +60,45 @@ def _is_range(node: exp.Expression) -> bool:
     )
 
 
+def _sessionize(call: exp.Anonymous) -> exp.Expression:
+    source, column, partitions, *rest = call.expressions
+    mode = rest[0].name.upper() if rest else "MEETS"
+    if mode not in MODES:
+        meta = rest[0].meta
+        position = f"{meta.get('line', 1)}:{meta.get('col', 1) - meta.get('end', 0) + meta.get('start', 0)}"
+        raise BigQueryError(
+            "invalidQuery",
+            f'Could not cast literal "{rest[0].name}" to type RANGE_SESSIONIZE_MODE '
+            f"at [{position}]",
+            "query",
+        )
+    keys = "".join(
+        f"{exp.to_identifier(key.name, quoted=True).sql()}, "
+        for key in partitions.expressions
+    )
+    query = sqlglot.parse_one(
+        SESSIONIZE.format(
+            column=exp.to_identifier(column.name, quoted=True).sql(),
+            keys=keys,
+            compare=MODES[mode],
+        ),
+        dialect="duckdb",
+    )
+    query.find(exp.Table).replace(source)
+    return query
+
+
 def ranges(tree: exp.Expression, context) -> exp.Expression:
+    for table in list(tree.find_all(exp.Table)):
+        call = table.this
+        if isinstance(call, exp.Anonymous) and call.name == "RANGE_SESSIONIZE":
+            alias = table.alias or "range_sessionize"
+            table.replace(
+                exp.Subquery(
+                    this=_sessionize(call),
+                    alias=exp.TableAlias(this=exp.to_identifier(alias)),
+                )
+            )
     for call in list(tree.find_all(exp.Anonymous)):
         if call.name.lower() == "bq.main.range_contains" and _is_range(
             call.expressions[1]

@@ -33,3 +33,17 @@ CREATE MACRO range_intersect(a, b) AS CASE
             ELSE least(a.__range_end, b.__range_end) END
     }
 END;
+
+CREATE MACRO _range_array(r, step, last) AS list_transform(
+    list_filter(
+        generate_series(r.__range_start, r.__range_end, step),
+        s -> s < r.__range_end AND (last OR s + step <= r.__range_end)
+    ),
+    s -> {
+        '__range_start': cast_to_type(s, r.__range_start),
+        '__range_end': cast_to_type(least(s + step, r.__range_end), r.__range_start)
+    }
+);
+
+CREATE MACRO generate_range_array(r, step) AS bq.main._range_array(r, step, true),
+(r, step, last) AS bq.main._range_array(r, step, last);
