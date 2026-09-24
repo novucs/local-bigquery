@@ -30,6 +30,7 @@ dev = [
     "datamodel-code-generator>=0.82.0",
     "db-dtypes>=1.7.1",
     "google-cloud-bigquery>=3.31.0",
+    "hypothesis>=6.168.1",
     "pandas>=3.0.6",
     "psycopg2-binary>=2.9.13",
     "pytest>=8.3.5",

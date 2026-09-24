@@ -8,6 +8,7 @@ import uvicorn
 from google.api_core.client_options import ClientOptions
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery, bigquery_storage_v1
+from hypothesis import settings
 from google.cloud.bigquery_storage_v1.services.big_query_read.transports import (
     BigQueryReadGrpcTransport,
 )
@@ -16,6 +17,9 @@ from google.cloud.bigquery_storage_v1.services.big_query_write.transports import
 )
 
 from tests.cases import Query, unique
+
+settings.register_profile("default", max_examples=20)
+settings.register_profile("thorough", max_examples=500)
 
 
 def pytest_configure(config):

@@ -145,10 +145,38 @@ def _reader(cur, files: str, config: dict, fields: list[TableFieldSchema]) -> st
     if kind == "PARQUET":
         return f"read_parquet({files}{_options(hive)})"
     if kind == "NEWLINE_DELIMITED_JSON":
-        columns = {"columns": _struct(fields, types.duckdb_type)} if fields else {}
+        textual = list(map(_textual, fields))
+        columns = {"columns": _struct(textual, types.duckdb_type)} if fields else {}
         options = {"format": "'newline_delimited'"} | columns | hive
         return f"read_json({files}{_options(options)})"
     return f"read_csv({files}{_options(_csv(config, fields) | hive)})"
+
+
+def _textual(field: TableFieldSchema) -> TableFieldSchema:
+    if field.type == "BYTES":
+        return field.model_copy(update={"type": "STRING"})
+    if field.fields:
+        return field.model_copy(update={"fields": list(map(_textual, field.fields))})
+    return field
+
+
+def _decoded(expression: str, field: TableFieldSchema, depth: int = 0) -> str:
+    if field.mode == "REPEATED":
+        element = field.model_copy(update={"mode": "NULLABLE"})
+        inner = _decoded(f"e{depth}", element, depth + 1)
+        if inner == f"e{depth}":
+            return expression
+        return f"list_transform({expression}, e{depth} -> {inner})"
+    if field.type == "RECORD":
+        parts = {
+            f.name: _decoded(f"{expression}.{quote(f.name)}", f, depth)
+            for f in field.fields or []
+        }
+        if all(value.endswith(f".{quote(name)}") for name, value in parts.items()):
+            return expression
+        pairs = ", ".join(f"{quote(name)} := {value}" for name, value in parts.items())
+        return f"CASE WHEN {expression} IS NOT NULL THEN struct_pack({pairs}) END"
+    return f"from_base64({expression})" if field.type == "BYTES" else expression
 
 
 def _projection(
@@ -160,7 +188,10 @@ def _projection(
     casts, bad = [], []
     for field in fields:
         column, target = quote(field.name), types.duckdb_type(field)
-        cast = f"{'CAST' if typed else 'TRY_CAST'}({column} AS {target})"
+        source = _decoded(column, field)
+        if not typed and source != column:
+            source = f"TRY({source})"
+        cast = f"{'CAST' if typed else 'TRY_CAST'}({source} AS {target})"
         casts.append(f"{cast} AS {column}")
         if not typed:
             bad.append(f"({column} IS NOT NULL AND {cast} IS NULL)")
