@@ -10,6 +10,13 @@ credentials.
 docker run -p 9050:9050 -p 9060:9060 -v bigquery:/data ghcr.io/novucs/local-bigquery:latest
 ```
 
+Then point a client at `http://localhost:9050`, without credentials. Any project ID
+works, and data persists in `/data`.
+
+## Connecting
+
+### Python
+
 ```python
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery
@@ -19,10 +26,43 @@ client = bigquery.Client(
     credentials=AnonymousCredentials(),
     client_options={"api_endpoint": "http://localhost:9050"},
 )
-client.query_and_wait("SELECT 1")
+rows = client.query_and_wait("SELECT 1 AS x")
 ```
 
-Any project ID works. Data persists in `/data`.
+For faster `to_dataframe()`, add the Storage Read API, served as plain gRPC on port `9060`:
+
+```python
+import grpc
+from google.cloud import bigquery_storage_v1
+from google.cloud.bigquery_storage_v1.services.big_query_read.transports import (
+    BigQueryReadGrpcTransport,
+)
+
+transport = BigQueryReadGrpcTransport(channel=grpc.insecure_channel("localhost:9060"))
+bqstorage = bigquery_storage_v1.BigQueryReadClient(transport=transport)
+frame = client.query_and_wait("SELECT 1 AS x").to_dataframe(bqstorage_client=bqstorage)
+```
+
+For SQLAlchemy, pass the client in:
+`create_engine("bigquery://local", connect_args={"client": client})`.
+
+### Go
+
+```go
+client, err := bigquery.NewClient(ctx, "local",
+    option.WithEndpoint("http://localhost:9050/bigquery/v2/"),
+    option.WithoutAuthentication(),
+)
+```
+
+### Node.js
+
+```js
+import { BigQuery } from "@google-cloud/bigquery";
+
+const bigquery = new BigQuery({ projectId: "local", apiEndpoint: "http://localhost:9050" });
+const [rows] = await bigquery.query("SELECT 1 AS x");
+```
 
 ## Testing with pytest
 
@@ -58,26 +98,6 @@ def dataset(bq):
     yield dataset.dataset_id
     bq.delete_dataset(dataset, delete_contents=True)
 ```
-
-## Other clients
-
-**Storage Read API** (fast `to_dataframe()`), plain gRPC on port `9060`:
-
-```python
-import grpc
-from google.cloud import bigquery_storage_v1
-from google.cloud.bigquery_storage_v1.services.big_query_read.transports import (
-    BigQueryReadGrpcTransport,
-)
-
-transport = BigQueryReadGrpcTransport(channel=grpc.insecure_channel("localhost:9060"))
-bqstorage = bigquery_storage_v1.BigQueryReadClient(transport=transport)
-frame = client.query_and_wait("SELECT 1").to_dataframe(bqstorage_client=bqstorage)
-```
-
-**SQLAlchemy**: `create_engine("bigquery://local", connect_args={"client": client})`
-
-**Go**: `bigquery.NewClient(ctx, "local", option.WithEndpoint("http://localhost:9050/bigquery/v2/"), option.WithoutAuthentication())`
 
 ## Features
 
