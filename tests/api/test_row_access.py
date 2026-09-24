@@ -163,17 +163,15 @@ def test_dropping_the_last_policy_needs_drop_all(bq, orders):
 
 
 @pytest.fixture
-def policies(endpoint, project, orders):
-    if endpoint == "google":
-        pytest.skip("raw REST calls need an unauthenticated endpoint")
+def policies(rest, project, orders):
     dataset_id, table_id = orders.split(".")
     base = (
-        f"{endpoint}/bigquery/v2/projects/{project}/datasets/{dataset_id}"
+        f"/bigquery/v2/projects/{project}/datasets/{dataset_id}"
         f"/tables/{table_id}/rowAccessPolicies"
     )
 
     def call(method, path="", **kwargs):
-        return requests.request(method, base + path, timeout=5, **kwargs)
+        return rest(method, base + path, **kwargs)
 
     reference = {"projectId": project, "datasetId": dataset_id, "tableId": table_id}
     return call, reference

@@ -3,21 +3,15 @@ import json
 import time
 
 import pytest
-import requests
 
 from tests.cases import unique
 
 
 @pytest.fixture(scope="module")
-def api(endpoint, project):
-    if endpoint == "google":
-        pytest.skip("raw REST tests need an unauthenticated endpoint")
-    base = f"{endpoint}/bigquery/v2/projects/{project}"
-
-    def call(method, path, **kwargs):
-        return requests.request(method, base + path, timeout=5, **kwargs)
-
-    return call
+def api(rest, project):
+    return lambda method, path, **kwargs: rest(
+        method, f"/bigquery/v2/projects/{project}{path}", **kwargs
+    )
 
 
 def jobs_query(api, sql, **body):
@@ -306,15 +300,10 @@ def test_insert_all_conversion_error(api, dataset):
 
 
 @pytest.fixture(scope="module")
-def upload(endpoint, project):
-    if endpoint == "google":
-        pytest.skip("raw REST tests need an unauthenticated endpoint")
-    base = f"{endpoint}/upload/bigquery/v2/projects/{project}/jobs"
-
-    def call(method, params, **kwargs):
-        return requests.request(method, base, params=params, timeout=5, **kwargs)
-
-    return call
+def upload(rest, project):
+    return lambda method, params, **kwargs: rest(
+        method, f"/upload/bigquery/v2/projects/{project}/jobs", params=params, **kwargs
+    )
 
 
 def load_config(dataset, **load) -> dict:

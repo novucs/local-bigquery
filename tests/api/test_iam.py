@@ -1,5 +1,4 @@
 import pytest
-import requests
 from google.api_core.exceptions import BadRequest, NotFound
 from google.cloud import bigquery
 
@@ -16,15 +15,10 @@ def table(bq, dataset):
 
 
 @pytest.fixture
-def post(endpoint):
-    if endpoint == "google":
-        pytest.skip("raw REST tests need an unauthenticated endpoint")
-
-    def call(resource, method, body):
-        url = f"{endpoint}/bigquery/v2/{resource}:{method}"
-        return requests.post(url, json=body, timeout=5)
-
-    return call
+def post(rest):
+    return lambda resource, method, body: rest(
+        "POST", f"/bigquery/v2/{resource}:{method}", json=body
+    )
 
 
 def test_empty_policy(bq, table):

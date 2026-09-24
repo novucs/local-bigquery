@@ -4,6 +4,7 @@ import time
 
 import grpc
 import pytest
+import requests
 import uvicorn
 from google.api_core.client_options import ClientOptions
 from google.auth.credentials import AnonymousCredentials
@@ -91,6 +92,17 @@ def endpoint(request, tmp_path_factory):
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     thread.join()
+
+
+@pytest.fixture(scope="session")
+def rest(endpoint):
+    if endpoint == "google":
+        pytest.skip("raw REST calls need an unauthenticated endpoint")
+
+    def call(method, path, **kwargs):
+        return requests.request(method, endpoint + path, timeout=5, **kwargs)
+
+    return call
 
 
 @pytest.fixture(scope="session")
