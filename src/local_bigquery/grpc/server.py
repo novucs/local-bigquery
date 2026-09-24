@@ -30,7 +30,7 @@ def _abort(context: grpc.ServicerContext, error: Exception):
 def _caller(context: grpc.ServicerContext):
     metadata = dict(context.invocation_metadata())
     identity = row_access.identify(
-        metadata.get("x-bqemu-caller"), metadata.get("x-bqemu-groups")
+        metadata.get("x-local-bigquery-caller"), metadata.get("x-local-bigquery-groups")
     )
     token = row_access.caller.set(identity)
     try:

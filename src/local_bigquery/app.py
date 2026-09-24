@@ -75,7 +75,7 @@ app.add_middleware(GzipRequests)
 async def identify_caller(request: Request, call_next):
     headers = request.headers
     identity = row_access.identify(
-        headers.get("x-bqemu-caller"), headers.get("x-bqemu-groups")
+        headers.get("x-local-bigquery-caller"), headers.get("x-local-bigquery-groups")
     )
     token = row_access.caller.set(identity)
     try:

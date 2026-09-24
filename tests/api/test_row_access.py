@@ -19,7 +19,9 @@ def caller(endpoint, project):
 
     def caller(member: str, groups: str = "") -> bigquery.Client:
         session = requests.Session()
-        session.headers.update({"X-Bqemu-Caller": member, "X-Bqemu-Groups": groups})
+        session.headers.update(
+            {"X-Local-BigQuery-Caller": member, "X-Local-BigQuery-Groups": groups}
+        )
         return bigquery.Client(
             project=project,
             credentials=AnonymousCredentials(),
@@ -269,7 +271,7 @@ def test_storage_read_applies_policies(bq, bqstorage, caller, orders, project):
                 table=table, data_format=types.DataFormat.ARROW
             ),
             max_stream_count=1,
-            metadata=[("x-bqemu-caller", member)],
+            metadata=[("x-local-bigquery-caller", member)],
         )
         if not session.streams:
             return []
