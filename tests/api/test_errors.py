@@ -128,6 +128,7 @@ def query_error(bq, sql, **config) -> tuple[dict, str]:
             r"Invalid time zone: IST",
         ),
         ("SLECT 1 AS n", r'Syntax error: Unexpected identifier "SLECT" at \[1:1\]'),
+        ("SELECT 1)", r'Syntax error: Unexpected "\)" at \[1:9\]'),
         (
             "SELECT (1 + 2 AS x",
             r'Syntax error: Expected "," but got keyword AS at \[1:15\]',

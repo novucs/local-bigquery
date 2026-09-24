@@ -27,6 +27,30 @@ SCALARS = [
 
 
 CASES = [
+    q(
+        "SELECT COALESCE(CAST(NULL AS TIMESTAMP), @end)",
+        datetime.datetime(9999, 12, 31, tzinfo=UTC),
+        types="TIMESTAMP",
+        params=[Scalar("end", "STRING", "9999-12-31")],
+    ),
+    q(
+        "SELECT IFNULL(CAST(NULL AS DATE), @day)",
+        datetime.date(2026, 1, 1),
+        types="DATE",
+        params=[Scalar("day", "STRING", "2026-01-01")],
+    ),
+    q(
+        "SELECT IF(FALSE, DATETIME '2020-01-01 00:00:00', @moment)",
+        datetime.datetime(2026, 1, 1, 12, 30),
+        types="DATETIME",
+        params=[Scalar("moment", "STRING", "2026-01-01 12:30:00")],
+    ),
+    q(
+        "SELECT CASE WHEN FALSE THEN TIME '10:00:00' ELSE @at END",
+        datetime.time(11, 30),
+        types="TIME",
+        params=[Scalar("at", "STRING", "11:30:00")],
+    ),
     *(
         q(
             f"SELECT @{t.lower()}",

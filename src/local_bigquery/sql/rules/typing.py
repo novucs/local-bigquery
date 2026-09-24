@@ -16,6 +16,7 @@ DECIMALS = {Type.DECIMAL: "DECIMAL(38, 9)", Type.BIGDECIMAL: "DECIMAL(38, 18)"}
 FLOATS = {Type.DOUBLE, Type.FLOAT}
 BYTES = {Type.BINARY, Type.VARBINARY}
 TEXT = {Type.VARCHAR, Type.TEXT}
+TEMPORAL = {Type.DATE, Type.DATETIME, Type.TIMESTAMP, Type.TIMESTAMPTZ, Type.TIME}
 BITWISE = (exp.BitwiseAnd, exp.BitwiseOr, exp.BitwiseXor)
 FLOAT_TEXT = re.compile(r"[+-]?(\d+\.\d*|\.\d+|\d+(\.\d*)?[eE][+-]?\d+)")
 TO_JSON = {"bq.main.to_json_string", "bq.main.to_json"}
@@ -209,6 +210,27 @@ def date_arithmetic(node: exp.Expression, context) -> exp.Expression:
     return node
 
 
+def _branches(node: exp.Expression) -> list[exp.Expression]:
+    if isinstance(node, exp.Coalesce):
+        return [node.this, *node.expressions]
+    if isinstance(node, exp.If):
+        return [node.args.get("true"), node.args.get("false")]
+    if isinstance(node, exp.Case):
+        return [branch.args.get("true") for branch in node.args["ifs"]] + [
+            node.args.get("default")
+        ]
+    return []
+
+
+def parameter_coercion(node: exp.Expression, context) -> exp.Expression:
+    branches = [branch for branch in _branches(node) if branch is not None]
+    target = next((b.type for b in branches if _is(b.type, TEMPORAL)), None)
+    for branch in branches if target else []:
+        if _string_parameter(branch):
+            branch.replace(exp.cast(branch.copy(), target))
+    return node
+
+
 def average(node: exp.Expression, context) -> exp.Expression:
     if isinstance(node, exp.Avg) and not isinstance(node.parent, exp.Window):
         target = _decimal(node)
@@ -310,6 +332,7 @@ STATEMENT_RULES = [annotate]
 NODE_RULES = [
     comparable,
     date_arithmetic,
+    parameter_coercion,
     literal_coercion,
     average,
     nan_first,

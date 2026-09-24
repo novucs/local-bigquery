@@ -9,7 +9,7 @@ from sqlglot import exp
 from sqlglot.tokens import TokenType
 
 from local_bigquery.catalog import metadata, names, routines, tables
-from local_bigquery.errors import BigQueryError, from_exception, syntax_error
+from local_bigquery.errors import BigQueryError, from_exception, position, syntax_error
 from local_bigquery.models import Argument, JobStatistics2, Routine
 from local_bigquery.sql.dialect import BigQueryDialect
 from local_bigquery.sql.rules.parameters import VALUE, read
@@ -51,8 +51,10 @@ class Parser:
     def word(self, offset: int = 0) -> str | None:
         if self.i + offset >= len(self.tokens):
             return None
-        token = self.tokens[self.i + offset]
-        return "" if token.token_type in QUOTED else token.text.upper()
+        index = self.i + offset
+        token = self.tokens[index]
+        parameter = index and self.tokens[index - 1].token_type == TokenType.PARAMETER
+        return "" if token.token_type in QUOTED or parameter else token.text.upper()
 
     def take(self, word: str):
         if self.word() != word:
@@ -94,7 +96,15 @@ class Parser:
             if word == ";":
                 self.i += 1
             else:
+                start = self.i
                 statements.append(self.statement())
+                if self.i == start:
+                    token = self.tokens[start]
+                    raise BigQueryError(
+                        "invalidQuery",
+                        f'Syntax error: Unexpected "{token.text}" '
+                        f"at [{position(token)}]",
+                    )
         return statements
 
     def statement(self) -> Statement:
