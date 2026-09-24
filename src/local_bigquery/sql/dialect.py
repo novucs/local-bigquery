@@ -39,6 +39,10 @@ class TableMacro(exp.Expression):
     arg_types = {"this": True}
 
 
+class DropPrimaryKey(exp.DropPrimaryKey):
+    arg_types = {"exists": False}
+
+
 class AlterColumnOptions(exp.Expression):
     arg_types = {"this": True, "expressions": True}
 
@@ -193,6 +197,12 @@ class BigQueryDialect(BaseBigQuery):
             if isinstance(schema, exp.Table) and (version := self._parse_version()):
                 schema.set("version", version)
             return schema
+
+        def _parse_alter_drop_action(self) -> exp.Expression | None:
+            if self._match_pair(TokenType.DROP, TokenType.PRIMARY_KEY):
+                exists = self._match_text_seq("IF", "EXISTS")
+                return self.expression(DropPrimaryKey(exists=exists))
+            return super()._parse_alter_drop_action()
 
         def _parse_alter_table_alter(self) -> exp.Expression | None:
             index = self._index

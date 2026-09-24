@@ -5,7 +5,11 @@ from sqlglot import exp
 
 from local_bigquery.catalog import names
 from local_bigquery.errors import BigQueryError
-from local_bigquery.sql.dialect import AlterColumnOptions, BigQueryDialect
+from local_bigquery.sql.dialect import (
+    AlterColumnOptions,
+    BigQueryDialect,
+    DropPrimaryKey,
+)
 
 SNAPSHOT = re.compile(
     r"^(CREATE|DROP)\s+SNAPSHOT\s+TABLE\s+(.*)$", re.IGNORECASE | re.DOTALL
@@ -106,13 +110,8 @@ def metadata_only(action: exp.Expression) -> bool:
     return (
         isinstance(action, exp.AlterSet | exp.AddConstraint | AlterColumnOptions)
         or (isinstance(action, exp.Drop) and action.args.get("kind") == "CONSTRAINT")
-        or drops_primary_key(action)
+        or isinstance(action, DropPrimaryKey)
     )
-
-
-def drops_primary_key(action: exp.Expression) -> bool:
-    text = action.text("expression").upper() if isinstance(action, exp.Command) else ""
-    return text.split()[:2] == ["PRIMARY", "KEY"]
 
 
 def _alter(tree: exp.Alter, action: exp.Expression) -> exp.Alter:

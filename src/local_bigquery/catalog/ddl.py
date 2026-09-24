@@ -11,8 +11,7 @@ from local_bigquery.catalog.options import (
     options,
 )
 from local_bigquery.errors import BigQueryError
-from local_bigquery.sql.dialect import AlterColumnOptions
-from local_bigquery.sql.rules.ddl import drops_primary_key
+from local_bigquery.sql.dialect import AlterColumnOptions, DropPrimaryKey
 
 PARAMETERS = {
     exp.DataType.Type.TEXT: ("maxLength",),
@@ -132,9 +131,8 @@ def _alteration(
                 "invalidQuery", f"Constraint {name} does not exist in table {label}"
             )
         return {"tableConstraints": {"foreignKeys": kept or None}}
-    if drops_primary_key(action):
-        exists = action.text("expression").upper().endswith("IF EXISTS")
-        if "primaryKey" not in keys and not exists:
+    if isinstance(action, DropPrimaryKey):
+        if "primaryKey" not in keys and not action.args.get("exists"):
             raise BigQueryError(
                 "invalidQuery", f"Primary key does not exist in table {label}"
             )
