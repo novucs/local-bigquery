@@ -1,4 +1,3 @@
-import contextlib
 import json
 import re
 
@@ -131,24 +130,9 @@ def _target(tree: exp.Expression, context: Context) -> tuple[str, ...]:
 
 
 def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated: bool):
-    reference = tables.reference(destination)
-    write = config.get("writeDisposition") or "WRITE_EMPTY"
-    create = config.get("createDisposition")
-    relation = cur.sql(sql, params=bound)
-    layout = tables.layout(relation.columns, config, write)
-    with (
-        database.writing(*reference),
-        database.cursor() if isolated else contextlib.nullcontext(cur) as writer,
-    ):
-        if write == "WRITE_APPEND" and tables.exists(*reference):
-            options = config.get("schemaUpdateOptions")
-            tables.evolve(
-                writer, reference, relation, options, "Invalid schema update. "
-            )
-        tables.write(
-            cur, sql, bound, reference, write, create, writer if isolated else None
-        )
-    tables.annotate(reference, layout)
+    tables.write(
+        cur, sql, bound, tables.reference(destination), config, isolated=isolated
+    )
 
 
 def _fields(relation: duckdb.DuckDBPyRelation, required: set[str]) -> list[dict]:

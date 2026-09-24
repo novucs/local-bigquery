@@ -29,11 +29,9 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
         f"SELECT * FROM {_source(reference)}" for reference in references
     )
     (copied,) = cur.sql(f"SELECT count(*) FROM ({select})").fetchone()
-    write = config.get("writeDisposition") or "WRITE_EMPTY"
     if create := CLONES.get(config.get("operationType")):
         statement = f"{create} {_name(destination)} CLONE {_name(references[0])}"
         query.execute(cur, destination[0], None, {"query": statement})
     else:
-        create = config.get("createDisposition")
-        tables.write(cur, select, None, destination, write, create)
+        tables.write(cur, select, None, destination, config)
     return {"copiedRows": str(copied), "copiedLogicalBytes": "0"}

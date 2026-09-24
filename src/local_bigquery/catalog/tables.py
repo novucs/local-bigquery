@@ -1,3 +1,5 @@
+import contextlib
+
 import duckdb
 
 from local_bigquery.catalog import datasets, metadata, names
@@ -392,20 +394,34 @@ def write(
     query: str,
     params: dict | None,
     reference: tuple[str, str, str],
-    write_disposition: str,
-    create_disposition: str | None = None,
-    writer: duckdb.DuckDBPyConnection | None = None,
-):
-    table = name(*reference)
-    found = exists(*reference)
-    label = names.label(*reference)
-    if not found and create_disposition == "CREATE_NEVER":
-        raise not_found("Table", label)
-    if found and write_disposition == "WRITE_EMPTY":
-        if cur.sql(f"SELECT 1 FROM {table} LIMIT 1").fetchone():
-            raise already_exists("Table", label)
-    append = found and write_disposition == "WRITE_APPEND"
-    results.materialise(cur, query, table, params, append, writer)
+    config: dict,
+    default: str = "WRITE_EMPTY",
+    prefix: str = "Invalid schema update. ",
+    isolated: bool = False,
+) -> bool:
+    disposition = config.get("writeDisposition") or default
+    relation = cur.sql(query, params=params)
+    changes = layout(relation.columns, config, disposition)
+    table, label = name(*reference), names.label(*reference)
+    with (
+        database.writing(*reference),
+        database.cursor() if isolated else contextlib.nullcontext(cur) as writer,
+    ):
+        found = exists(*reference)
+        if not found and config.get("createDisposition") == "CREATE_NEVER":
+            raise not_found("Table", label)
+        if found and disposition == "WRITE_EMPTY":
+            if cur.sql(f"SELECT 1 FROM {table} LIMIT 1").fetchone():
+                raise already_exists("Table", label)
+        append = found and disposition == "WRITE_APPEND"
+        if append:
+            options = config.get("schemaUpdateOptions")
+            evolve(writer, reference, relation, options, prefix)
+        results.materialise(
+            cur, query, table, params, append, writer if isolated else None
+        )
+    annotate(reference, changes)
+    return not found
 
 
 def delete(project_id: str, dataset_id: str, table_id: str):

@@ -244,23 +244,13 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
             f"Rows: {total}; errors: {rejected}.",
         )
     query = f"SELECT {projection} FROM {reader} WHERE NOT ({bad})"
-    relation = cur.sql(query)
-    write = config.get("writeDisposition") or "WRITE_APPEND"
-    layout = tables.layout(relation.columns, config, write)
-    created = not tables.exists(*reference)
-    if not created:
-        tables.evolve(
-            cur,
-            reference,
-            relation,
-            config.get("schemaUpdateOptions"),
-            f"Provided Schema does not match Table {names.label(*reference)}. ",
-        )
+    prefix = f"Provided Schema does not match Table {names.label(*reference)}. "
     with _reading(locations):
-        create = config.get("createDisposition")
-        tables.write(cur, query, None, reference, write, create)
-    schema = {"schema": config["schema"]} if created and fields else {}
-    tables.annotate(reference, schema | layout)
+        created = tables.write(
+            cur, query, None, reference, config, "WRITE_APPEND", prefix
+        )
+    if created and fields:
+        tables.annotate(reference, {"schema": config["schema"]})
     count, size = cur.sql(
         f"SELECT count(*), coalesce(sum(size), 0) FROM read_blob({files})"
     ).fetchone()
@@ -269,7 +259,7 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
         "inputFileBytes": str(size),
         "outputRows": str(total - rejected),
         "outputBytes": str(
-            tables.logical_bytes(total - rejected, len(relation.columns))
+            tables.logical_bytes(total - rejected, len(tables.columns(*reference)))
         ),
         "badRecords": str(rejected),
     }

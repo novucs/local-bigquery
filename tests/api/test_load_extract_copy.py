@@ -37,7 +37,7 @@ def types(bq, table):
 
 
 def load_json(bq, table, rows, **config):
-    job_config = bigquery.LoadJobConfig(schema=X, **config)
+    job_config = bigquery.LoadJobConfig(**{"schema": X} | config)
     return bq.load_table_from_json(rows, table, job_config=job_config).result()
 
 
@@ -664,3 +664,12 @@ def test_load_errors_name_the_source_uri(bq, dataset, bucket):
         ).result()
     assert f"gs://{bucket.name}/bad.json" in info.value.message
     assert str(bucket) not in info.value.message
+
+
+def test_load_write_truncate_replaces_schema(bq, dataset):
+    table = ctas(bq, dataset, 1)
+    schema = [*X, bigquery.SchemaField("y", "STRING")]
+    load_json(
+        bq, table, [{"x": 2, "y": "b"}], schema=schema, write_disposition=TRUNCATE
+    )
+    assert select(bq, table) == [(2, "b")]
