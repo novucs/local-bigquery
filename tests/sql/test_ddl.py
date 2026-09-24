@@ -434,7 +434,7 @@ def test_create_table_with_unenforced_keys(bq, dataset, table):
     assert constraints(bq, table) == (
         ["a", "b"],
         [
-            (f"{table.split('.')[1]}.fk$1", parent, [("c", "id")]),
+            ("fk$1", parent, [("c", "id")]),
             ("fk", parent, [("b", "id")]),
         ],
     )
@@ -457,9 +457,25 @@ def test_invalid_keys(bq, table, columns, message):
     assert message in info.value.message
 
 
-def test_alter_table_keys(bq, dataset, table):
+def test_foreign_key_needs_a_primary_key(bq, dataset, table):
     parent = unique("parent")
     run(bq, f"CREATE TABLE {dataset.dataset_id}.{parent} (id INT64)")
+    with pytest.raises(BadRequest, match="does not have Primary Key constraints"):
+        run(
+            bq,
+            f"CREATE TABLE {table} (c INT64 REFERENCES "
+            f"{dataset.dataset_id}.{parent}(id) NOT ENFORCED)",
+        )
+    with pytest.raises(NotFound):
+        bq.get_table(table)
+
+
+def test_alter_table_keys(bq, dataset, table):
+    parent = unique("parent")
+    run(
+        bq,
+        f"CREATE TABLE {dataset.dataset_id}.{parent} (id INT64 PRIMARY KEY NOT ENFORCED)",
+    )
     run(bq, f"CREATE TABLE {table} (a INT64, b INT64)")
     run(bq, f"ALTER TABLE {table} ADD PRIMARY KEY (a) NOT ENFORCED")
     run(
@@ -557,7 +573,11 @@ def test_create_or_replace_clone(bq, dataset, table):
 def test_search_and_vector_indexes(bq, dataset, table):
     ds, name = dataset.dataset_id, table.split(".")[1]
     run(bq, f"CREATE TABLE {table} (s STRING, e ARRAY<FLOAT64>)")
-    run(bq, f"INSERT {table} (s, e) VALUES ('a', [1.0, 2.0])")
+    run(
+        bq,
+        f"INSERT {table} (s, e) SELECT CAST(x AS STRING), [x, 1.0] "
+        "FROM UNNEST(GENERATE_ARRAY(1, 5000)) AS x",
+    )
     run(bq, f"CREATE SEARCH INDEX si ON {table}(ALL COLUMNS)")
     run(bq, f"CREATE SEARCH INDEX IF NOT EXISTS si ON {table}(s)")
     run(
@@ -583,6 +603,14 @@ def test_search_and_vector_indexes(bq, dataset, table):
         f"SELECT COUNT(*) FROM {ds}.INFORMATION_SCHEMA.SEARCH_INDEXES "
         f"WHERE table_name = '{name}'",
     ) == [(0,)]
+
+
+def test_ivf_vector_index_needs_enough_rows(bq, table):
+    run(bq, f"CREATE TABLE {table} AS SELECT [1.0, 2.0] AS e")
+    with pytest.raises(
+        BadRequest, match="Total rows 1 is smaller than min allowed 5000"
+    ):
+        run(bq, f"CREATE VECTOR INDEX vi ON {table}(e) OPTIONS (index_type = 'IVF')")
 
 
 @pytest.mark.emulator("depends on sub-second expiry timing")

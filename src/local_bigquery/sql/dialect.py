@@ -1,3 +1,4 @@
+import decimal
 import pathlib
 import re
 
@@ -61,10 +62,45 @@ UNAVAILABLE = {
 }
 
 
+NUMERIC_LIMITS = {
+    exp.DataType.Type.DECIMAL: (
+        "NUMERIC",
+        decimal.Decimal("99999999999999999999999999999.999999999"),
+    ),
+    exp.DataType.Type.BIGDECIMAL: (
+        "BIGNUMERIC",
+        decimal.Decimal(
+            "578960446186580977117854925043439539266."
+            "34992332820282019728792003956564819967"
+        ),
+    ),
+}
+
+
+def _numeric_literal(self, this: exp.Expression, data_type: exp.DataType):
+    name, maximum = NUMERIC_LIMITS[data_type.this]
+    try:
+        value = decimal.Decimal(this.name)
+    except decimal.InvalidOperation:
+        value = None
+    if value is None or not value.is_finite() or value.copy_abs() > maximum:
+        token = self._tokens[self._index - 2]
+        column = token.col - len(token.text) + 1
+        raise BigQueryError(
+            "invalidQuery",
+            f'Invalid {name} literal: "{this.name}" at [{token.line}:{column}]',
+        )
+    return self.expression(exp.Cast(this=this, to=data_type))
+
+
 class BigQueryDialect(BaseBigQuery):
     INVERSE_TIME_MAPPING = BaseBigQuery.INVERSE_TIME_MAPPING
 
     class Parser(BaseBigQuery.Parser):
+        TYPE_LITERAL_PARSERS = {
+            **BaseBigQuery.Parser.TYPE_LITERAL_PARSERS,
+            **dict.fromkeys(NUMERIC_LIMITS, _numeric_literal),
+        }
         FUNCTION_PARSERS = {
             **BaseBigQuery.Parser.FUNCTION_PARSERS,
             "RANGE_SESSIONIZE": _table_function("RANGE_SESSIONIZE"),

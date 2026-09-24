@@ -58,10 +58,9 @@ CASES = [
     ),
     q(
         "SELECT BIGNUMERIC '1e40'",
-        Decimal("1e40"),
-        types="BIGNUMERIC",
-        xfail="BIGNUMERIC limited to DECIMAL(38, 18)",
+        error=r'Invalid BIGNUMERIC literal: "1e40" at \[1:8\]',
     ),
+    q("SELECT NUMERIC '1e30'", error=r'Invalid NUMERIC literal: "1e30" at \[1:8\]'),
     q('SELECT JSON \'{"a": [1, "x"]}\'', {"a": [1, "x"]}, types="JSON"),
     q(
         "SELECT ST_GEOGPOINT(1, 2)",

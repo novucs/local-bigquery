@@ -139,7 +139,7 @@ def ddl(
         if drop_all:
             if not dry_run:
                 delete(*keys)
-            return {"statementType": "DROP_ALL_ROW_ACCESS_POLICIES"}
+            return {"statementType": "DROP_ROW_ACCESS_POLICY"}
         exists = metadata.load("row_access_policies", *keys, name)
         if exists and len(list_(*keys)) == 1:
             raise BigQueryError(

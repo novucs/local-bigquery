@@ -100,13 +100,24 @@ def _foreign_key(reference: exp.Reference, table: tuple, position: int) -> dict:
     pairs = zip(columns, reference.this.expressions)
     constraint = key.parent if isinstance(key.parent, exp.Constraint) else None
     return {
-        "name": constraint.name if constraint else f"{table[2]}.fk${position}",
+        "name": constraint.name if constraint else f"fk${position}",
         "referencedTable": dict(zip(("projectId", "datasetId", "tableId"), target)),
         "columnReferences": [
             {"referencingColumn": column, "referencedColumn": referenced.name}
             for column, referenced in pairs
         ],
     }
+
+
+def check_references(tree: exp.Expression, project_id: str, dataset_id: str | None):
+    for reference in tree.find_all(exp.Reference):
+        target = _reference(reference.this.this, project_id, dataset_id)
+        stored = metadata.load("tables", *target) or {}
+        if not (stored.get("tableConstraints") or {}).get("primaryKey"):
+            raise BigQueryError(
+                "invalid",
+                f"Table {target[1]}.{target[2]} does not have Primary Key constraints",
+            )
 
 
 def _keys(node: exp.Expression, table: tuple, foreign: int = 0) -> dict:

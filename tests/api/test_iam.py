@@ -1,9 +1,9 @@
 import pytest
 import requests
-from google.api_core.exceptions import NotFound, PreconditionFailed
+from google.api_core.exceptions import BadRequest, NotFound
 from google.cloud import bigquery
 
-from tests.cases import FAST_RETRY, fails, run, unique
+from tests.cases import FAST_RETRY, run, unique
 
 VIEWER = "roles/bigquery.dataViewer"
 MEMBER = "allAuthenticatedUsers"
@@ -46,7 +46,7 @@ def test_set_policy_with_stale_etag(bq, table):
     policy = bq.get_iam_policy(table, retry=FAST_RETRY)
     policy.bindings = [{"role": VIEWER, "members": {MEMBER}}]
     bq.set_iam_policy(table, policy, retry=FAST_RETRY)
-    with fails(PreconditionFailed, "conditionNotMet"):
+    with pytest.raises(BadRequest, match="There were concurrent policy changes"):
         bq.set_iam_policy(table, policy, retry=FAST_RETRY)
 
 

@@ -1,13 +1,15 @@
 import re
 
 from local_bigquery.catalog import metadata, row_access, tables
-from local_bigquery.errors import already_exists, not_found
+from local_bigquery.errors import BigQueryError, already_exists, not_found
 
 INDEX = re.compile(
     r"^(OR\s+REPLACE\s+)?(SEARCH|VECTOR)\s+INDEX\s+(IF\s+(?:NOT\s+)?EXISTS\s+)?(\S+)"
     r"\s+ON\s+([^\s(]+)",
     re.IGNORECASE,
 )
+IVF = re.compile(r"index_type\s*=\s*['\"]IVF['\"]", re.IGNORECASE)
+MINIMUM_IVF_ROWS = 5000
 
 
 def list_(project_id: str, dataset_id: str, table_id: str, kind: str) -> list[dict]:
@@ -31,6 +33,16 @@ def ddl(
         raise not_found(f"{kind.title()} index", label)
     if keyword == "CREATE" and found and not (replace or if_exists):
         raise already_exists(f"{kind.title()} index", label)
+    if keyword == "CREATE" and IVF.search(command):
+        total = int(tables.load(*keys[:3])["numRows"])
+        if total < MINIMUM_IVF_ROWS:
+            raise BigQueryError(
+                "invalid",
+                f"Total rows {total} is smaller than min allowed {MINIMUM_IVF_ROWS} "
+                "for CREATE VECTOR INDEX query with the IVF index type. Please use "
+                "VECTOR_SEARCH table-valued function directly to perform the "
+                "similarity search.",
+            )
     if not dry_run and keyword == "DROP":
         metadata.delete("indexes", *keys)
     elif not dry_run and not (found and if_exists):

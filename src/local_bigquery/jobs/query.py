@@ -72,6 +72,7 @@ def _temporary_function(tree: exp.Expression) -> bool:
 
 
 def _ddl(tree: exp.Expression, context: Context) -> dict:
+    catalog_ddl.check_references(tree, context.project_id, context.dataset_id)
     kind = (tree.args.get("kind") or "").upper()
     target = tree.find(exp.Table)
     if kind == "SCHEMA" and target is not None:

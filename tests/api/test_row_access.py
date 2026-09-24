@@ -152,7 +152,7 @@ def test_statement_types(bq, orders):
     job = run_job(bq, f"DROP ROW ACCESS POLICY p ON {orders}")
     assert job.statement_type == "DROP_ROW_ACCESS_POLICY"
     job = run_job(bq, f"DROP ALL ROW ACCESS POLICIES ON {orders}")
-    assert job.statement_type == "DROP_ALL_ROW_ACCESS_POLICIES"
+    assert job.statement_type == "DROP_ROW_ACCESS_POLICY"
 
 
 def test_dropping_the_last_policy_needs_drop_all(bq, orders):

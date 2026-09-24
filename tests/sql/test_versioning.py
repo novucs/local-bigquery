@@ -86,7 +86,11 @@ def test_materialized_view_tracks_base_table(bq, source, name):
 
 def test_drop_and_refresh_materialized_view(bq, source, name):
     view = name("mv")
-    run(bq, f"CREATE MATERIALIZED VIEW {view} AS SELECT COUNT(*) AS n FROM {source}")
+    run(
+        bq,
+        f"CREATE MATERIALIZED VIEW {view} OPTIONS (enable_refresh = false) "
+        f"AS SELECT COUNT(*) AS n FROM {source}",
+    )
     run(bq, f"INSERT {source} VALUES (2, 'a', 5)")
     run(bq, f"CALL BQ.REFRESH_MATERIALIZED_VIEW('{view}')")
     assert rows(bq, f"SELECT n FROM {view}") == [(2,)]
@@ -124,9 +128,11 @@ def test_time_travel_before_creation(bq, source):
 
 
 def test_table_decorators_are_rejected_in_sql(bq, source):
-    with fails(BadRequest, "invalidQuery") as info:
-        run(bq, f"SELECT id FROM `{source}@1`")
-    assert f'Table "{source}@1" cannot include decorator' in info.value.message
+    [(before,)] = rows(bq, "SELECT UNIX_MILLIS(CURRENT_TIMESTAMP())")
+    run(bq, f"DELETE FROM {source} WHERE TRUE")
+    with pytest.raises(BadRequest) as info:
+        run(bq, f"SELECT id FROM `{source}@{before}`")
+    assert f'Table "{source}@{before}" cannot include decorator' in info.value.message
 
 
 def test_copy_reads_table_decorator(bq, source, name):
