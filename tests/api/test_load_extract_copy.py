@@ -567,7 +567,7 @@ def test_copy_snapshot(bq, dataset):
     assert f"{base.project}.{base.dataset_id}.{base.table_id}" == source
     assert created.snapshot_definition.snapshot_time is not None
     assert select(bq, snapshot) == [(1,)]
-    with fails(BadRequest, "invalidQuery"):
+    with pytest.raises(BadRequest, match="is a snapshot, and snapshots are immutable"):
         run(bq, f"INSERT INTO `{snapshot}` VALUES (2)")
 
 

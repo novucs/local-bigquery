@@ -454,8 +454,6 @@ def test_procedure_defined_and_called_in_script(bq, routine):
 def test_unknown_function_message(bq, dataset):
     with pytest.raises(Exception, match=r"Function not found: no_such_fn at \[1:8\]"):
         run(bq, "SELECT no_such_fn(1)")
-    qualified = (
-        rf"Function not found: `[\w\-]+\.{dataset.dataset_id}`\.no_such_fn at \[1:8\]"
-    )
+    qualified = rf"Function not found: {dataset.dataset_id}\.no_such_fn at \[1:8\]"
     with pytest.raises(Exception, match=qualified):
         run(bq, f"SELECT {dataset.dataset_id}.no_such_fn(1)")

@@ -64,11 +64,18 @@ CREATE MACRO _search_tokens(s) AS list_filter(
     regexp_split_to_array(lower(s), '[\s\[\]<>(){}|!;,''"`*&?+/:=@.\-$%\\_]+'), t -> t <> ''
 );
 
-CREATE MACRO search(data, query) AS list_has_all(
-    bq.main._search_tokens((
-        SELECT string_agg(json_extract_string(value, '$'), ' ')
-        FROM json_tree(to_json(data))
-        WHERE type = 'VARCHAR'
-    )),
-    bq.main._search_tokens(query)
-);
+CREATE MACRO _search_text(s) AS ' ' || array_to_string(bq.main._search_tokens(s), ' ') || ' ';
+
+CREATE MACRO _search_leaf(text, query) AS list_has_all(
+    bq.main._search_tokens(text),
+    bq.main._search_tokens(regexp_replace(query, '`[^`]*`', ' ', 'g'))
+) AND coalesce(list_bool_and(list_transform(
+    regexp_extract_all(query, '`([^`]*)`', 1),
+    phrase -> contains(bq.main._search_text(text), bq.main._search_text(phrase))
+)), true);
+
+CREATE MACRO search(data, query) AS coalesce((
+    SELECT bool_or(bq.main._search_leaf(json_extract_string(value, '$'), query))
+    FROM json_tree(to_json(data))
+    WHERE type = 'VARCHAR'
+), false);

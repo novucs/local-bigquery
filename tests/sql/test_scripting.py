@@ -101,8 +101,8 @@ CASES = [
     ),
     q(
         "DECLARE i INT64 DEFAULT 0; DECLARE n INT64 DEFAULT 0; "
-        "Outer: REPEAT SET i = i + 1; "
-        "FOR r IN (SELECT 1 AS v) DO SET n = n + 1; ITERATE outer; END FOR; "
+        "outer_loop: REPEAT SET i = i + 1; "
+        "FOR r IN (SELECT 1 AS v) DO SET n = n + 1; ITERATE outer_loop; END FOR; "
         "UNTIL i >= 2 END REPEAT; SELECT n",
         2,
     ),
@@ -199,10 +199,8 @@ CASES = [
         "SELECT @@current_job_id IS NOT NULL",
         True,
     ),
-    q(
-        "SELECT @@script.job_id IS NOT NULL",
-        True,
-    ),
+    q("SELECT @@script.job_id IS NOT NULL", False),
+    q("SELECT 1; SELECT @@script.job_id IS NOT NULL", True),
     q(
         "CREATE TEMP TABLE t AS SELECT v FROM UNNEST([1, 2]) AS v; "
         "UPDATE t SET v = v + 1 WHERE TRUE; SELECT @@row_count",

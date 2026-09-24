@@ -156,12 +156,11 @@ CASES = [
         "SELECT SEARCH(['alpha beta', 'gamma'], 'gamma alpha'), "
         "SEARCH(t, 'bob'), SEARCH(t, 'name') "
         "FROM (SELECT 'Bob Smith' AS name, 5 AS n) AS t",
-        rows=[(True, True, False)],
+        rows=[(False, True, False)],
     ),
     q(
-        "SELECT SEARCH('foo bar baz', '`foo baz`')",
-        False,
-        xfail="backtick phrases are searched as separate terms",
+        "SELECT SEARCH('foo bar baz', '`foo baz`'), SEARCH('foo bar baz', '`foo bar`')",
+        rows=[(False, True)],
     ),
 ]
 

@@ -77,8 +77,9 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
         raise _not_found(project_id, dataset_id, table_id)
     if is_target and isinstance(tree, DML) and stored.get("type") == "SNAPSHOT":
         raise BigQueryError(
-            "invalidQuery",
-            f"Cannot modify snapshot table {project_id}:{dataset_id}.{table_id}",
+            "invalid",
+            f"Table {project_id}:{dataset_id}.{table_id} is a snapshot, "
+            "and snapshots are immutable.",
         )
     if stored.get("requirePartitionFilter") and not is_target:
         partitioning = stored.get("timePartitioning") or {}
@@ -206,7 +207,10 @@ def wildcard_table(node: exp.Expression, context) -> exp.Expression:
         [project_id, dataset_id, prefix],
     )
     if not tables:
-        raise _not_found(project_id, dataset_id, node.name)
+        raise BigQueryError(
+            "invalid",
+            f"{project_id}:{dataset_id}.{node.name} does not match any table.",
+        )
     selects = [
         sqlglot.select(
             "*",

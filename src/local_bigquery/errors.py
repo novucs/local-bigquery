@@ -156,14 +156,11 @@ def _function(tree, name: str, context=None) -> tuple[str, str]:
             path = node.parent.this
             meta = next(iter(path.find_all(sqlglot.exp.Identifier))).meta
             column = meta.get("col", 0) - (meta.get("end", 0) - meta.get("start", 0))
-            parts = [
-                part
-                for identifier in path.find_all(sqlglot.exp.Identifier)
-                for part in identifier.name.split(".")
-            ]
-            if len(parts) == 1 and context is not None:
-                parts.insert(0, context.project_id)
-            return f"`{'.'.join(parts)}`.{node.name}", f"{meta['line']}:{column}"
+            identifiers = list(path.find_all(sqlglot.exp.Identifier))
+            written = ".".join(identifier.name for identifier in identifiers)
+            if any(identifier.quoted for identifier in identifiers):
+                written = f"`{written}`"
+            return f"{written}.{node.name}", f"{meta['line']}:{column}"
         return node.name, f"{node.meta['line']}:{column}"
     return name, "1:1"
 

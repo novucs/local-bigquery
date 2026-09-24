@@ -117,9 +117,7 @@ def duplicate_columns(tree: exp.Expression, context) -> exp.Expression:
             continue
         if name.casefold() in seen:
             raise BigQueryError(
-                "invalidQuery",
-                "Duplicate column names in the result are not supported. "
-                f"Found duplicate(s): {name}",
+                "invalidQuery", f"CREATE TABLE has columns with duplicate name {name}"
             )
         seen.add(name.casefold())
     return tree

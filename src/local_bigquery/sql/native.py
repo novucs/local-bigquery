@@ -182,11 +182,14 @@ def json_exact(text: str) -> bool:
 
 def zone_name(seconds: float, zone: str) -> str:
     try:
-        return datetime.datetime.fromtimestamp(
-            seconds, zoneinfo.ZoneInfo(zone)
-        ).tzname()
+        moment = datetime.datetime.fromtimestamp(seconds, zoneinfo.ZoneInfo(zone))
     except (ValueError, zoneinfo.ZoneInfoNotFoundError):
         return zone
+    minutes = int(moment.utcoffset().total_seconds()) // 60
+    hours, remainder = divmod(abs(minutes), 60)
+    sign = "+" if minutes > 0 else "-"
+    suffix = f"{sign}{hours}" + (f":{remainder:02d}" if remainder else "")
+    return "UTC" + (suffix if minutes else "")
 
 
 def raise_error(message: str):

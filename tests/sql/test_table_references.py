@@ -52,7 +52,7 @@ CASES = [
     ),
     q(
         "SELECT * FROM `nothing_*`",
-        error="notFound",
+        error=r"invalid: .*\.nothing_\* does not match any table\.",
     ),
     q(
         "SELECT id FROM t FOR SYSTEM_TIME AS OF CURRENT_TIMESTAMP() ORDER BY id",

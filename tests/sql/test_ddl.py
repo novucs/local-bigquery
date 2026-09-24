@@ -390,7 +390,7 @@ def test_destination_layout_is_recorded(bq, dataset):
 def test_create_table_as_select_rejects_duplicate_columns(bq, table, select):
     with fails(BadRequest, "invalidQuery") as info:
         run(bq, f"CREATE TABLE {table} AS {select}")
-    assert "Duplicate column names" in info.value.message
+    assert "CREATE TABLE has columns with duplicate name a" in info.value.message
 
 
 def constraints(bq, table) -> tuple:

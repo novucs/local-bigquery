@@ -380,6 +380,8 @@ def _execute(
     statements: list[script.Statement],
 ) -> tuple[dict, list[dict], dict | None]:
     scripted = script.is_script([s for s in statements if not _definition(s)])
+    if not scripted:
+        context.system["script.job_id"] = None
     if scripted and dry_run:
         return {"statementType": "SCRIPT"}, [], None
     destination = None

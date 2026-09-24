@@ -350,7 +350,10 @@ CASES = [
         "CAST(TIMESTAMP '2008-12-25 00:00:00+00' AS STRING FORMAT 'HH24 TZH')",
         rows=[("2008-12-25 05:30:00 +05:30", "00 +00")],
     ),
-    q("SELECT CAST(DATE '2018-01-30' AS STRING FORMAT 'YYYY-QQ')", error="QQ"),
+    q(
+        "SELECT CAST(DATE '2018-01-30' AS STRING FORMAT 'YYYY-QQ')",
+        error="DATE does not support 'Q'",
+    ),
     q(
         "SELECT CAST('18-12-03' AS DATE FORMAT 'YY-MM-DD'), "
         "CAST('2021-JAN-05' AS DATE FORMAT 'YYYY-MON-DD'), "
@@ -393,7 +396,7 @@ CASES = [
         "SELECT FORMAT_TIMESTAMP('%Z',TIMESTAMP '2020-01-05 10:00:00+00', "
         "'America/New_York'), FORMAT_TIMESTAMP('%H %Z', TIMESTAMP '2020-07-05 10:00:00+00', "
         "'America/New_York'), FORMAT_TIMESTAMP('%Z', TIMESTAMP '2020-01-05 10:00:00+00')",
-        rows=[("EST", "06 EDT", "UTC")],
+        rows=[("UTC-5", "06 UTC-4", "UTC")],
     ),
     q(
         "SELECT FORMAT_TIMESTAMP('%H:%M:%E3S', TIMESTAMP '2020-01-01 00:00:00.123456+00')",

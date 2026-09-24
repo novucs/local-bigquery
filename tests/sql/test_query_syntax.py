@@ -169,7 +169,7 @@ CASES = [
     q("CREATE TEMP TABLE tmp AS SELECT 2 AS b; SELECT b FROM tmp", 2),
     q(
         "CREATE TABLE dup AS SELECT 1 AS a, 2 AS a",
-        error="(?i)duplicate column names",
+        error="CREATE TABLE has columns with duplicate name a",
     ),
     q("SELECT 1 AS a, 2 AS a", rows=[(1, 2)]),
 ]

@@ -407,8 +407,9 @@ def format_cast(node: exp.Expression, context) -> exp.Expression:
         pieces.append(_model_element(match[0], local, _offset_seconds(local, instant)))
         position = match.end()
     if position != len(text):
+        name = exp.DataType.build(kind).sql(dialect="bigquery")
         raise BigQueryError(
-            "invalidQuery", f"Unsupported format element: {text[position:]}"
+            "invalidQuery", f"{name} does not support '{text[position]}'"
         )
     return exp.cast(_concat(pieces), "VARCHAR") if pieces else _node("")
 
