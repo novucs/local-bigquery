@@ -7,7 +7,7 @@ credentials.
 ## Quick start
 
 ```bash
-docker run -p 9050:9050 -p 9060:9060 -v bigquery:/data ghcr.io/novucs/local-bigquery:0.3.0
+docker run -p 9050:9050 -p 9060:9060 -v bigquery:/data ghcr.io/novucs/local-bigquery:0.3.1
 ```
 
 Then point a client at `http://localhost:9050`, without credentials. Any project ID
