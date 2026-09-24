@@ -1,5 +1,6 @@
 import datetime
 
+import duckdb
 import sqlglot
 from sqlglot import exp
 
@@ -375,10 +376,13 @@ def _partitions(table: Table) -> list[tuple[str | None, int]]:
         return [(None, int(table.numRows))]
     field = partitioning.field
     fmt = PARTITION_FORMATS.get(partitioning.type or "DAY", "%Y%m%d")
-    return database.fetch(
-        f"SELECT coalesce(strftime({quote(field)}, '{fmt}'), '__NULL__'), count(*) "
-        f"FROM {name} GROUP BY 1 ORDER BY 1"
-    )
+    try:
+        return database.fetch(
+            f"SELECT coalesce(strftime({quote(field)}, '{fmt}'), '__NULL__'), "
+            f"count(*) FROM {name} GROUP BY 1 ORDER BY 1"
+        )
+    except duckdb.CatalogException:
+        return []
 
 
 def partitions(project_id: str, dataset_id: str | None):
