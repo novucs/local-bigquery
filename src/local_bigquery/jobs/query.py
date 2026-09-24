@@ -1,5 +1,4 @@
 import json
-import re
 
 import duckdb
 import sqlglot
@@ -24,9 +23,6 @@ from local_bigquery.sql.dialect import DuckDBDialect
 from local_bigquery.sql.rules import ddl
 from local_bigquery.sql.translate import Context, parse, translate
 
-TEMPORARY_FUNCTION = re.compile(
-    r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?TEMP(?:ORARY)?\s+FUNCTION\b", re.IGNORECASE
-)
 STATEMENT_TYPES = {
     exp.Insert: "INSERT",
     exp.Update: "UPDATE",
@@ -341,10 +337,6 @@ def execute(
             cur.execute(f"DETACH {alias}")
 
 
-def _definition(statement: script.Statement) -> bool:
-    return statement.kind == "SQL" and bool(TEMPORARY_FUNCTION.match(statement.text))
-
-
 def _execute(
     cur: duckdb.DuckDBPyConnection,
     project_id: str,
@@ -355,7 +347,7 @@ def _execute(
     context: Context,
     statements: list[script.Statement],
 ) -> tuple[dict, list[dict], dict | None]:
-    scripted = script.is_script([s for s in statements if not _definition(s)])
+    scripted = script.is_script([s for s in statements if s.kind != "TEMP_FUNCTION"])
     if not scripted:
         context.system["script.job_id"] = None
     kinds = {statement.kind for statement in statements}

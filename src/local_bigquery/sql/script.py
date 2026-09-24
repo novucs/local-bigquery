@@ -21,7 +21,7 @@ RAISE_MESSAGE = re.compile(r"(?is)^USING\s+MESSAGE\s*=\s*(.*)$")
 TABLE_FUNCTION = re.compile(r"(?is)^(\s*\w+(?:\s+OR\s+REPLACE)?\s+)TABLE\s+(FUNCTION)")
 AGGREGATE = re.compile(r"(?i)\bAGGREGATE\s+(?=FUNCTION\b)|\s+NOT\s+AGGREGATE\b")
 ALIASES = {"LEAVE": "BREAK", "ITERATE": "CONTINUE"}
-STATEMENTS = {"SQL", "TABLE_FUNCTION", "DROP_PROCEDURE"}
+STATEMENTS = {"SQL", "TABLE_FUNCTION", "TEMP_FUNCTION", "DROP_PROCEDURE"}
 LABELLED = {"LOOP", "WHILE", "REPEAT", "FOR", "BEGIN"}
 
 
@@ -123,6 +123,11 @@ class Parser:
             for n in range(1, 5)
         ):
             return self.aggregate()
+        if word == "CREATE" and any(
+            self.word(n) in ("TEMP", "TEMPORARY") and self.word(n + 1) == "FUNCTION"
+            for n in (1, 3)
+        ):
+            return Statement("TEMP_FUNCTION", self.until())
         if word in ("BREAK", "LEAVE", "CONTINUE", "ITERATE", "RETURN"):
             self.i += 1
             label = self.word() if self.word() not in (";", None) else ""
@@ -338,6 +343,7 @@ class Interpreter:
         self.handlers = {
             "SQL": self.sql,
             "TABLE_FUNCTION": self.sql,
+            "TEMP_FUNCTION": self.sql,
             "DECLARE": self.declare,
             "SET": self.set,
             "IF": self.branch,
