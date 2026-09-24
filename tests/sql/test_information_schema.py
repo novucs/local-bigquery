@@ -288,7 +288,11 @@ def test_table_constraints(bq, dataset):
 
 def test_materialized_views(bq, dataset):
     ds, view = dataset.dataset_id, unique("mv")
-    run(bq, f"CREATE MATERIALIZED VIEW {ds}.{view} AS SELECT COUNT(*) AS n FROM {ds}.t")
+    run(
+        bq,
+        f"CREATE MATERIALIZED VIEW {ds}.{view} OPTIONS (enable_refresh = false) "
+        f"AS SELECT COUNT(*) AS n FROM {ds}.t",
+    )
     sql = (
         "SELECT table_name, last_refresh_time IS NOT NULL "
         f"FROM {ds}.INFORMATION_SCHEMA.MATERIALIZED_VIEWS"

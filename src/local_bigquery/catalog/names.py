@@ -62,7 +62,7 @@ def fields(schema: list[TableFieldSchema]):
 
 def column(name: str):
     if _illegal(name):
-        raise BigQueryError("invalid", f"Illegal field name: {name}")
+        raise BigQueryError("invalidQuery", f"Illegal field name: {name}")
 
 
 def label(*parts: str) -> str:

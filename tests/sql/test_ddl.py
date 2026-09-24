@@ -643,16 +643,28 @@ def test_dataset_default_table_expiration(bq):
 
 
 @pytest.mark.parametrize(
-    "statement, message",
+    "statement, reason, message",
     [
-        ("CREATE TABLE {ds}.`bad;name` (x INT64)", 'Invalid table ID "bad;name"'),
-        ('CREATE TABLE {ds}.ok (`a"b` INT64)', 'Illegal field name: a"b'),
-        ("ALTER TABLE {ds}.t ADD COLUMN `c;d` INT64", "Illegal field name: c;d"),
-        ("CREATE SCHEMA `has-dash`", 'Invalid dataset ID "has-dash"'),
+        (
+            "CREATE TABLE {ds}.`bad;name` (x INT64)",
+            "invalid",
+            'Invalid table ID "bad;name"',
+        ),
+        (
+            'CREATE TABLE {ds}.ok (`a"b` INT64)',
+            "invalidQuery",
+            'Illegal field name: a"b',
+        ),
+        (
+            "ALTER TABLE {ds}.t ADD COLUMN `c;d` INT64",
+            "invalidQuery",
+            "Illegal field name: c;d",
+        ),
+        ("CREATE SCHEMA `has-dash`", "invalid", 'Invalid dataset ID "has-dash"'),
     ],
 )
-def test_ddl_names_are_validated(bq, dataset, statement, message):
+def test_ddl_names_are_validated(bq, dataset, statement, reason, message):
     run(bq, f"CREATE TABLE IF NOT EXISTS {dataset.dataset_id}.t (x INT64)")
-    with fails(BadRequest, "invalid") as info:
+    with fails(BadRequest, reason) as info:
         run(bq, statement.format(ds=dataset.dataset_id))
     assert message in info.value.message
