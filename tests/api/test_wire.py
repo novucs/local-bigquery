@@ -1,5 +1,6 @@
 import gzip
 import json
+import time
 
 import pytest
 import requests
@@ -159,8 +160,28 @@ def test_job_id_format(api, project):
     assert job["id"] == f"{project}:US.{reference['jobId']}"
 
 
+def done(api, job: dict) -> dict:
+    while job["status"]["state"] != "DONE":
+        time.sleep(0.05)
+        job = api("GET", f"/jobs/{job['jobReference']['jobId']}").json()
+    return job
+
+
+def test_insert_does_not_wait_for_slow_jobs(api):
+    sql = (
+        "CREATE TEMP FUNCTION slow() RETURNS INT64 LANGUAGE js AS "
+        "'const start = Date.now(); while (Date.now() - start < 1500) {} return 1;'; "
+        "SELECT slow()"
+    )
+    started = time.monotonic()
+    job = insert_job(api, sql)
+    assert time.monotonic() - started < 3
+    assert job["status"]["state"] == "RUNNING"
+    assert done(api, job)["status"]["state"] == "DONE"
+
+
 def test_statistics_times_are_milliseconds(api):
-    statistics = insert_job(api, "SELECT 1")["statistics"]
+    statistics = done(api, insert_job(api, "SELECT 1"))["statistics"]
     assert len(statistics["creationTime"]) == 13
     assert int(statistics["startTime"]) <= int(statistics["endTime"])
 
@@ -345,7 +366,8 @@ def test_resumable_upload_of_unknown_size(bq, upload, dataset):
     status = upload("PUT", params, headers={"Content-Range": "bytes */*"})
     assert (status.status_code, status.headers["Range"]) == (308, "bytes=0-3")
     last = upload("PUT", params, headers={"Content-Range": "bytes 4-5/6"}, data=b"2\n")
-    assert last.json()["status"] == {"state": "DONE"}, last.json()
+    job = bq.get_job(last.json()["jobReference"]["jobId"])
+    assert job.result().state == "DONE"
     table = config["configuration"]["load"]["destinationTable"]
     sql = f"SELECT x FROM {table['datasetId']}.{table['tableId']} ORDER BY x"
     assert [tuple(row.values()) for row in bq.query_and_wait(sql)] == [(1,), (2,)]

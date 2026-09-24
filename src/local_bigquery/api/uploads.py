@@ -27,7 +27,7 @@ def _file(upload_id: str) -> str:
 def _start(project_id: str, body: dict, upload: str) -> JSONResponse:
     job_id = (body.get("jobReference") or {}).get("jobId") or str(uuid.uuid4())
     runner.submit(project_id, job_id, body.get("configuration") or {}, upload)
-    return JSONResponse(runner.wait(project_id, job_id))
+    return JSONResponse(runner.submitted(project_id, job_id))
 
 
 def _parts(content_type: str, payload: bytes) -> tuple[dict, bytes]:

@@ -16,6 +16,7 @@ DECIMALS = {Type.DECIMAL: "DECIMAL(38, 9)", Type.BIGDECIMAL: "DECIMAL(38, 18)"}
 FLOATS = {Type.DOUBLE, Type.FLOAT}
 BYTES = {Type.BINARY, Type.VARBINARY}
 BITWISE = (exp.BitwiseAnd, exp.BitwiseOr, exp.BitwiseXor)
+FLOAT_TEXT = re.compile(r"[+-]?(\d+\.\d*|\.\d+|\d+(\.\d*)?[eE][+-]?\d+)")
 TO_JSON = {"bq.main.to_json_string", "bq.main.to_json"}
 COMPARISONS = {
     exp.EQ: "=",
@@ -117,11 +118,7 @@ def _decimal(node: exp.Expression) -> exp.DataType | None:
 def _float_literal(node: exp.Expression) -> bool:
     if isinstance(node, exp.Cast) and node.to.this in FLOATS:
         node = node.this
-    return (
-        isinstance(node, exp.Literal)
-        and node.is_number
-        and any(c in node.this for c in ".eE")
-    )
+    return isinstance(node, exp.Literal) and bool(FLOAT_TEXT.fullmatch(node.this))
 
 
 def literal_coercion(node: exp.Expression, context) -> exp.Expression:

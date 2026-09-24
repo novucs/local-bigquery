@@ -113,7 +113,10 @@ def _connect() -> duckdb.DuckDBPyConnection:
 
 def _attach(con: duckdb.DuckDBPyConnection, project_id: str):
     path = settings.data_dir / project_id
-    source = f"'ducklake:{path}.ducklake' AS {{}} (DATA_PATH '{path}/')"
+    source = (
+        f"'ducklake:{path}.ducklake' AS {{}} "
+        f"(DATA_PATH '{path}/', DATA_INLINING_ROW_LIMIT 0)"
+    )
     if not path.with_name(f"{path.name}.ducklake").exists():
         with duckdb.connect() as scratch:
             scratch.execute(f"ATTACH {source.format('fresh')}")

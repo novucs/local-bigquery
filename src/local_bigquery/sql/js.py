@@ -63,7 +63,7 @@ def _function(
     source = f"(function({', '.join(names)}) {{\n{body}\n}})"
     strings = [kind.id in INTEGERS for kind in kinds]
 
-    def call(*arrays):
+    def evaluate(rows: list) -> list:
         with _lock:
             if source not in _contexts:
                 context = MiniRacer()
@@ -71,6 +71,17 @@ def _function(
                 context.eval("var batch = rows => rows.map(row => f.apply(null, row));")
                 _contexts[source] = context, threading.Lock()
         context, lock = _contexts[source]
+        try:
+            with lock:
+                values = context.call("batch", rows)
+        except JSEvalException as error:
+            raise _error(error, signature) from None
+        return [_convert(value, returns) for value in values]
+
+    if not names:
+        return lambda: evaluate([[]])[0]
+
+    def call(*arrays):
         columns = [
             [None if v is None else str(v) for v in a.to_pylist()]
             if string
@@ -78,12 +89,7 @@ def _function(
             for a, string in zip(arrays, strings)
         ]
         rows = json.loads(json.dumps(list(zip(*columns)), default=str))
-        try:
-            with lock:
-                values = context.call("batch", rows)
-        except JSEvalException as error:
-            raise _error(error, signature) from None
-        return pyarrow.array([_convert(value, returns) for value in values])
+        return pyarrow.array(evaluate(rows))
 
     call.__signature__ = inspect.Signature(
         [inspect.Parameter(n, inspect.Parameter.POSITIONAL_OR_KEYWORD) for n in names]
@@ -114,7 +120,7 @@ def register(tree: exp.Expression) -> str:
                 ),
                 kinds,
                 return_type,
-                type="arrow",
+                type="arrow" if params else "native",
                 null_handling="special",
             )
             _registered.add((id(connection), name))

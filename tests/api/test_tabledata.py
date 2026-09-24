@@ -237,3 +237,12 @@ def test_null_repeated_field_is_rejected(bq, dataset):
     table = create(bq, dataset, bigquery.SchemaField("tags", "STRING", mode="REPEATED"))
     [error] = bq.insert_rows_json(table, [{"tags": None}])
     assert error["errors"][0]["message"] == "Field value of tags cannot be empty."
+
+
+def test_floats_round_trip_exactly(bq, dataset):
+    value = 0.9492377440622309
+    table = create(bq, dataset, bigquery.SchemaField("f", "FLOAT64"))
+    assert bq.insert_rows_json(table, [{"f": value}]) == []
+    path = f"{table.project}.{table.dataset_id}.{table.table_id}"
+    [row] = run(bq, f"SELECT f, {value!r} FROM `{path}`")
+    assert tuple(row.values()) == (value, value)

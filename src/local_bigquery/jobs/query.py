@@ -40,6 +40,10 @@ DML_COUNTS = {
     exp.Update: "updatedRowCount",
     exp.Delete: "deletedRowCount",
 }
+DRY_STATEMENT_TYPES = {
+    "TABLE_FUNCTION": "CREATE_TABLE_FUNCTION",
+    "DROP_PROCEDURE": "DROP_PROCEDURE",
+}
 DDL = (exp.Create, exp.Drop, exp.Alter)
 
 
@@ -383,8 +387,10 @@ def _execute(
     scripted = script.is_script([s for s in statements if not _definition(s)])
     if not scripted:
         context.system["script.job_id"] = None
-    if scripted and dry_run:
-        return {"statementType": "SCRIPT"}, [], None
+    kinds = {statement.kind for statement in statements}
+    if dry_run and (scripted or kinds - {"SQL"}):
+        kind = "SCRIPT" if scripted else DRY_STATEMENT_TYPES[kinds.pop()]
+        return {"statementType": kind}, [], None
     destination = None
     if job_id:
         destination = {
@@ -407,8 +413,9 @@ def _execute(
             return js.bind(cur, tree, context)
         if js.is_udf(tree):
             statistics = {"statementType": statement_type(tree)} | _ddl(tree, context)
-            js.bind(cur, tree, context)
-            routines.record(tree, context.project_id, context.dataset_id)
+            if not dry_run:
+                js.bind(cur, tree, context)
+                routines.record(tree, context.project_id, context.dataset_id)
             report(statistics)
             return statistics
         if _temporary_function(tree):

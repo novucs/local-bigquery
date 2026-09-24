@@ -18,6 +18,7 @@ from local_bigquery.errors import (
 from local_bigquery.jobs import copy, extract, load, query, store
 
 JOB_TYPES = ("query", "load", "copy", "extract")
+SUBMIT_WAIT_MS = 1000
 HANDLERS = {"load": load.run, "copy": copy.run, "extract": extract.run}
 QUERY_STATISTICS = {
     "totalBytesProcessed": "0",
@@ -194,6 +195,10 @@ def _execute(
         extra["sessionInfo"] = {"sessionId": session.id}
     store.save(_done(job, extra, error))
     _running.pop((project_id, job_id), None)
+
+
+def submitted(project_id: str, job_id: str) -> dict:
+    return wait(project_id, job_id, SUBMIT_WAIT_MS)
 
 
 def wait(project_id: str, job_id: str, timeout_ms: int | None = None) -> dict:

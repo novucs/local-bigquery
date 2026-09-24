@@ -2,6 +2,7 @@ import itertools
 import time
 
 import pytest
+from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
 from tests.cases import q, rows, run, run_job, scalar, unique
@@ -71,6 +72,11 @@ CASES = [
     q(
         js("s STRING", "STRING", "'return s.toUpperCase();'", "SELECT {f}('ab')"),
         "AB",
+    ),
+    q(js("", "INT64", "'return 42;'", "SELECT {f}()"), 42),
+    q(
+        js("", "INT64", "'return 7;'", "SELECT {f}() FROM UNNEST([1, 2, 3])"),
+        rows=[(7,), (7,), (7,)],
     ),
     q(
         js("x FLOAT64", "INT64", "'return x + 1;'", "SELECT {f}(41)"),
@@ -458,3 +464,16 @@ def test_unknown_function_message(bq, dataset):
     qualified = rf"Function not found: {dataset.dataset_id}\.no_such_fn at \[1:8\]"
     with pytest.raises(Exception, match=qualified):
         run(bq, f"SELECT {dataset.dataset_id}.no_such_fn(1)")
+
+
+def test_dry_runs_have_no_side_effects(bq, routine):
+    config = bigquery.QueryJobConfig(dry_run=True)
+    function = (
+        f"CREATE FUNCTION {routine}(x INT64) RETURNS INT64 LANGUAGE js AS 'return x'"
+    )
+    bq.query(function, job_config=config)
+    with pytest.raises(NotFound):
+        bq.get_routine(routine)
+    run(bq, f"CREATE PROCEDURE {routine}() BEGIN SELECT 1; END")
+    bq.query(f"DROP PROCEDURE {routine}", job_config=config)
+    assert bq.get_routine(routine).type_ == "PROCEDURE"

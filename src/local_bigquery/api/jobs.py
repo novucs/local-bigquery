@@ -80,7 +80,7 @@ def insert_job(project_id: str, body: dict = Body()) -> Job:
     job = runner.submit(project_id, job_id, body.get("configuration") or {})
     if job["jobReference"].get("jobId") is None:
         return job
-    return runner.wait(project_id, job_id)
+    return runner.submitted(project_id, job_id)
 
 
 @router.get("/projects/{project_id}/jobs/{job_id}")

@@ -26,7 +26,8 @@ def float_literal(node: exp.Expression, context) -> exp.Expression:
         and node.is_number
         and any(c in node.this for c in ".eE")
     ):
-        return exp.Cast(this=node, to=exp.DataType.build("DOUBLE"))
+        text = exp.Literal.string(node.this)
+        return exp.Cast(this=text, to=exp.DataType.build("DOUBLE"))
     return node
 
 

@@ -202,7 +202,7 @@ def test_job_error_result_location(bq, sql, location):
     job = bq.query(sql, job_retry=None)
     with pytest.raises(BadRequest):
         job.result(retry=FAST_RETRY)
-    assert job.error_result["location"] == location
+    assert bq.get_job(job.job_id).error_result["location"] == location
 
 
 def test_query_missing_dataset(bq, project, dataset):
