@@ -61,6 +61,9 @@ def range_type(element: str) -> str:
     return f"STRUCT({', '.join(f'{name} {element}' for name in RANGE_FIELDS)})"
 
 
+STANDARD = {"INTEGER": "INT64", "FLOAT": "FLOAT64", "BOOLEAN": "BOOL"}
+
+
 def duckdb_type(field: TableFieldSchema) -> str:
     kind = (field.type or "STRING").upper()
     if kind == "RANGE":
@@ -76,13 +79,12 @@ def duckdb_type(field: TableFieldSchema) -> str:
     return f"{name}[]" if field.mode == "REPEATED" else name
 
 
-def bigquery_type(field: TableFieldSchema) -> str:
-    kind = {"INTEGER": "INT64", "FLOAT": "FLOAT64", "BOOLEAN": "BOOL"}.get(
-        field.type, field.type
-    )
+def bigquery_type(field: TableFieldSchema, quoted: bool = True) -> str:
+    kind = STANDARD.get(field.type, field.type)
     if kind in ("RECORD", "STRUCT"):
         members = ", ".join(
-            f"`{f.name}` {bigquery_type(f)}" for f in field.fields or []
+            f"{f'`{f.name}`' if quoted else f.name} {bigquery_type(f, quoted)}"
+            for f in field.fields or []
         )
         kind = f"STRUCT<{members}>"
     elif kind == "RANGE":

@@ -8,6 +8,8 @@ from local_bigquery.catalog import datasets, indexes, metadata, tables
 from local_bigquery.catalog import routines as catalog_routines
 from local_bigquery.engine import database
 from local_bigquery.engine.database import quote
+from local_bigquery.engine.types import bigquery_type
+from local_bigquery.models import TableFieldSchema
 
 TABLE_TYPES = {
     "TABLE": "BASE TABLE",
@@ -16,7 +18,6 @@ TABLE_TYPES = {
     "SNAPSHOT": "SNAPSHOT",
 }
 IDENTITY = ("table_catalog", "table_schema", "table_name")
-STANDARD_TYPES = {"INTEGER": "INT64", "FLOAT": "FLOAT64", "BOOLEAN": "BOOL"}
 SEARCH_INDEX_MINIMUM_BYTES = 10 * 1024**3
 PARTITION_FORMATS = {"HOUR": "%Y%m%d%H", "DAY": "%Y%m%d", "MONTH": "%Y%m", "YEAR": "%Y"}
 JOBS = """
@@ -37,12 +38,7 @@ WHERE project_id = {project}
 
 
 def _type(field: dict) -> str:
-    kind = STANDARD_TYPES.get(field["type"], field["type"])
-    if kind in ("RECORD", "STRUCT"):
-        kind = (
-            f"STRUCT<{', '.join(f'{f["name"]} {_type(f)}' for f in field['fields'])}>"
-        )
-    return f"ARRAY<{kind}>" if field.get("mode") == "REPEATED" else kind
+    return bigquery_type(TableFieldSchema.model_validate(field), quoted=False)
 
 
 def _paths(fields: list[dict], prefix: str = "") -> list[tuple[str, dict]]:
