@@ -70,13 +70,15 @@ def test_list(bq, dataset_id):
 
 
 def test_list_pages(bq):
-    ids = [unique("page") for _ in range(3)]
+    ids, label = [unique("page") for _ in range(3)], unique("run")
     for dataset_id in ids:
-        bq.create_dataset(dataset_id)
+        dataset = bigquery.Dataset(f"{bq.project}.{dataset_id}")
+        dataset.labels = {"run": label}
+        bq.create_dataset(dataset)
     try:
-        pages = [list(page) for page in bq.list_datasets(page_size=1).pages]
-        assert {len(page) for page in pages} == {1}
-        assert set(ids) <= {d.dataset_id for page in pages for d in page}
+        listed = bq.list_datasets(page_size=1, filter=f"labels.run:{label}")
+        pages = [[d.dataset_id for d in page] for page in listed.pages]
+        assert sorted(pages) == [[dataset_id] for dataset_id in sorted(ids)]
     finally:
         for dataset_id in ids:
             bq.delete_dataset(dataset_id)

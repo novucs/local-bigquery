@@ -17,5 +17,6 @@ jobs:
       - name: Check the release tag matches the package version
         run: test "${GITHUB_REF_NAME#v}" = "$(uv version --short)"
       - run: uv run --frozen pytest tests
+      - run: scripts/test-installed.sh
       - run: uv build
       - run: uv publish

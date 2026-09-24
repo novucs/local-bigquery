@@ -13,6 +13,7 @@ dependencies = [
     "google-cloud-bigquery-storage>=2.41.0",
     "grpcio>=1.83.0",
     "mini-racer>=0.12.4",
+    "numpy>=2.5.1",
     "prompt-toolkit>=3.0.50",
     "pyarrow>=25.0.1",
     "pydantic-settings>=2.8.1",

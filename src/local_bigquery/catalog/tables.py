@@ -136,7 +136,12 @@ def columns(project_id: str, dataset_id: str, table_id: str) -> list[TableFieldS
     )
     required = {column for (column,) in required}
     with database.cursor() as cur:
-        relation = cur.sql(f"SELECT * FROM {table} LIMIT 0")
+        try:
+            relation = cur.sql(f"SELECT * FROM {table} LIMIT 0")
+        except duckdb.CatalogException:
+            raise not_found(
+                "Table", names.label(project_id, dataset_id, table_id)
+            ) from None
         return [
             types.field(column, t, column in required)
             for column, t in zip(relation.columns, relation.types)

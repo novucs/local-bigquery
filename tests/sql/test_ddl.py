@@ -619,11 +619,11 @@ def test_expired_table_behaves_as_deleted(bq, table):
     run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x")
     fetched = bq.get_table(table)
     fetched.expires = datetime.datetime.now(datetime.UTC) + datetime.timedelta(
-        milliseconds=300
+        seconds=2
     )
     bq.update_table(fetched, ["expires"])
     assert rows(bq, f"SELECT x FROM {table}") == [(1,)]
-    time.sleep(0.4)
+    time.sleep(2.1)
     with fails(NotFound, "notFound"):
         bq.get_table(table)
     with fails(NotFound, "notFound"):

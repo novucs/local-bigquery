@@ -24,6 +24,18 @@ jobs:
       - name: Build image
         run: docker build . --file Dockerfile --tag $IMAGE_NAME --label "runnumber=${GITHUB_RUN_ID}"
 
+      - name: Smoke test image
+        run: |
+          docker run -d --name smoke -p 9050:9050 $IMAGE_NAME
+          for _ in $(seq 60); do
+            curl -sf http://127.0.0.1:9050/bigquery/v2/projects >/dev/null && break
+            sleep 1
+          done
+          curl -sf -X POST http://127.0.0.1:9050/bigquery/v2/projects/local/queries \
+            -H 'content-type: application/json' \
+            -d '{"query": "SELECT 1", "useLegacySql": false}' | grep '"jobComplete": *true'
+          docker rm -f smoke
+
       - name: Log in to registry
         run: echo "${{ secrets.TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
