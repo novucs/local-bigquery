@@ -24,8 +24,51 @@ client.query_and_wait("CREATE TABLE shop.orders AS SELECT 1 AS id, 'Alice' AS na
 print(list(client.query_and_wait("SELECT * FROM shop.orders")))
 ```
 
-Any project ID works, and state persists in `/data` across restarts. More in
-[`examples/`](examples).
+Any project ID works, and state persists in `/data` across restarts.
+
+## Testing with pytest
+
+Start one emulator per test run with [Testcontainers](https://testcontainers.com),
+and give each test its own dataset:
+
+```python
+# conftest.py
+import uuid
+
+import pytest
+from google.auth.credentials import AnonymousCredentials
+from google.cloud import bigquery
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.waiting_utils import wait_for_logs
+
+
+@pytest.fixture(scope="session")
+def bq():
+    image = "ghcr.io/novucs/local-bigquery:latest"
+    with DockerContainer(image).with_exposed_ports(9050) as container:
+        wait_for_logs(container, "Uvicorn running")
+        host, port = container.get_container_host_ip(), container.get_exposed_port(9050)
+        yield bigquery.Client(
+            project="local",
+            credentials=AnonymousCredentials(),
+            client_options={"api_endpoint": f"http://{host}:{port}"},
+        )
+
+
+@pytest.fixture
+def dataset(bq):
+    dataset = bq.create_dataset(f"test_{uuid.uuid4().hex}")
+    yield dataset.dataset_id
+    bq.delete_dataset(dataset, delete_contents=True)
+```
+
+```python
+def test_totals(bq, dataset):
+    bq.query_and_wait(f"CREATE TABLE {dataset}.orders (customer STRING, amount INT64)")
+    bq.insert_rows_json(f"{dataset}.orders", [{"customer": "a", "amount": 2}] * 3)
+    rows = bq.query_and_wait(f"SELECT SUM(amount) AS total FROM {dataset}.orders")
+    assert [row.total for row in rows] == [6]
+```
 
 ## Clients
 
@@ -57,8 +100,6 @@ client, err := bigquery.NewClient(ctx, "local",
     option.WithEndpoint("http://localhost:9050/bigquery/v2/"),
     option.WithoutAuthentication())
 ```
-
-**Testcontainers**: see [`examples/testcontainers_example.py`](examples/testcontainers_example.py).
 
 ## Features
 
@@ -131,7 +172,19 @@ Set these as environment variables, or pass the matching flag to `local-bigquery
 | `POSTGRES_CONNECTION_ID` | | `us.default` | Connection ID for `EXTERNAL_QUERY` |
 | `POSTGRES_URI` | | `postgresql://postgres:example@db:5432/postgres` | Postgres for `EXTERNAL_QUERY` |
 
-See [`examples/docker-compose.yml`](examples/docker-compose.yml) for a Compose setup.
+With Docker Compose:
+
+```yaml
+services:
+  bigquery:
+    image: ghcr.io/novucs/local-bigquery:latest
+    ports: ["9050:9050", "9060:9060"]
+    environment:
+      GROUPS: '{"user:alice@example.com": ["group:team@example.com"]}'
+    volumes: ["bigquery:/data"]
+volumes:
+  bigquery: {}
+```
 
 ## Development
 
