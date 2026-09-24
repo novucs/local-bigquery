@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 
@@ -40,6 +41,17 @@ def pytest_runtest_setup(item):
     marker = item.get_closest_marker("emulator")
     if marker and item.config.getoption("--endpoint") == "google":
         pytest.skip(marker.args[0])
+
+
+@pytest.fixture(autouse=True)
+def emulator_errors(caplog):
+    yield
+    errors = [
+        record
+        for record in caplog.get_records("call")
+        if record.levelno >= logging.ERROR and "local_bigquery" in record.pathname
+    ]
+    assert not errors, "\n".join(caplog.text.splitlines()[-40:])
 
 
 def pytest_addoption(parser):

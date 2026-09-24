@@ -38,7 +38,7 @@ def test_completed_job_resource(bq, project):
 
 def test_caller_supplied_job_id(bq):
     job_id = unique("job")
-    job = bq.query("SELECT 1 AS a", job_id=job_id)
+    job = bq.query("SELECT 1 AS a", job_id=job_id, job_retry=None)
     assert job.job_id == job_id
     assert [tuple(r.values()) for r in job.result()] == [(1,)]
     assert bq.get_job(job_id).job_id == job_id
@@ -50,7 +50,7 @@ def test_job_id_prefix(bq):
 
 def test_duplicate_job_id(bq):
     job_id = unique("job")
-    bq.query("SELECT 1", job_id=job_id).result()
+    bq.query("SELECT 1", job_id=job_id, job_retry=None).result()
     with fails(Conflict, "duplicate"):
         bq.query("SELECT 1", job_id=job_id, retry=FAST_RETRY, job_retry=None)
 

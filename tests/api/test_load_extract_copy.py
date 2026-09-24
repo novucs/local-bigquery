@@ -359,6 +359,7 @@ def storage_emulator(request, monkeypatch):
     monkeypatch.setattr(settings, "storage_emulator_host", host)
     yield uploads
     server.shutdown()
+    server.server_close()
 
 
 def test_export_data_uploads_to_storage_emulator(bq, storage_emulator):

@@ -57,5 +57,10 @@ dev = [
 
 [tool.pytest.ini_options]
 xfail_strict = true
-addopts = "-p no:warnings -n auto --dist loadgroup"
+addopts = "-n auto --dist loadgroup"
+filterwarnings = [
+    "error",
+    "ignore:Retrieving Arrow record batches directly:PendingDeprecationWarning",
+    "ignore:Loading pandas DataFrame into BigQuery will require pandas-gbq:FutureWarning",
+]
 timeout = 30

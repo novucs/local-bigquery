@@ -74,8 +74,10 @@ def written(uri: str):
             method="POST",
         )
         try:
-            urllib.request.urlopen(request).close()
+            with urllib.request.urlopen(request):
+                pass
         except urllib.error.HTTPError as error:
-            raise BigQueryError(
-                "invalid", f"Unable to write {uri}: HTTP {error.code}"
-            ) from error
+            with error:
+                raise BigQueryError(
+                    "invalid", f"Unable to write {uri}: HTTP {error.code}"
+                ) from error
