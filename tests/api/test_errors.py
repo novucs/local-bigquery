@@ -195,11 +195,15 @@ def test_dry_run_error_location(bq):
     assert "Function not found: NO_SUCH_FUNCTION at [1:8]" in text
 
 
-def test_job_error_result_location(bq):
-    job = bq.query("SELECT 1 / 0", job_retry=None)
+@pytest.mark.parametrize(
+    "sql, location",
+    [("SELECT 1 / 0", "query"), ("SELECT * FROM `!!bad!!.t`", "!!bad!!.t")],
+)
+def test_job_error_result_location(bq, sql, location):
+    job = bq.query(sql, job_retry=None)
     with pytest.raises(BadRequest):
         job.result(retry=FAST_RETRY)
-    assert job.error_result["location"] == "query"
+    assert job.error_result["location"] == location
 
 
 def test_query_missing_dataset(bq, project, dataset):

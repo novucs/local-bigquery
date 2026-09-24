@@ -213,8 +213,7 @@ def cancel(project_id: str, job_id: str) -> dict:
 
 
 def synchronous(error: BigQueryError) -> BigQueryError:
-    if error.location == "query":
-        error.location = "q"
+    error.location = "q" if error.location == "query" else None
     return error
 
 
