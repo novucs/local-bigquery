@@ -1,13 +1,21 @@
 # Local BigQuery
 
-Run BigQuery on your machine for development and tests. Point any BigQuery client at it,
-and it answers the REST API and the Storage Read/Write APIs, running GoogleSQL on
-[DuckDB](https://github.com/duckdb/duckdb) via [SQLGlot](https://github.com/tobymao/sqlglot).
+A BigQuery emulator for local development and tests. Point the official BigQuery
+clients at it and run GoogleSQL offline, with no Google Cloud project, credentials or cost.
+
+- **Works with the client you already use**: it serves BigQuery's REST API and
+  Storage Read/Write gRPC APIs, so Python, Go, pandas and SQLAlchemy code runs
+  unchanged apart from the endpoint.
+- **Broad GoogleSQL**: scripting, procedures, UDFs, `MERGE`, `INFORMATION_SCHEMA`,
+  time travel, `GEOGRAPHY` and more, translated to [DuckDB](https://duckdb.org).
+- **BigQuery's behaviour, not just its syntax**: errors, job lifecycles, type rules and
+  row access policies match BigQuery, checked by a test suite that also runs
+  against real BigQuery.
 
 ## Quick start
 
 ```bash
-docker run --rm -p 9050:9050 -p 9060:9060 -v local-bigquery:/data ghcr.io/novucs/local-bigquery:latest
+docker run --name bigquery -p 9050:9050 -p 9060:9060 -v bigquery:/data ghcr.io/novucs/local-bigquery:latest
 ```
 
 ```python
@@ -24,12 +32,12 @@ client.query_and_wait("CREATE TABLE shop.orders AS SELECT 1 AS id, 'Alice' AS na
 print(list(client.query_and_wait("SELECT * FROM shop.orders")))
 ```
 
-Any project ID works, and state persists in `/data` across restarts.
+Any project ID works. Data persists in the `/data` volume.
 
 ## Testing with pytest
 
-Start one emulator per test run with [Testcontainers](https://testcontainers.com),
-and give each test its own dataset:
+Start one emulator per test run with [Testcontainers](https://testcontainers.com), and
+give each test its own dataset:
 
 ```python
 # conftest.py
@@ -70,10 +78,9 @@ def test_totals(bq, dataset):
     assert [row.total for row in rows] == [6]
 ```
 
-## Clients
+## Other clients
 
-**Python with pandas**: pass a Storage Read client for fast `to_dataframe()`
-(port `9060`, plain gRPC).
+**pandas**: use the Storage Read API on port `9060` (plain gRPC) for fast downloads.
 
 ```python
 import grpc
@@ -91,7 +98,7 @@ frame = client.query_and_wait("SELECT * FROM shop.orders").to_dataframe(
 )
 ```
 
-**SQLAlchemy**: `create_engine("bigquery://local/shop", connect_args={"client": client})`.
+**SQLAlchemy**: `create_engine("bigquery://local/shop", connect_args={"client": client})`
 
 **Go**:
 
@@ -103,29 +110,20 @@ client, err := bigquery.NewClient(ctx, "local",
 
 ## Features
 
-- **GoogleSQL**: standard functions, DML including `MERGE`, DDL, scripting and
-  procedures, SQL/JavaScript UDFs and table functions, `INFORMATION_SCHEMA`, wildcard
-  tables, time travel, snapshots and clones, materialized views, `GEOGRAPHY` and `RANGE`.
-- **Jobs**: query, load, copy and extract, with dry runs, cancellation, sessions and
-  script child jobs.
-- **Streaming**: `insert_rows_json` (`tabledata.insertAll`) and the Storage Write API.
-- **Resources**: datasets, tables, routines, models, row access policies and IAM
-  policies, with PATCH/PUT and etags.
+| Area | Supported |
+|---|---|
+| SQL | GoogleSQL functions, DML including `MERGE`, DDL, scripting, procedures, SQL/JavaScript UDFs, table functions, wildcard tables, `INFORMATION_SCHEMA` |
+| Tables | Partitioning, clustering, constraints, views, materialized views, snapshots, clones, time travel, search and vector indexes |
+| Jobs | Query, load, copy and extract jobs, with dry runs, cancellation, sessions and script child jobs |
+| Data in and out | CSV, JSON, Parquet, Avro and ORC loads, CSV, JSON, Parquet and Avro exports, `insert_rows_json`, Storage Read and Write APIs |
+| Resources | Datasets, tables, routines, models, row access policies and IAM policies, with PATCH/PUT and etags |
 
-Unsupported API methods return `501`. Known gaps are the strict `xfail` tests in
-[`tests/`](tests).
+**Files and `gs://`**: loads, extracts and `EXPORT DATA` map `gs://bucket/path` to
+`$DATA_DIR/gcs/bucket/path`, or to a GCS emulator such as fake-gcs-server via
+`STORAGE_EMULATOR_HOST`.
 
-### Files and `gs://`
-
-Loads, extracts and `EXPORT DATA` read and write `gs://bucket/path` as
-`$DATA_DIR/gcs/bucket/path`. Set `GCS_LOCAL_ROOT` to use another directory, or
-`STORAGE_EMULATOR_HOST` to use a GCS emulator such as fake-gcs-server. Local files load
-with `client.load_table_from_file(...)`.
-
-### Row access policies
-
-Row access policies filter by the calling principal, taken from the service account
-that signed the request. Any key works, because signatures aren't checked:
+**Row access policies**: the caller is the service account that signed the request, as
+in BigQuery. Any key works, because signatures aren't checked:
 
 ```python
 from google.oauth2 import service_account
@@ -140,29 +138,39 @@ client = bigquery.Client(
 )
 ```
 
-A key whose `client_email` ends in `.gserviceaccount.com` is `serviceAccount:<email>`,
-and any other email is `user:<email>`. Unsigned requests run as `CALLER`.
+An email ending in `.gserviceaccount.com` becomes `serviceAccount:<email>`, and any other
+email becomes `user:<email>`. Unsigned requests run as `CALLER`, and group membership
+comes from `GROUPS`.
 
-### Postgres
+**Postgres**: `EXTERNAL_QUERY('us.default', 'SELECT ...')` runs against `POSTGRES_URI`.
 
-`EXTERNAL_QUERY('us.default', 'SELECT ...')` runs against `POSTGRES_URI`.
+**REPL**: `docker exec -it bigquery local-bigquery repl` for interactive SQL, and
+`local-bigquery reset` to delete all data.
 
-### REPL
+## Limitations
 
-```bash
-docker exec -it <container> local-bigquery repl    # interactive SQL
-docker exec -it <container> local-bigquery reset   # delete all data
-```
+- **Not for production or large data**: it runs on one machine with DuckDB, and is
+  built for correctness on test-sized data.
+- **No security**: requests aren't authenticated, and IAM policies are stored but
+  not enforced.
+- **Legacy SQL** and **BigQuery ML** functions such as `ML.PREDICT` aren't supported.
+  `CREATE MODEL` records the model without training it.
+- **Transactions**: a failed statement aborts the whole transaction, as DuckDB has no
+  savepoints.
+- **Parameterized types**: `STRING(n)` and `BYTES(n)` lengths aren't enforced on write.
+- **Other API methods**: anything not listed above returns `501 Not Implemented`.
+
+Found a difference from BigQuery? Please [open an issue](https://github.com/novucs/local-bigquery/issues).
 
 ## Configuration
 
-Set these as environment variables, or pass the matching flag to `local-bigquery`.
+Set environment variables, or pass the matching flag to `local-bigquery`.
 
 | Variable | Flag | Default | Purpose |
 |---|---|---|---|
-| `BIGQUERY_PORT` | `--port` | `9050` | REST API |
-| `GRPC_PORT` | `--grpc-port` | `9060` | Storage Read/Write APIs |
-| `DATA_DIR` | `--data-dir` | `/data` | Persistent state |
+| `BIGQUERY_PORT` | `--port` | `9050` | REST API port |
+| `GRPC_PORT` | `--grpc-port` | `9060` | Storage Read/Write API port |
+| `DATA_DIR` | `--data-dir` | `/data` | Where data is stored |
 | `DEFAULT_PROJECT_ID` | `--project` | `local` | Project created at startup |
 | `DEFAULT_DATASET_ID` | `--dataset` | `local` | Dataset created at startup |
 | `CALLER` | | `user:local-bigquery@localhost` | Principal for unsigned requests |
@@ -179,8 +187,6 @@ services:
   bigquery:
     image: ghcr.io/novucs/local-bigquery:latest
     ports: ["9050:9050", "9060:9060"]
-    environment:
-      GROUPS: '{"user:alice@example.com": ["group:team@example.com"]}'
     volumes: ["bigquery:/data"]
 volumes:
   bigquery: {}
@@ -188,8 +194,17 @@ volumes:
 
 ## Development
 
+Requires [uv](https://docs.astral.sh/uv/).
+
 ```bash
-uv run local-bigquery --data-dir /tmp/local-bigquery   # serve from source
+uv run local-bigquery --data-dir /tmp/local-bigquery   # run from source
 uv run pytest                                           # run the tests
-uv run pytest --endpoint google --project <project>     # run them against BigQuery
+uv run pytest --endpoint google --project <project>     # run the tests against real BigQuery
 ```
+
+Contributions are welcome. New behaviour should come with a test that passes against
+real BigQuery.
+
+## License
+
+[MIT](LICENSE)
