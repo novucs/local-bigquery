@@ -79,7 +79,8 @@ def _orc(data: bytes, config: JobConfigurationLoad) -> pa.Table:
 
 
 ARROW_READERS = {"AVRO": _avro, "ORC": _orc}
-FORMATS = {"CSV", "NEWLINE_DELIMITED_JSON", "PARQUET", *ARROW_READERS}
+TEXT_FORMATS = {"CSV": "CSV", "NEWLINE_DELIMITED_JSON": "JSON"}
+FORMATS = {*TEXT_FORMATS, "PARQUET", *ARROW_READERS}
 
 
 def validate(config: JobConfigurationLoad):
@@ -153,16 +154,23 @@ def _reader(
     if kind == "PARQUET":
         return f"read_parquet({files}{_options(hive)})"
     if kind == "NEWLINE_DELIMITED_JSON":
-        textual = list(map(_textual, fields))
+        textual = [
+            _textual(f) if f.type == "RECORD" or f.mode == "REPEATED" else _text(f)
+            for f in fields
+        ]
         columns = {"columns": _struct(textual, types.duckdb_type)} if fields else {}
         options = {"format": "'newline_delimited'"} | columns | hive
         return f"read_json({files}{_options(options)})"
     return f"read_csv({files}{_options(_csv(config, fields) | hive)})"
 
 
+def _text(field: TableFieldSchema) -> TableFieldSchema:
+    return field.replace(type="STRING")
+
+
 def _textual(field: TableFieldSchema) -> TableFieldSchema:
     if field.type == "BYTES":
-        return field.replace(type="STRING")
+        return _text(field)
     if field.fields:
         return field.replace(fields=list(map(_textual, field.fields)))
     return field
@@ -192,7 +200,7 @@ def _projection(
 ) -> tuple[str, str]:
     if not fields:
         return "*", "false"
-    typed = (config.sourceFormat or "CSV") != "CSV"
+    typed = (config.sourceFormat or "CSV") not in TEXT_FORMATS
     casts, bad = [], []
     for field in fields:
         column, target = quote(field.name), types.duckdb_type(field)
@@ -244,10 +252,13 @@ def run(
             f"SELECT count(*), count(*) FILTER ({bad}) FROM {reader}"
         ).fetchone()
     if rejected > (config.maxBadRecords or 0):
+        kind = TEXT_FORMATS[config.sourceFormat or "CSV"]
+        source = f" File: {uris[0]}" if len(uris) == 1 else ""
         raise BigQueryError(
             "invalid",
-            "Error while reading data, error message: too many errors, giving up. "
-            f"Rows: {total}; errors: {rejected}.",
+            f"Error while reading data, error message: {kind} table encountered too "
+            f"many errors, giving up. Rows: {total}; errors: {rejected}. Please look "
+            f"into the errors[] collection for more details.{source}",
         )
     query = f"SELECT {projection} FROM {reader} WHERE NOT ({bad})"
     prefix = f"Provided Schema does not match Table {names.label(*reference)}. "

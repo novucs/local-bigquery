@@ -316,15 +316,22 @@ def test_unicode_and_spaced_table_ids_are_allowed(bq, dataset):
     assert bq.create_table(table_id).table_id == table_id.split(".")[1]
 
 
-@pytest.mark.parametrize("name", ['a"); DROP TABLE t; --', "a.b", "x" * 301])
-def test_invalid_field_names_are_rejected(bq, dataset, name):
+@pytest.mark.parametrize(
+    "name, message",
+    [
+        ('a"); DROP TABLE t; --', "Fields must contain the allowed characters"),
+        ("a.b", "Fields must contain the allowed characters"),
+        ("x" * 301, "start with a letter or underscore, and be at most 300 characters"),
+    ],
+)
+def test_invalid_field_names_are_rejected(bq, dataset, name, message):
     table = bigquery.Table(
         f"{dataset.project}.{dataset.dataset_id}.{unique('t')}",
         schema=[bigquery.SchemaField(name, "STRING")],
     )
     with fails(BadRequest, "invalid") as info:
         bq.create_table(table)
-    assert "Fields must contain the allowed characters" in info.value.message
+    assert message in info.value.message
 
 
 def test_flexible_field_names_are_allowed(bq, dataset):

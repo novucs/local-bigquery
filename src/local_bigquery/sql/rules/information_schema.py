@@ -18,7 +18,7 @@ TABLE_TYPES = {
     "SNAPSHOT": "SNAPSHOT",
 }
 IDENTITY = ("table_catalog", "table_schema", "table_name")
-SEARCH_INDEX_MINIMUM_BYTES = 10 * 1024**3
+INDEX_MINIMUM_BYTES = {"SEARCH": 10 * 1024**3, "VECTOR": 10 * 1024**2}
 PARTITION_FORMATS = {"HOUR": "%Y%m%d%H", "DAY": "%Y%m%d", "MONTH": "%Y%m", "YEAR": "%Y"}
 JOBS = """
 SELECT
@@ -415,8 +415,8 @@ def routines(project_id: str, dataset_id: str | None):
 
 
 def _index_status(kind: str, table: Table) -> str:
-    small = int(table.numBytes) < SEARCH_INDEX_MINIMUM_BYTES
-    return "TEMPORARILY DISABLED" if kind == "SEARCH" and small else "ACTIVE"
+    small = int(table.numBytes) < INDEX_MINIMUM_BYTES[kind]
+    return "TEMPORARILY DISABLED" if small else "ACTIVE"
 
 
 def _indexes(kind: str):

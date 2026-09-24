@@ -10,7 +10,7 @@ from local_bigquery.catalog.options import (
     Evaluate,
     options,
 )
-from local_bigquery.errors import BigQueryError
+from local_bigquery.errors import BigQueryError, not_found
 from local_bigquery.models import Dataset, Table, TableConstraints
 from local_bigquery.sql.dialect import AlterColumnOptions, DropPrimaryKey
 
@@ -136,9 +136,7 @@ def _alteration(
         return {"tableConstraints": {"foreignKeys": kept or None}}
     if isinstance(action, DropPrimaryKey):
         if not keys.primaryKey and not action.args.get("exists"):
-            raise BigQueryError(
-                "invalidQuery", f"Primary key does not exist in table {label}"
-            )
+            raise not_found("Constraint", "primary key")
         return {"tableConstraints": {"primaryKey": None}}
     return {}
 

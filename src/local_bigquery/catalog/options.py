@@ -31,7 +31,7 @@ def _milliseconds(node: exp.Expression, evaluate) -> str:
 
 def _render_timestamp(value: str) -> str:
     moment = datetime.datetime.fromtimestamp(int(value) / 1000, datetime.UTC)
-    return f'TIMESTAMP "{moment.isoformat()}"'
+    return f'TIMESTAMP "{moment.isoformat(timespec="milliseconds")[:-6]}Z"'
 
 
 @dataclasses.dataclass(frozen=True)

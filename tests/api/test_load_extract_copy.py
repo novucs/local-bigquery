@@ -159,11 +159,20 @@ def test_load_adding_field_requires_schema_update_option(bq, dataset):
     assert select(bq, table) == [(1, None), (2, "a")]
 
 
-def test_load_max_bad_records(bq, dataset):
+@pytest.mark.parametrize(
+    "data, source_format",
+    [
+        (b"1\nabc\n", "CSV"),
+        (b'{"x": 1}\n{"x": "abc"}\n', "NEWLINE_DELIMITED_JSON"),
+    ],
+)
+def test_load_max_bad_records(bq, dataset, data, source_format):
     table = table_id(dataset)
     with fails(BadRequest, "invalid"):
-        load_file(bq, table, b"1\nabc\n", schema=X)
-    job = load_file(bq, table, b"1\nabc\n", schema=X, max_bad_records=1)
+        load_file(bq, table, data, schema=X, source_format=source_format)
+    job = load_file(
+        bq, table, data, schema=X, source_format=source_format, max_bad_records=1
+    )
     assert job.output_rows == 1
     assert select(bq, table) == [(1,)]
 
@@ -650,7 +659,10 @@ def test_load_errors_do_not_expose_local_paths(bq, dataset):
             source_format="NEWLINE_DELIMITED_JSON",
         )
     message = info.value.message
-    assert "Error while reading data, error message: JSON transform error" in message
+    assert (
+        "Error while reading data, error message: JSON table encountered too many "
+        "errors, giving up. Rows: 1; errors: 1." in message
+    )
     assert "/uploads/" not in message and "Invalid Input Error" not in message
 
 

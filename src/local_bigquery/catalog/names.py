@@ -37,16 +37,32 @@ def table(table_id: str):
         )
 
 
+def _illegal(name: str) -> bool:
+    return not name or len(name) > 300 or bool(FIELD_FORBIDDEN & set(name))
+
+
 def fields(schema: list[TableFieldSchema]):
     for field in schema:
         name = field.name or ""
-        if not name or len(name) > 300 or FIELD_FORBIDDEN & set(name):
+        if len(name) > 300:
+            raise BigQueryError(
+                "invalid",
+                f'Invalid field name "{name}". Fields must contain only letters, '
+                "numbers, and underscores, start with a letter or underscore, and be "
+                "at most 300 characters long.",
+            )
+        if _illegal(name):
             raise BigQueryError(
                 "invalid",
                 f'Invalid field name "{name}". Fields must contain the allowed '
                 "characters, and be at most 300 characters long.",
             )
         fields(field.fields or [])
+
+
+def column(name: str):
+    if _illegal(name):
+        raise BigQueryError("invalid", f"Illegal field name: {name}")
 
 
 def label(*parts: str) -> str:

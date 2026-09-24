@@ -147,7 +147,7 @@ def test_more_table_options(bq, dataset):
         f"FROM {ds}.INFORMATION_SCHEMA.TABLE_OPTIONS "
         f"WHERE table_name = '{table}' ORDER BY option_name",
     ) == [
-        ("expiration_timestamp", "TIMESTAMP", 'TIMESTAMP "2099-01-01T00:00:00+00:00"'),
+        ("expiration_timestamp", "TIMESTAMP", 'TIMESTAMP "2099-01-01T00:00:00.000Z"'),
         ("friendly_name", "STRING", '"nice"'),
         ("require_partition_filter", "BOOL", "true"),
     ]

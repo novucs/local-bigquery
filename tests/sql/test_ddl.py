@@ -490,8 +490,9 @@ def test_alter_table_keys(bq, dataset, table):
     run(bq, f"ALTER TABLE {table} DROP CONSTRAINT fk")
     run(bq, f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS fk")
     assert constraints(bq, table) == (None, [])
-    with fails(BadRequest, "invalidQuery"):
+    with fails(NotFound, "notFound") as info:
         run(bq, f"ALTER TABLE {table} DROP PRIMARY KEY")
+    assert info.value.message.endswith("Not found: Constraint primary key")
 
 
 def test_table_constraints_via_api(bq, dataset):
@@ -594,7 +595,7 @@ def test_search_and_vector_indexes(bq, dataset, table):
         bq,
         f"SELECT index_name, table_name, index_status "
         f"FROM {ds}.INFORMATION_SCHEMA.VECTOR_INDEXES WHERE table_name = '{name}'",
-    ) == [("vi", name, "ACTIVE")]
+    ) == [("vi", name, "TEMPORARILY DISABLED")]
     run(bq, f"DROP SEARCH INDEX si ON {table}")
     run(bq, f"DROP VECTOR INDEX vi ON {table}")
     run(bq, f"DROP SEARCH INDEX IF EXISTS si ON {table}")
@@ -645,12 +646,13 @@ def test_dataset_default_table_expiration(bq):
     "statement, message",
     [
         ("CREATE TABLE {ds}.`bad;name` (x INT64)", 'Invalid table ID "bad;name"'),
-        ('CREATE TABLE {ds}.ok (`a"b` INT64)', 'Invalid field name "a"b"'),
-        ("ALTER TABLE {ds}.t ADD COLUMN `c;d` INT64", 'Invalid field name "c;d"'),
+        ('CREATE TABLE {ds}.ok (`a"b` INT64)', 'Illegal field name: a"b'),
+        ("ALTER TABLE {ds}.t ADD COLUMN `c;d` INT64", "Illegal field name: c;d"),
         ("CREATE SCHEMA `has-dash`", 'Invalid dataset ID "has-dash"'),
     ],
 )
 def test_ddl_names_are_validated(bq, dataset, statement, message):
+    run(bq, f"CREATE TABLE IF NOT EXISTS {dataset.dataset_id}.t (x INT64)")
     with fails(BadRequest, "invalid") as info:
         run(bq, statement.format(ds=dataset.dataset_id))
     assert message in info.value.message
