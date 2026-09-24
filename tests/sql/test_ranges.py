@@ -70,7 +70,6 @@ CASES = [
     q(
         f"{SESSIONS}) WHERE who = 'c' ORDER BY span NULLS FIRST",
         rows=[("c", None, None), ("c", r(1, 2), r(1, 6)), ("c", r(5, 6), r(1, 6))],
-        xfail="NULL ranges do not bridge sessions in insertion order",
     ),
     q(
         "SELECT * FROM RANGE_SESSIONIZE(TABLE nothing, 'span', ['who'])",

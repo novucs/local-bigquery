@@ -153,7 +153,21 @@ CASES = [
                 [2, 2],
             ],
         },
-        xfail="ST_ASGEOJSON does not densify geodesic edges",
+    ),
+    q(
+        "SELECT ST_ASGEOJSON(ST_GEOGFROMTEXT("
+        "'GEOMETRYCOLLECTION(POINT(0 0), LINESTRING(1 1, 2 2))'))",
+        '{ "type": "GeometryCollection", "geometries": [ '
+        '{ "type": "Point", "coordinates": [0, 0] }, '
+        '{ "type": "LineString", "coordinates": '
+        "[ [1, 1], [1.49988573656168, 1.5000570914792], [2, 2] ] } ] } ",
+    ),
+    q(
+        "SELECT ST_ASGEOJSON(ST_GEOGFROMTEXT("
+        "'MULTIPOLYGON(((0 0, 1 0, 1 1, 0 1, 0 0)), ((2 2, 3 2, 3 3, 2 3, 2 2)))'))",
+        '{ "type": "MultiPolygon", "coordinates": [ '
+        "[ [ [0, 0], [1, 0], [1, 1], [0, 1], [0, 0] ] ], "
+        "[ [ [2, 2], [3, 2], [3, 3], [2.5, 3.00011402647166], [2, 3], [2, 2] ] ] ] } ",
     ),
     q(
         "SELECT PARSE_JSON(ST_ASGEOJSON(ST_GEOGFROMTEXT('POINT EMPTY')))",

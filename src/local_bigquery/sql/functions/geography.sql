@@ -65,9 +65,7 @@ CREATE MACRO st_asbinary(g) AS system.main.ST_AsWKB(g);
 
 CREATE MACRO st_asgeojson(g) AS CASE
     WHEN system.main.ST_IsEmpty(g) THEN '{ "type": "GeometryCollection", "geometries": [ ] } '
-    ELSE regexp_replace(
-        CAST(system.main.ST_AsGeoJSON(g) AS VARCHAR), '(\d)\.0([,\]])', '\1\2', 'g'
-    )
+    ELSE _geojson(CAST(system.main.ST_AsGeoJSON(g) AS VARCHAR))
 END;
 
 CREATE MACRO st_geometrytype(g) AS CASE system.main.ST_GeometryType(g)

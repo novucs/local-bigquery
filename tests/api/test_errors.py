@@ -123,10 +123,9 @@ def query_error(bq, sql, **config) -> tuple[dict, str]:
             "AT TIME ZONE 'Mars/Olympus_Mons')",
             r"Invalid time zone: Mars/Olympus_Mons",
         ),
-        pytest.param(
+        (
             "SELECT PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S%Z', '2024-01-15T12:34:56IST')",
             r"Invalid time zone: IST",
-            marks=pytest.mark.xfail(reason="%Z accepts zone abbreviations like IST"),
         ),
         ("SLECT 1 AS n", r'Syntax error: Unexpected identifier "SLECT" at \[1:1\]'),
         (

@@ -90,6 +90,10 @@ def _numeric_literal(self, this: exp.Expression, data_type: exp.DataType):
             "invalidQuery",
             f'Invalid {name} literal: "{this.name}" at [{token.line}:{column}]',
         )
+    scale = -value.as_tuple().exponent
+    whole = len(value.as_tuple().digits) - scale
+    if data_type.this == exp.DataType.Type.BIGDECIMAL and 18 < scale <= 38 - whole:
+        data_type = exp.DataType.build(f"DECIMAL(38, {scale})")
     return self.expression(exp.Cast(this=this, to=data_type))
 
 

@@ -190,8 +190,11 @@ def _parse_timestamp(node: exp.StrToTime) -> exp.Expression:
     template = node.args.get("format")
     if isinstance(template, exp.Literal) and "%Ez" in template.this:
         template.replace(_node(template.this.replace("%Ez", "%z")))
-    if isinstance(node.args.get("format"), exp.Literal) and (
-        "%z" in node.args["format"].this or "%Z" in node.args["format"].this
+    template = node.args.get("format")
+    if isinstance(template, exp.Literal) and "%Z" in template.this:
+        node.set("this", call("_zone_checked", template.copy(), node.this))
+    if isinstance(template, exp.Literal) and (
+        "%z" in template.this or "%Z" in template.this
     ):
         return None
     _around(node, lambda placeholder: from_local(placeholder, zone))

@@ -3,6 +3,8 @@ import datetime
 import hashlib
 import ipaddress
 import json
+import math
+import re
 import unicodedata
 import zoneinfo
 
@@ -192,6 +194,97 @@ def zone_name(seconds: float, zone: str) -> str:
     return "UTC" + (suffix if minutes else "")
 
 
+ZONES = frozenset(zoneinfo.available_timezones())
+DIRECTIVE = re.compile(r"(%E[^A-Za-z]*[A-Za-z]|%.)")
+
+
+def zone_checked(template: str, text: str) -> str:
+    pieces = [piece for piece in DIRECTIVE.split(template) if piece]
+    pattern = "".join(
+        r"(?P<zone>[A-Za-z][\w+/-]*)"
+        if piece == "%Z"
+        else ".+?"
+        if DIRECTIVE.fullmatch(piece)
+        else re.escape(piece)
+        for piece in pieces
+    )
+    match = re.fullmatch(pattern, text, re.DOTALL) if pieces.count("%Z") == 1 else None
+    if match and match["zone"] not in ZONES:
+        raise ValueError(f"Invalid time zone: {match['zone']}")
+    return text
+
+
+EARTH_RADIUS_METRES = 6_371_008.8
+GEODESIC_TOLERANCE_METRES = 10
+
+
+def _vector(point: list) -> list[float]:
+    longitude, latitude = map(math.radians, point[:2])
+    return [
+        math.cos(latitude) * math.cos(longitude),
+        math.cos(latitude) * math.sin(longitude),
+        math.sin(latitude),
+    ]
+
+
+def _midpoint(a: list, b: list) -> list[float]:
+    x, y, z = (p + q for p, q in zip(_vector(a), _vector(b)))
+    norm = math.sqrt(x * x + y * y + z * z)
+    return [math.degrees(math.atan2(y, x)), math.degrees(math.asin(z / norm))]
+
+
+def _split(a: list, b: list) -> list[list]:
+    if abs(a[0] - b[0]) > 180:
+        return []
+    middle = _midpoint(a, b)
+    chord = [(p + q) / 2 for p, q in zip(a[:2], b[:2])]
+    drift = math.radians(math.hypot(middle[0] - chord[0], middle[1] - chord[1]))
+    if drift * EARTH_RADIUS_METRES <= GEODESIC_TOLERANCE_METRES:
+        return []
+    return [*_split(a, middle), middle, *_split(middle, b)]
+
+
+def _line(points: list) -> list:
+    dense = points[:1]
+    for a, b in zip(points, points[1:]):
+        dense += [*_split(a, b), b]
+    return dense
+
+
+def _densify(geometry: dict) -> dict:
+    match geometry["type"]:
+        case "LineString":
+            coordinates = _line(geometry["coordinates"])
+        case "Polygon" | "MultiLineString":
+            coordinates = [_line(line) for line in geometry["coordinates"]]
+        case "MultiPolygon":
+            coordinates = [[_line(r) for r in p] for p in geometry["coordinates"]]
+        case "GeometryCollection":
+            return geometry | {
+                "geometries": list(map(_densify, geometry["geometries"]))
+            }
+        case _:
+            return geometry
+    return geometry | {"coordinates": coordinates}
+
+
+def _encode(value) -> str:
+    if isinstance(value, dict):
+        fields = ", ".join(f"{json.dumps(k)}: {_encode(v)}" for k, v in value.items())
+        return f"{{ {fields} }}"
+    if isinstance(value, str):
+        return json.dumps(value)
+    if not isinstance(value, list):
+        return f"{value:.15g}"
+    if value and all(isinstance(item, int | float) for item in value):
+        return f"[{', '.join(map(_encode, value))}]"
+    return f"[ {', '.join(map(_encode, value))} ]" if value else "[ ]"
+
+
+def geojson(text: str) -> str:
+    return _encode(_densify(json.loads(text))) + " "
+
+
 def raise_error(message: str):
     raise ValueError(message)
 
@@ -236,6 +329,8 @@ FUNCTIONS = {
     "_ip_trunc": (ip_trunc, ["BLOB", "BIGINT"], "BLOB"),
     "_raise": (raise_error, ["VARCHAR"], "NULL"),
     "_zone_name": (zone_name, ["DOUBLE", "VARCHAR"], "VARCHAR"),
+    "_zone_checked": (zone_checked, ["VARCHAR", "VARCHAR"], "VARCHAR"),
+    "_geojson": (geojson, ["VARCHAR"], "VARCHAR"),
     "_json_exact": (json_exact, ["VARCHAR"], "BOOLEAN"),
     "_farm_fingerprint": (farm_fingerprint, ["BLOB"], "BIGINT"),
     "_sha512": (lambda data: hashlib.sha512(data).digest(), ["BLOB"], "BLOB"),

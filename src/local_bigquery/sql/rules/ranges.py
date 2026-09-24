@@ -9,9 +9,9 @@ from local_bigquery.sql.dialect import DuckDBDialect, macro
 
 MODES = {"MEETS": ">", "OVERLAPS": ">="}
 SESSIONIZE = """
-SELECT * EXCLUDE (__prev, __session), CASE WHEN {column} IS NULL THEN NULL ELSE {{
-    '__range_start': min({column}.__range_start) OVER (PARTITION BY {keys} __session),
-    '__range_end': max({column}.__range_end) OVER (PARTITION BY {keys} __session)
+SELECT * EXCLUDE (__prev, __session, __bridged), CASE WHEN {column} IS NULL THEN NULL ELSE {{
+    '__range_start': min({column}.__range_start) OVER __group,
+    '__range_end': max({column}.__range_end) OVER __group
 }} END AS session_range
 FROM (
     SELECT *, sum(CASE WHEN __prev IS NULL OR {column}.__range_start {compare} __prev
@@ -22,10 +22,11 @@ FROM (
         SELECT *, max({column}.__range_end) OVER (PARTITION BY {keys} {column} IS NULL
             ORDER BY {column}.__range_start, {column}.__range_end
             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-        ) AS __prev
+        ) AS __prev, bool_or({column} IS NULL) OVER (PARTITION BY {keys} 1) AS __bridged
         FROM __source
     )
 )
+WINDOW __group AS (PARTITION BY {keys} CASE WHEN __bridged THEN 0 ELSE __session END)
 """
 LITERAL = re.compile(r"^\[\s*([^,]+?)\s*,\s*([^)]+?)\s*\)$")
 
