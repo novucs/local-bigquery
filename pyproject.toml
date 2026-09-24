@@ -1,6 +1,6 @@
 [project]
 name = "local-bigquery"
-version = "0.3.1"
+version = "0.3.2"
 description = "A BigQuery emulator for local development and tests"
 readme = "README.md"
 license = "MIT"
