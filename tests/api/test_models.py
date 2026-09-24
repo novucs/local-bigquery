@@ -10,6 +10,7 @@ from google.cloud import bigquery
 from tests.cases import FAST_RETRY, fails, reason_and_message, run, run_job, unique
 
 TRAINING = "SELECT 1.5 AS x, 'a' AS s, 2.0 AS label"
+pytestmark = pytest.mark.emulator("BigQuery ML trains models, which is slow and billed")
 
 
 @pytest.fixture
@@ -25,15 +26,11 @@ def test_create_model(bq, dataset, model_id):
     job = create(
         bq,
         model_id,
-        "model_type = 'LINEAR_REG', description = 'd', labels = [('k', 'v')]",
+        "model_type = 'LINEAR_REG', labels = [('k', 'v')]",
     )
     assert job.statement_type == "CREATE_MODEL"
     model = bq.get_model(model_id, retry=FAST_RETRY)
-    assert (model.model_type, model.description, model.labels) == (
-        "LINEAR_REG",
-        "d",
-        {"k": "v"},
-    )
+    assert (model.model_type, model.labels) == ("LINEAR_REG", {"k": "v"})
     assert model.created and model.modified and model.etag
     assert [(f.name, f.type.type_kind) for f in model.feature_columns] == [
         ("x", "FLOAT64"),
@@ -45,10 +42,32 @@ def test_create_model(bq, dataset, model_id):
 
 
 def test_input_label_cols(bq, model_id):
-    create(bq, model_id, "model_type = 'logistic_reg', input_label_cols = ['s']")
+    options = "model_type = 'logistic_reg', input_label_cols = ['s']"
+    run_job(
+        bq,
+        f"CREATE MODEL `{model_id}` OPTIONS ({options}) AS SELECT 1.5 AS x, 'a' AS s",
+    )
     model = bq.get_model(model_id, retry=FAST_RETRY)
     assert [f.name for f in model.label_columns] == ["s"]
-    assert [f.name for f in model.feature_columns] == ["x", "label"]
+    assert [f.name for f in model.feature_columns] == ["x"]
+
+
+@pytest.mark.parametrize(
+    "options, message",
+    [
+        (
+            "model_type = 'linear_reg', description = 'd'",
+            "unsupported option description",
+        ),
+        (
+            "model_type = 'logistic_reg', input_label_cols = ['s']",
+            "Column 'label' is a reserved column name for the model type LOGISTIC_REG",
+        ),
+    ],
+)
+def test_invalid_model_options(bq, model_id, options, message):
+    with pytest.raises(GoogleAPICallError, match=message):
+        create(bq, model_id, options)
 
 
 def test_create_existing_model(bq, model_id):

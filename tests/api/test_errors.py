@@ -139,11 +139,14 @@ def query_error(bq, sql, **config) -> tuple[dict, str]:
         ),
         (
             "SELECT CONCAT() AS c",
-            r"No matching signature for function CONCAT with no arguments at \[1:8\]",
+            r"No matching signature for function CONCAT with no arguments(\n.*)* at \[1:8\]",
         ),
-        ("SELECT\n  concat() AS c", r"function CONCAT with no arguments at \[2:3\]"),
+        (
+            "SELECT\n  concat() AS c",
+            r"function CONCAT with no arguments(\n.*)* at \[2:3\]",
+        ),
         ("SELECT SAFE.SUBSTR('hello')", r"No matching signature for function SUBSTR"),
-        ("SELECT IF(TRUE)", r"No matching signature for function IF at \[1:8\]"),
+        ("SELECT IF(TRUE)", r"No matching signature for function IF(\n.*)* at \[1:8\]"),
         ("SELECT UPPER('a', 'b')", r"No matching signature for function UPPER"),
         ("SELECT DATE_ADD(1)", r"No matching signature for function DATE_ADD"),
         (

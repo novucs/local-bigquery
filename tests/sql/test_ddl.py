@@ -557,6 +557,7 @@ def test_create_or_replace_clone(bq, dataset, table):
 def test_search_and_vector_indexes(bq, dataset, table):
     ds, name = dataset.dataset_id, table.split(".")[1]
     run(bq, f"CREATE TABLE {table} (s STRING, e ARRAY<FLOAT64>)")
+    run(bq, f"INSERT {table} (s, e) VALUES ('a', [1.0, 2.0])")
     run(bq, f"CREATE SEARCH INDEX si ON {table}(ALL COLUMNS)")
     run(bq, f"CREATE SEARCH INDEX IF NOT EXISTS si ON {table}(s)")
     run(
@@ -584,6 +585,7 @@ def test_search_and_vector_indexes(bq, dataset, table):
     ) == [(0,)]
 
 
+@pytest.mark.emulator("depends on sub-second expiry timing")
 def test_expired_table_behaves_as_deleted(bq, table):
     run(bq, f"CREATE TABLE {table} AS SELECT 1 AS x")
     fetched = bq.get_table(table)

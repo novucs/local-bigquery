@@ -288,6 +288,7 @@ def test_table_snapshots(bq, dataset):
     ) == [(snapshot, ds, "t", True)]
 
 
+@pytest.mark.emulator("region-level TABLE_STORAGE needs extra IAM in BigQuery")
 def test_table_storage(bq, dataset):
     ds, table = dataset.dataset_id, unique("stored")
     run(bq, f"CREATE TABLE {ds}.{table} AS SELECT 1 AS x UNION ALL SELECT 2")

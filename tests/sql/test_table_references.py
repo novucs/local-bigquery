@@ -98,6 +98,7 @@ def test_reference_forms(bq, project, dataset, reference):
     assert [r.id for r in run(bq, f"SELECT id FROM {table} ORDER BY id")] == [1, 2]
 
 
+@pytest.mark.emulator("projects are created on demand")
 def test_same_dataset_name_in_two_projects(bq, dataset):
     other = unique("other-project").replace("_", "-")
     ds = dataset.dataset_id

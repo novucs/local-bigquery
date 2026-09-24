@@ -27,6 +27,7 @@ def test_queries_and_catalog_calls_interleave(bq, dataset):
     assert len(parallel(work)) == 32
 
 
+@pytest.mark.emulator("BigQuery aborts conflicting concurrent DML")
 def test_concurrent_dml_on_one_table_is_serialised(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('t')}"
     run(bq, f"CREATE TABLE {table} AS SELECT 0 AS x")

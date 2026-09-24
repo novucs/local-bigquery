@@ -203,6 +203,7 @@ def test_udfs(check, case):
     check(case)
 
 
+@pytest.mark.emulator("times the emulator's JavaScript runtime")
 def test_js_udf_is_fast_over_many_rows(bq):
     start = time.monotonic()
     total = scalar(

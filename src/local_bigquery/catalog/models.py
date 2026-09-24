@@ -3,7 +3,7 @@ from sqlglot import exp
 from local_bigquery.catalog import datasets, metadata, routines
 from local_bigquery.catalog.ddl import TABLE_OPTIONS, Evaluate, options
 from local_bigquery.engine import types
-from local_bigquery.errors import already_exists, not_found
+from local_bigquery.errors import BigQueryError, already_exists, not_found
 from local_bigquery.models import TableFieldSchema
 from local_bigquery.sql.dialect import BigQueryDialect
 
@@ -47,11 +47,20 @@ def _column(field: dict) -> dict:
 
 def _resource(tree: exp.Create, fields: list[dict], evaluate: Evaluate) -> dict:
     resource = options(tree.args.get("properties"), OPTIONS, evaluate)
+    if "description" in resource:
+        raise BigQueryError("invalidQuery", "unsupported option description")
+    kind = resource.get("modelType", "MODEL_TYPE_UNSPECIFIED").upper()
     labels = {name.casefold() for name in resource.pop("inputLabelCols", ["label"])}
     columns = [_column(field) for field in fields]
+    if "label" not in labels and any(c["name"].casefold() == "label" for c in columns):
+        raise BigQueryError(
+            "invalidQuery",
+            f"Column 'label' is a reserved column name for the model type {kind}. "
+            "Please rename the column in query statement.",
+        )
     now = metadata.now()
     return resource | {
-        "modelType": resource.get("modelType", "MODEL_TYPE_UNSPECIFIED").upper(),
+        "modelType": kind,
         "location": "US",
         "creationTime": now,
         "lastModifiedTime": now,

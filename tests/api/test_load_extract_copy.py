@@ -65,7 +65,13 @@ def test_load_json_autodetects_schema(bq, dataset):
     table = table_id(dataset)
     rows = [{"x": 1, "s": "a", "f": 1.5, "b": True}]
     bq.load_table_from_json(rows, table).result()
-    assert types(bq, table) == ["INT64", "STRING", "FLOAT64", "BOOL"]
+    schema = run(bq, f"SELECT * FROM `{table}`").schema
+    assert {f.name: type_name(f) for f in schema} == {
+        "x": "INT64",
+        "s": "STRING",
+        "f": "FLOAT64",
+        "b": "BOOL",
+    }
 
 
 def test_load_csv_skipping_header(bq, dataset):
