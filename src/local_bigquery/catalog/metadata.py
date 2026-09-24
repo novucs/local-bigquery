@@ -3,7 +3,7 @@ import json
 import time
 
 from local_bigquery.engine.database import RESOURCES, execute, fetch
-from local_bigquery.errors import BigQueryError
+from local_bigquery.errors import BigQueryError, already_exists, not_found
 
 COLLECTIONS = {
     "project_id": "projects",
@@ -91,3 +91,19 @@ def delete(kind: str, *keys: str):
         "DELETE FROM emulator.iam_policies WHERE starts_with(resource || '/', ?)",
         [path],
     )
+
+
+def outcome(
+    kind: str, label: str, found: bool, drop: bool, if_exists: bool, replace=False
+) -> str:
+    if drop:
+        if found:
+            return "DROP"
+        if if_exists:
+            return "SKIP"
+        raise not_found(kind, label)
+    if found and if_exists:
+        return "SKIP"
+    if found and not replace:
+        raise already_exists(kind, label)
+    return "REPLACE" if found else "CREATE"

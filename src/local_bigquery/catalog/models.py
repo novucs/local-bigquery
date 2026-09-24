@@ -3,7 +3,7 @@ from sqlglot import exp
 from local_bigquery.catalog import datasets, metadata, names, routines
 from local_bigquery.catalog.ddl import TABLE_OPTIONS, Evaluate, options
 from local_bigquery.engine import types
-from local_bigquery.errors import BigQueryError, already_exists, not_found
+from local_bigquery.errors import BigQueryError, not_found
 from local_bigquery.models import TableFieldSchema
 from local_bigquery.sql.dialect import BigQueryDialect
 
@@ -80,19 +80,19 @@ def apply(
     target = tree.find(exp.Table)
     keys = names.reference(target, project_id, dataset_id)
     datasets.load(*keys[:2])
-    exists = metadata.load("models", *keys) is not None
-    label = names.label(*keys)
-    if isinstance(tree, exp.Drop):
-        if not exists and not tree.args.get("exists"):
-            raise not_found("Model", label)
-        if not dry_run:
-            metadata.delete("models", *keys)
+    operation = metadata.outcome(
+        "Model",
+        names.label(*keys),
+        metadata.load("models", *keys) is not None,
+        isinstance(tree, exp.Drop),
+        bool(tree.args.get("exists")),
+        bool(tree.args.get("replace")),
+    )
+    if dry_run or operation == "SKIP":
         return
-    if exists and not tree.args.get("replace"):
-        if tree.args.get("exists"):
-            return
-        raise already_exists("Model", label)
-    if not dry_run:
+    if operation == "DROP":
+        metadata.delete("models", *keys)
+    else:
         reference = dict(zip(("projectId", "datasetId", "modelId"), keys))
         resource = _resource(tree, fields, evaluate) | {"modelReference": reference}
         metadata.save("models", resource, *keys)

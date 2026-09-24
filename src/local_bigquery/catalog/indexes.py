@@ -1,7 +1,7 @@
 import re
 
 from local_bigquery.catalog import metadata, names, row_access, tables
-from local_bigquery.errors import BigQueryError, already_exists, not_found
+from local_bigquery.errors import BigQueryError
 
 INDEX = re.compile(
     r"^(OR\s+REPLACE\s+)?(SEARCH|VECTOR)\s+INDEX\s+(IF\s+(?:NOT\s+)?EXISTS\s+)?(\S+)"
@@ -27,13 +27,16 @@ def ddl(
     kind = kind.upper()
     keys = (*row_access.table(table, project_id, dataset_id), name)
     tables.load(*keys[:3])
-    found = metadata.load("indexes", *keys)
-    label = names.label(*keys)
-    if keyword == "DROP" and not (found or if_exists):
-        raise not_found(f"{kind.title()} index", label)
-    if keyword == "CREATE" and found and not (replace or if_exists):
-        raise already_exists(f"{kind.title()} index", label)
-    if keyword == "CREATE" and IVF.search(command):
+    found = metadata.load("indexes", *keys) is not None
+    operation = metadata.outcome(
+        f"{kind.title()} index",
+        names.label(*keys),
+        found,
+        keyword == "DROP",
+        bool(if_exists),
+        bool(replace),
+    )
+    if operation in ("CREATE", "REPLACE") and IVF.search(command):
         total = int(tables.load(*keys[:3])["numRows"])
         if total < MINIMUM_IVF_ROWS:
             raise BigQueryError(
@@ -43,9 +46,9 @@ def ddl(
                 "VECTOR_SEARCH table-valued function directly to perform the "
                 "similarity search.",
             )
-    if not dry_run and keyword == "DROP":
+    if not dry_run and operation == "DROP":
         metadata.delete("indexes", *keys)
-    elif not dry_run and not (found and if_exists):
+    elif not dry_run and operation != "SKIP":
         resource = {
             "kind": kind,
             "name": name,

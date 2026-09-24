@@ -8,7 +8,7 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.tokens import TokenType
 
-from local_bigquery.catalog import names, routines, tables
+from local_bigquery.catalog import metadata, names, routines, tables
 from local_bigquery.errors import BigQueryError, from_exception, syntax_error
 from local_bigquery.sql.dialect import BigQueryDialect
 from local_bigquery.sql.rules.parameters import VALUE, read
@@ -621,15 +621,17 @@ class Interpreter:
         words = [word.upper() for word in statement.names]
         reference = self.reference(statement.names[-1])
         project_id, dataset_id, routine_id = reference
-        exists = routines.load(*reference) is not None
-        if exists and "EXISTS" in words:
-            return self.ddl("CREATE", "SKIP", reference)
-        if exists and "REPLACE" not in words:
-            raise BigQueryError(
-                "duplicate",
-                f"Already Exists: Routine {names.label(project_id, dataset_id, routine_id)}",
-            )
-        self.ddl("CREATE", "REPLACE" if exists else "CREATE", reference)
+        operation = metadata.outcome(
+            "Routine",
+            names.label(*reference),
+            routines.load(*reference) is not None,
+            False,
+            "EXISTS" in words,
+            "REPLACE" in words,
+        )
+        self.ddl("CREATE", operation, reference)
+        if operation == "SKIP":
+            return
         arguments = []
         for text, _ in statement.items:
             parts = text.split()
@@ -655,11 +657,13 @@ class Interpreter:
     def drop_procedure(self, statement: Statement):
         words = statement.text.split()
         reference = self.reference(words[-1])
-        if routines.load(*reference) is None:
-            if "EXISTS" in (word.upper() for word in words):
-                return self.ddl("DROP", "SKIP", reference)
-            raise BigQueryError(
-                "notFound", f"Not found: Routine {names.label(*reference)}"
-            )
-        routines.delete(*reference)
-        self.ddl("DROP", "DROP", reference)
+        operation = metadata.outcome(
+            "Routine",
+            names.label(*reference),
+            routines.load(*reference) is not None,
+            True,
+            "EXISTS" in (word.upper() for word in words),
+        )
+        if operation == "DROP":
+            routines.delete(*reference)
+        self.ddl("DROP", operation, reference)
