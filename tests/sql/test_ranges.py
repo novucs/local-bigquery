@@ -38,6 +38,13 @@ SESSIONS = (
 
 CASES = [
     q(
+        "SELECT RANGE_CONTAINS(RANGE<DATE> '[2024-01-01, 2024-02-01)', "
+        "RANGE<DATE> '[2024-01-05, 2024-01-10)'), "
+        "RANGE_CONTAINS(RANGE<DATE> '[2024-01-01, 2024-02-01)', "
+        "RANGE<DATE> '[2024-01-05, 2024-03-01)')",
+        rows=[(True, False)],
+    ),
+    q(
         "SELECT GENERATE_RANGE_ARRAY("
         "RANGE<DATE> '[2024-01-01, 2024-01-06)', INTERVAL 2 DAY)",
         [r(1, 3), r(3, 5), r(5, 6)],

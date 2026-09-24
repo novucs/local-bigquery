@@ -70,6 +70,10 @@ def test_state_survives_a_kill_mid_write(local, tmp_path):
     with serve(tmp_path) as (process, base, _):
         requests.post(f"{base}/datasets", json={"datasetReference": {"datasetId": "d"}})
         query(base, "CREATE TABLE d.t AS SELECT x FROM UNNEST([1, 2, 3]) AS x")
+        query(
+            base,
+            "CREATE FUNCTION d.twice(x INT64) RETURNS INT64 LANGUAGE js AS 'return x * 2;'",
+        )
         sql = f"INSERT d.t SELECT x FROM UNNEST(GENERATE_ARRAY(1, {INSERTED})) AS x"
         job_id = query(base, sql, timeout_ms=100)["jobReference"]["jobId"]
         time.sleep(0.2)
@@ -80,3 +84,4 @@ def test_state_survives_a_kill_mid_write(local, tmp_path):
         assert count(base) == 3
         query(base, "INSERT d.t (x) VALUES (4)")
         assert count(base) == 4
+        assert query(base, "SELECT d.twice(21)")["rows"] == [{"f": [{"v": "42"}]}]

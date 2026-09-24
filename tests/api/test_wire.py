@@ -384,3 +384,43 @@ def test_gzip_request_body(api):
     response = api("POST", "/datasets", data=gzip.compress(body), headers=headers)
     assert response.status_code == 200, response.text
     assert response.json()["datasetReference"]["datasetId"] == dataset_id
+
+
+def test_put_dataset_replaces_its_fields(api):
+    dataset_id = unique("put")
+    body = {"datasetReference": {"datasetId": dataset_id}, "description": "d"}
+    api("POST", "/datasets", json=body | {"labels": {"k": "v"}})
+    replaced = api(
+        "PUT",
+        f"/datasets/{dataset_id}",
+        json={"datasetReference": body["datasetReference"], "friendlyName": "f"},
+    ).json()
+    assert (
+        replaced.get("description"),
+        replaced.get("labels"),
+        replaced["friendlyName"],
+    ) == (
+        None,
+        None,
+        "f",
+    )
+    assert replaced["datasetReference"]["datasetId"] == dataset_id
+
+
+def test_put_table_replaces_its_fields(api, dataset):
+    table_id = unique("put")
+    reference = {"datasetId": dataset.dataset_id, "tableId": table_id}
+    schema = {"fields": [{"name": "x", "type": "INTEGER"}]}
+    path = f"/datasets/{dataset.dataset_id}/tables"
+    api(
+        "POST",
+        path,
+        json={"tableReference": reference, "schema": schema, "description": "d"},
+    )
+    replaced = api(
+        "PUT",
+        f"{path}/{table_id}",
+        json={"tableReference": reference, "schema": schema, "friendlyName": "f"},
+    ).json()
+    assert (replaced.get("description"), replaced["friendlyName"]) == (None, "f")
+    assert [f["name"] for f in replaced["schema"]["fields"]] == ["x"]
