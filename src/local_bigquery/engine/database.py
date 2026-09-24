@@ -110,6 +110,20 @@ def writing(*table: str) -> Iterator[None]:
         yield
 
 
+def objects(
+    project_id: str, dataset_id: str, table_id: str | None = None
+) -> list[tuple[str, str, int]]:
+    return fetch(
+        "SELECT table_name, 'TABLE', estimated_size FROM duckdb_tables() "
+        "WHERE database_name = $1 AND schema_name = $2 "
+        "AND table_name = coalesce($3, table_name) "
+        "UNION ALL SELECT view_name, 'VIEW', 0 FROM duckdb_views() "
+        "WHERE database_name = $1 AND schema_name = $2 "
+        "AND view_name = coalesce($3, view_name) AND NOT internal ORDER BY 1",
+        [project_id, dataset_id, table_id],
+    )
+
+
 def projects() -> list[str]:
     rows = fetch(
         "SELECT database_name FROM duckdb_databases() WHERE type = 'ducklake' "

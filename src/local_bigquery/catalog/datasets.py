@@ -106,13 +106,7 @@ def record(project_id: str, dataset_id: str, resource: dict) -> Dataset:
 
 
 def check_empty(project_id: str, dataset_id: str):
-    tables = database.fetch(
-        "SELECT 1 FROM duckdb_tables() WHERE database_name = ? AND schema_name = ? "
-        "UNION ALL SELECT 1 FROM duckdb_views() WHERE database_name = ? "
-        "AND schema_name = ? AND NOT internal",
-        [project_id, dataset_id] * 2,
-    )
-    if tables:
+    if database.objects(project_id, dataset_id):
         raise BigQueryError(
             "resourceInUse", f"Dataset {project_id}:{dataset_id} is still in use"
         )

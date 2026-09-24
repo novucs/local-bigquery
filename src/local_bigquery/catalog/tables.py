@@ -49,13 +49,9 @@ def exists(project_id: str, dataset_id: str, table_id: str) -> bool:
 
 
 def _lookup(project_id: str, dataset_id: str, table_id: str) -> tuple[str, int] | None:
-    rows = database.fetch(
-        "SELECT 'TABLE', estimated_size FROM duckdb_tables() "
-        "WHERE database_name = ? AND schema_name = ? AND table_name = ? "
-        "UNION ALL SELECT 'VIEW', 0 FROM duckdb_views() "
-        "WHERE database_name = ? AND schema_name = ? AND view_name = ? AND NOT internal",
-        list(physical(project_id, dataset_id, table_id)) * 2,
-    )
+    rows = [
+        row[1:] for row in database.objects(*physical(project_id, dataset_id, table_id))
+    ]
     stored = metadata.load("tables", project_id, dataset_id, table_id)
     if expired(stored):
         if rows:
@@ -194,13 +190,7 @@ def get(
 
 def list_(project_id: str, dataset_id: str) -> list[dict]:
     datasets.load(project_id, dataset_id)
-    rows = database.fetch(
-        "SELECT table_name, 'TABLE' FROM duckdb_tables() "
-        "WHERE database_name = ? AND schema_name = ? "
-        "UNION ALL SELECT view_name, 'VIEW' FROM duckdb_views() "
-        "WHERE database_name = ? AND schema_name = ? AND NOT internal ORDER BY 1",
-        [project_id, dataset_id] * 2,
-    )
+    rows = [row[:2] for row in database.objects(project_id, dataset_id)]
     physical_ids = {table_id for table_id, _ in rows}
     rows += [
         (resource["tableReference"]["tableId"], "TABLE")

@@ -6,7 +6,7 @@ import time
 import sqlglot
 from sqlglot import exp
 
-from local_bigquery.catalog import metadata, names, tables
+from local_bigquery.catalog import datasets, metadata, names, tables
 from local_bigquery.engine import database
 from local_bigquery.errors import BigQueryError
 
@@ -34,10 +34,7 @@ def _not_found(project_id: str, dataset_id: str, table_id: str) -> BigQueryError
             f"Access Denied: Table {table}: User does not have permission to query "
             f"table {table}, or perhaps it does not exist.",
         )
-    if not database.fetch(
-        "SELECT 1 FROM duckdb_schemas() WHERE database_name = ? AND schema_name = ?",
-        [project_id, dataset_id],
-    ):
+    if not datasets.exists(project_id, dataset_id):
         return BigQueryError(
             "notFound",
             f"Not found: Dataset {project_id}:{dataset_id} was not found in location US",
@@ -59,15 +56,8 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
         or kind not in (None, "TABLE", "VIEW")
     ):
         return
-    existing = database.fetch(
-        "SELECT table_name FROM duckdb_tables() WHERE database_name = ? "
-        "AND schema_name = ? AND lower(table_name) = lower(?) "
-        "UNION ALL SELECT view_name FROM duckdb_views() WHERE database_name = ? "
-        "AND schema_name = ? AND lower(view_name) = lower(?) AND NOT internal",
-        [project_id, dataset_id, table_id] * 2,
-    )
     stored = metadata.load("tables", project_id, dataset_id, table_id) or {}
-    if table_id not in {name for (name,) in existing} or tables.expired(stored):
+    if not database.objects(project_id, dataset_id, table_id) or tables.expired(stored):
         raise _not_found(project_id, dataset_id, table_id)
     if is_target and isinstance(tree, DML) and stored.get("type") == "SNAPSHOT":
         raise BigQueryError(
@@ -205,12 +195,12 @@ def wildcard_table(node: exp.Expression, context) -> exp.Expression:
     prefix = node.name.rstrip("*")
     project_id = node.catalog or context.project_id
     dataset_id = node.db or context.dataset_id
-    tables = database.fetch(
-        "SELECT table_name FROM duckdb_tables() WHERE database_name = ? "
-        "AND schema_name = ? AND starts_with(table_name, ?) ORDER BY table_name",
-        [project_id, dataset_id, prefix],
-    )
-    if not tables:
+    matches = [
+        name
+        for name, kind, _ in database.objects(project_id, dataset_id)
+        if kind == "TABLE" and name.startswith(prefix)
+    ]
+    if not matches:
         raise BigQueryError(
             "invalid",
             f"{project_id}:{dataset_id}.{node.name} does not match any table.",
@@ -220,7 +210,7 @@ def wildcard_table(node: exp.Expression, context) -> exp.Expression:
             "*",
             exp.alias_(exp.Literal.string(table_id[len(prefix) :]), "_TABLE_SUFFIX"),
         ).from_(exp.table_(table_id, db=dataset_id, catalog=project_id, quoted=True))
-        for (table_id,) in tables
+        for table_id in matches
     ]
     select = node.find_ancestor(exp.Select)
     if select is not None:
