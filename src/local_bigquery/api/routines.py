@@ -75,5 +75,7 @@ def update_routine(
 
 @router.delete(ROUTINE, status_code=204)
 def delete_routine(project_id: str, dataset_id: str, routine_id: str):
-    load(project_id, dataset_id, routine_id)
-    routines.delete(project_id, dataset_id, routine_id)
+    kind = routines.ROUTINE_TYPES[
+        load(project_id, dataset_id, routine_id)["routineType"]
+    ]
+    run_ddl(project_id, f"DROP {kind} `{project_id}.{dataset_id}.{routine_id}`")

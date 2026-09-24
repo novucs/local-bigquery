@@ -209,3 +209,20 @@ def test_routines_are_dropped_with_dataset(bq, project):
     bq.create_dataset(dataset_id, retry=FAST_RETRY)
     assert list(bq.list_routines(dataset_id, retry=FAST_RETRY)) == []
     bq.delete_dataset(dataset_id, retry=FAST_RETRY)
+
+
+@pytest.mark.parametrize(
+    "ddl",
+    [
+        "CREATE FUNCTION {r}(x INT64) AS (x + 1)",
+        "CREATE FUNCTION {r}(x INT64) RETURNS INT64 LANGUAGE js AS 'return x + 1;'",
+        "CREATE TABLE FUNCTION {r}() AS SELECT 1 AS x",
+        "CREATE PROCEDURE {r}() BEGIN SELECT 1; END",
+    ],
+)
+def test_delete_routine_drops_it(bq, routine_id, ddl):
+    run(bq, ddl.format(r=f"`{routine_id}`"))
+    bq.delete_routine(routine_id, retry=FAST_RETRY)
+    with fails(NotFound, "notFound"):
+        bq.get_routine(routine_id, retry=FAST_RETRY)
+    run(bq, ddl.format(r=f"`{routine_id}`"))
