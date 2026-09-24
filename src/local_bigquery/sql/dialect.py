@@ -7,7 +7,7 @@ from sqlglot.tokens import TokenType
 from sqlglot.dialects.bigquery import BigQuery as BaseBigQuery
 from sqlglot.dialects.duckdb import DuckDB as BaseDuckDB
 
-from local_bigquery.errors import BigQueryError, not_implemented
+from local_bigquery.errors import BigQueryError, position, not_implemented
 
 FUNCTIONS = sorted((pathlib.Path(__file__).parent / "functions").glob("*.sql"))
 MACRO = re.compile(r"CREATE\s+(?:OR\s+REPLACE\s+)?MACRO\s+(\w+)", re.IGNORECASE)
@@ -84,11 +84,10 @@ def _numeric_literal(self, this: exp.Expression, data_type: exp.DataType):
     except decimal.InvalidOperation:
         value = None
     if value is None or not value.is_finite() or value.copy_abs() > maximum:
-        token = self._tokens[self._index - 2]
-        column = token.col - len(token.text) + 1
         raise BigQueryError(
             "invalidQuery",
-            f'Invalid {name} literal: "{this.name}" at [{token.line}:{column}]',
+            f'Invalid {name} literal: "{this.name}" '
+            f"at [{position(self._tokens[self._index - 2])}]",
         )
     scale = -value.as_tuple().exponent
     whole = len(value.as_tuple().digits) - scale
@@ -168,10 +167,9 @@ class BigQueryDialect(BaseBigQuery):
                 return
             if self._prev and self._prev.token_type == TokenType.DOT:
                 return
-            position = f"{token.line}:{token.col - len(token.text) + 1}"
             raise BigQueryError(
                 "invalidQuery",
-                template.format(name=token.text.upper(), position=position),
+                template.format(name=token.text.upper(), position=position(token)),
             )
 
         def _model_call(self) -> bool:
@@ -212,11 +210,10 @@ class BigQueryDialect(BaseBigQuery):
             token = self._calls[-1]
             name = token.text.upper()
             suffix = "" if args else " with no arguments"
-            column = token.col - len(token.text) + 1
             return BigQueryError(
                 "invalidQuery",
                 f"No matching signature for function {name}{suffix} "
-                f"at [{token.line}:{column}]",
+                f"at [{position(token)}]",
             )
 
 

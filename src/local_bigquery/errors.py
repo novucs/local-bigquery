@@ -147,21 +147,25 @@ def _position(message: str) -> tuple[int, int]:
     return int(match[1]), len(match[3]) - len(f"LINE {match[1]}: ") + 1
 
 
+def position(item: sqlglot.tokens.Token | sqlglot.exp.Expression) -> str:
+    if isinstance(item, sqlglot.tokens.Token):
+        return f"{item.line}:{item.col - len(item.text) + 1}"
+    meta = item.meta
+    width = meta.get("end", 0) - meta.get("start", 0)
+    return f"{meta.get('line', 1)}:{meta.get('col', 0) - width}"
+
+
 def _function(tree, name: str, context=None) -> tuple[str, str]:
     for node in tree.find_all(sqlglot.exp.Anonymous) if tree is not None else []:
         if node.name.casefold() != name.casefold() or "line" not in node.meta:
             continue
-        column = node.meta["col"] - len(node.name) + 1
         if isinstance(node.parent, sqlglot.exp.Dot):
-            path = node.parent.this
-            meta = next(iter(path.find_all(sqlglot.exp.Identifier))).meta
-            column = meta.get("col", 0) - (meta.get("end", 0) - meta.get("start", 0))
-            identifiers = list(path.find_all(sqlglot.exp.Identifier))
+            identifiers = list(node.parent.this.find_all(sqlglot.exp.Identifier))
             written = ".".join(identifier.name for identifier in identifiers)
             if any(identifier.quoted for identifier in identifiers):
                 written = f"`{written}`"
-            return f"{written}.{node.name}", f"{meta['line']}:{column}"
-        return node.name, f"{node.meta['line']}:{column}"
+            return f"{written}.{node.name}", position(identifiers[0])
+        return node.name, position(node)
     return name, "1:1"
 
 

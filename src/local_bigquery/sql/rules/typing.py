@@ -9,7 +9,7 @@ from sqlglot.optimizer.qualify import qualify
 
 from local_bigquery.catalog import tables
 from local_bigquery.engine.types import bigquery_type
-from local_bigquery.errors import BigQueryError
+from local_bigquery.errors import BigQueryError, position
 
 Type = exp.DataType.Type
 DECIMALS = {Type.DECIMAL: "DECIMAL(38, 9)", Type.BIGDECIMAL: "DECIMAL(38, 18)"}
@@ -173,12 +173,9 @@ def _date_literal(node: exp.Literal) -> exp.Expression:
     except ValueError:
         valid = None
     if not valid:
-        meta = node.meta
-        column = meta.get("col", 0) - (meta.get("end", 0) - meta.get("start", 0))
         raise BigQueryError(
             "invalidQuery",
-            f'Could not cast literal "{node.this}" to type DATE '
-            f"at [{meta.get('line', 1)}:{column}]",
+            f'Could not cast literal "{node.this}" to type DATE at [{position(node)}]',
         )
     return exp.cast(node, Type.DATE)
 
