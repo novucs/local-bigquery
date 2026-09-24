@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pyarrow as pa
 import pytest
-from google.api_core.exceptions import NotFound
+from google.api_core.exceptions import FailedPrecondition, NotFound
 from google.cloud import bigquery
 from google.cloud.bigquery_storage_v1 import types
 
@@ -180,7 +180,14 @@ def test_missing_table(bqstorage, dataset):
 def test_read_from_offset(bqstorage, numbers):
     read_session = session(bqstorage, numbers)
     stream = read_session.streams[0]
+    assert len(read(bqstorage, read_session, stream)) == 10
     assert len(read(bqstorage, read_session, stream, offset=4)) == 6
+
+
+def test_offset_must_already_be_read(bqstorage, numbers):
+    read_session = session(bqstorage, numbers)
+    with pytest.raises(FailedPrecondition, match="offset 4 has not been allocated yet"):
+        read(bqstorage, read_session, read_session.streams[0], offset=4)
 
 
 def test_small_table_reads_as_one_stream(bqstorage, numbers):

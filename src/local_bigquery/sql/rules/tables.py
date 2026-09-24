@@ -109,11 +109,21 @@ def _as_of(milliseconds: int) -> exp.HistoricalData:
     return exp.HistoricalData(this="AT", kind="TIMESTAMP", expression=timestamp)
 
 
+def decorated(project_id: str, dataset_id: str, table_id: str) -> str | None:
+    if not (match := DECORATOR.match(table_id)):
+        return None
+    table = exp.table_(match[1], dataset_id, project_id, quoted=True)
+    table.set("when", _as_of(int(match[2])))
+    return table.sql(dialect="duckdb")
+
+
 def decorator(tree: exp.Expression, context) -> exp.Expression:
     for table in tree.find_all(exp.Table):
-        if match := DECORATOR.match(table.name):
-            table.set("this", exp.to_identifier(match[1]))
-            table.set("when", _as_of(int(match[2])))
+        if DECORATOR.match(table.name):
+            written = ".".join(part for part in (table.db, table.name) if part)
+            raise BigQueryError(
+                "invalidQuery", f'Table "{written}" cannot include decorator'
+            )
     return tree
 
 

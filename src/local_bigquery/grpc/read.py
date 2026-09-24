@@ -7,6 +7,7 @@ import uuid
 from dataclasses import dataclass
 
 import fastavro
+import grpc
 from google.cloud.bigquery_storage_v1 import types
 
 from local_bigquery.catalog import tables
@@ -47,12 +48,20 @@ AVRO_TYPES = {
 }
 
 
+class StorageError(Exception):
+    def __init__(self, code: grpc.StatusCode, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 @dataclass
 class Stream:
     query: str
     start: int
     end: int
     avro: str | None
+    allocated: int = 0
 
 
 _streams: dict[str, Stream] = {}
@@ -198,6 +207,12 @@ def _avro_rows(stream: Stream, batch) -> types.AvroRows:
 
 def read_rows(request: types.ReadRowsRequest):
     stream = _lookup(request.read_stream)
+    if request.offset > stream.allocated:
+        raise StorageError(
+            grpc.StatusCode.FAILED_PRECONDITION,
+            f"there was an error operating on '{request.read_stream}': "
+            f"offset {request.offset} has not been allocated yet",
+        )
     start = stream.start + request.offset
     with database.cursor() as cur:
         reader = cur.sql(
@@ -222,6 +237,7 @@ def read_rows(request: types.ReadRowsRequest):
                 **schema,
             )
             position += batch.num_rows
+            stream.allocated = max(stream.allocated, position)
 
 
 def split_stream(

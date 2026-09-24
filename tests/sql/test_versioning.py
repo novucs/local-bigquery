@@ -3,7 +3,7 @@ import time
 import pytest
 from google.api_core.exceptions import BadRequest, NotFound
 
-from tests.cases import fails, rows, run, unique
+from tests.cases import FAST_RETRY, fails, rows, run, unique
 
 
 @pytest.fixture
@@ -123,14 +123,19 @@ def test_time_travel_before_creation(bq, source):
         )
 
 
-def test_table_decorator_reads_earlier_state(bq, source):
+def test_table_decorators_are_rejected_in_sql(bq, source):
+    with fails(BadRequest, "invalidQuery") as info:
+        run(bq, f"SELECT id FROM `{source}@1`")
+    assert f'Table "{source}@1" cannot include decorator' in info.value.message
+
+
+def test_copy_reads_table_decorator(bq, source, name):
     time.sleep(0.2)
     [(before,)] = rows(bq, "SELECT UNIX_MILLIS(CURRENT_TIMESTAMP())")
     run(bq, f"DELETE FROM {source} WHERE TRUE")
-    assert rows(bq, f"SELECT id FROM `{source}@{before}`") == [(1,)]
-    offset = int(time.time() * 1000) - before
-    assert rows(bq, f"SELECT id FROM `{source}@-{offset}`") == [(1,)]
-    assert rows(bq, f"SELECT id FROM {source}") == []
+    target = name("before")
+    bq.copy_table(f"{source}@{before}", target).result(retry=FAST_RETRY)
+    assert rows(bq, f"SELECT id FROM {target}") == [(1,)]
 
 
 def test_undelete_with_table_decorator(bq, source):
@@ -138,7 +143,7 @@ def test_undelete_with_table_decorator(bq, source):
     run(bq, f"DROP TABLE {source}")
     with fails(NotFound, "notFound"):
         run(bq, f"SELECT id FROM {source}")
-    run(bq, f"CREATE TABLE {source} AS SELECT * FROM `{source}@{before}`")
+    bq.copy_table(f"{source}@{before}", source).result(retry=FAST_RETRY)
     assert rows(bq, f"SELECT id, grp, v FROM {source}") == [(1, "a", 10)]
 
 

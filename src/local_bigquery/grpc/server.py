@@ -20,7 +20,7 @@ CODES = {
 
 
 def _abort(context: grpc.ServicerContext, error: Exception):
-    if isinstance(error, write.StorageError):
+    if isinstance(error, read.StorageError):
         context.abort(error.code, error.message)
     error = from_exception(error)
     context.abort(CODES.get(error.reason, grpc.StatusCode.INTERNAL), error.message)

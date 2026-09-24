@@ -17,7 +17,7 @@ from google.protobuf import (
 from google.rpc import status_pb2
 
 from local_bigquery.catalog import tabledata, tables
-from local_bigquery.grpc.read import table
+from local_bigquery.grpc.read import StorageError, table
 from local_bigquery.models import TableFieldSchema
 
 Type = types.WriteStream.Type
@@ -28,13 +28,6 @@ STORAGE_TYPES = {
     "BOOLEAN": "BOOL",
     "RECORD": "STRUCT",
 }
-
-
-class StorageError(Exception):
-    def __init__(self, code: grpc.StatusCode, message: str):
-        super().__init__(message)
-        self.code = code
-        self.message = message
 
 
 @dataclass
