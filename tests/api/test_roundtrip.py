@@ -3,6 +3,7 @@ import datetime
 import decimal
 
 from google.cloud import bigquery
+from google.cloud.bigquery_storage_v1 import types
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
@@ -98,5 +99,14 @@ def test_values_round_trip(bq, bqstorage, dataset, table):
     expected = _rows(rows)
     assert _rows(run(bq, f"SELECT * FROM `{table_id}`")) == expected
     assert _rows(bq.list_rows(table_id, retry=FAST_RETRY)) == expected
-    arrow = bq.list_rows(table_id).to_arrow(bqstorage_client=bqstorage)
+    session = bqstorage.create_read_session(
+        parent=f"projects/{dataset.project}",
+        read_session=types.ReadSession(
+            table=f"projects/{dataset.project}/datasets/{dataset.dataset_id}"
+            f"/tables/{table_id.rsplit('.', 1)[1]}",
+            data_format=types.DataFormat.ARROW,
+        ),
+        max_stream_count=1,
+    )
+    arrow = bqstorage.read_rows(session.streams[0].name).to_arrow(session)
     assert _rows(arrow.to_pylist()) == expected

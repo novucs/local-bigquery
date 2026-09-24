@@ -1,3 +1,4 @@
+import atexit
 import hashlib
 import inspect
 import json
@@ -19,6 +20,13 @@ THROWN = re.compile(r"^<anonymous>:(\d+): (.*)$")
 _contexts: dict[str, tuple[MiniRacer, threading.Lock]] = {}
 _registered: set[tuple[int, str]] = set()
 _lock = threading.Lock()
+
+
+@atexit.register
+def _close():
+    while _contexts:
+        context, _ = _contexts.popitem()[1]
+        context.close()
 
 
 def is_udf(tree: exp.Expression) -> bool:
