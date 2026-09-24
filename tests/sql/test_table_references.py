@@ -147,8 +147,10 @@ def test_ingestion_time_pseudo_columns(bq, dataset):
 def test_ingestion_time_defaults_to_now_and_stays_hidden(bq, dataset):
     table = f"{dataset.dataset_id}.{unique('ingested')}"
     run(bq, f"CREATE TABLE {table} (x INT64) PARTITION BY _PARTITIONDATE")
-    run(bq, f"INSERT {table} (x) VALUES (1)")
-    run(bq, f"INSERT {table} VALUES (2)")
+    run(bq, f"INSERT {table} (x) VALUES (1), (2)")
+    with fails(BadRequest, "invalidQuery") as info:
+        run(bq, f"INSERT {table} VALUES (3)")
+    assert "Omitting INSERT target column list is unsupported" in info.value.message
     today = f"SELECT x FROM {table} WHERE _PARTITIONDATE = CURRENT_DATE() ORDER BY x"
     assert [tuple(r.values()) for r in run(bq, today)] == [(1,), (2,)]
     assert [tuple(r.values()) for r in run(bq, f"SELECT * FROM {table}")] in (

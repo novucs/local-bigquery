@@ -1,5 +1,10 @@
 import pytest
-from google.api_core.exceptions import Conflict, NotFound, PreconditionFailed
+from google.api_core.exceptions import (
+    BadRequest,
+    Conflict,
+    NotFound,
+    PreconditionFailed,
+)
 from google.cloud import bigquery
 from google.cloud.bigquery import StandardSqlDataType, StandardSqlTypeNames
 
@@ -163,7 +168,8 @@ def test_update_routine(bq, routine_id):
     )
     routine.body = "x + 100"
     routine.description = "hundred"
-    updated = bq.update_routine(routine, ["body", "description"], retry=FAST_RETRY)
+    fields = ["type_", "arguments", "body", "description"]
+    updated = bq.update_routine(routine, fields, retry=FAST_RETRY)
     assert (updated.body, updated.description) == ("x + 100", "hundred")
     assert updated.type_ == "SCALAR_FUNCTION"
     assert scalar(bq, f"SELECT {name(routine_id)}(1)") == 101
@@ -173,18 +179,26 @@ def test_update_routine(bq, routine_id):
 def test_update_routine_stale_etag(bq, routine_id):
     routine = create(bq, routine_id, type_="SCALAR_FUNCTION", body="1")
     routine.description = "first"
-    bq.update_routine(routine, ["description"], retry=FAST_RETRY)
+    fields = ["type_", "body", "description"]
+    bq.update_routine(routine, fields, retry=FAST_RETRY)
     with fails(PreconditionFailed, "conditionNotMet"):
-        bq.update_routine(routine, ["description"], retry=FAST_RETRY)
+        bq.update_routine(routine, fields, retry=FAST_RETRY)
 
 
 def test_update_missing_routine(bq, routine_id):
     with fails(NotFound, "notFound"):
         bq.update_routine(
             bigquery.Routine(routine_id, type_="SCALAR_FUNCTION", body="1"),
-            ["body"],
+            ["type_", "body"],
             retry=FAST_RETRY,
         )
+
+
+def test_update_requires_routine_type(bq, routine_id):
+    routine = create(bq, routine_id, type_="SCALAR_FUNCTION", body="1")
+    routine.body = "2"
+    with pytest.raises(BadRequest, match="Routine type must be specified"):
+        bq.update_routine(routine, ["body"], retry=FAST_RETRY)
 
 
 def test_routines_are_dropped_with_dataset(bq, project):

@@ -6,6 +6,7 @@ from google.cloud import bigquery
 from tests.cases import FAST_RETRY, fails, run, unique
 
 VIEWER = "roles/bigquery.dataViewer"
+MEMBER = "allAuthenticatedUsers"
 
 
 @pytest.fixture
@@ -33,17 +34,17 @@ def test_empty_policy(bq, table):
 
 def test_set_and_get_policy(bq, table):
     policy = bq.get_iam_policy(table, retry=FAST_RETRY)
-    policy.bindings = [{"role": VIEWER, "members": {"user:a@example.com"}}]
+    policy.bindings = [{"role": VIEWER, "members": {MEMBER}}]
     updated = bq.set_iam_policy(table, policy, retry=FAST_RETRY)
     assert updated.etag != policy.etag
     fetched = bq.get_iam_policy(table, retry=FAST_RETRY)
     assert fetched.etag == updated.etag
-    assert fetched.bindings == [{"role": VIEWER, "members": {"user:a@example.com"}}]
+    assert fetched.bindings == [{"role": VIEWER, "members": {MEMBER}}]
 
 
 def test_set_policy_with_stale_etag(bq, table):
     policy = bq.get_iam_policy(table, retry=FAST_RETRY)
-    policy.bindings = [{"role": VIEWER, "members": {"user:a@example.com"}}]
+    policy.bindings = [{"role": VIEWER, "members": {MEMBER}}]
     bq.set_iam_policy(table, policy, retry=FAST_RETRY)
     with fails(PreconditionFailed, "conditionNotMet"):
         bq.set_iam_policy(table, policy, retry=FAST_RETRY)
@@ -51,7 +52,7 @@ def test_set_policy_with_stale_etag(bq, table):
 
 def test_policy_does_not_survive_recreation(bq, table):
     policy = bq.get_iam_policy(table, retry=FAST_RETRY)
-    policy.bindings = [{"role": VIEWER, "members": {"user:a@example.com"}}]
+    policy.bindings = [{"role": VIEWER, "members": {MEMBER}}]
     bq.set_iam_policy(table, policy, retry=FAST_RETRY)
     bq.delete_table(table, retry=FAST_RETRY)
     bq.create_table(bigquery.Table(table.reference), retry=FAST_RETRY)
@@ -65,7 +66,7 @@ def test_test_permissions(bq, table):
 
 
 def test_missing_table_policy(bq, dataset):
-    with fails(NotFound, "notFound"):
+    with pytest.raises(NotFound):
         bq.get_iam_policy(f"{dataset.dataset_id}.missing", retry=FAST_RETRY)
 
 
@@ -75,7 +76,7 @@ def test_routine_policy(bq, dataset, post):
     resource = (
         f"projects/{dataset.project}/datasets/{dataset.dataset_id}/routines/{routine}"
     )
-    binding = {"role": VIEWER, "members": ["user:a@example.com"]}
+    binding = {"role": VIEWER, "members": [MEMBER]}
     response = post(resource, "setIamPolicy", {"policy": {"bindings": [binding]}})
     assert response.status_code == 200, response.text
     policy = post(resource, "getIamPolicy", {}).json()

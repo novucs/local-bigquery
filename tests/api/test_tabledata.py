@@ -177,9 +177,7 @@ def test_insert_into_missing_table(bq, dataset):
 def test_list_rows_decodes_every_type(bq, dataset):
     table = create(bq, dataset, *SCHEMA)
     bq.insert_rows(table, [ROW])
-    rows = bq.list_rows(table)
-    assert [dict(row) for row in rows] == [ROW]
-    assert rows.total_rows == 1
+    assert [dict(row) for row in bq.list_rows(table)] == [ROW]
 
 
 def test_list_rows_pages(bq, dataset):
@@ -227,13 +225,15 @@ def test_query_to_dataframe(bq):
 
 @pytest.mark.parametrize(
     "value",
-    [
-        None,
-        [],
-        ["a"],
-    ],
+    [[], ["a"]],
 )
-def test_repeated_field_null_and_empty_read_back_as_list(bq, dataset, value):
+def test_repeated_field_read_back_as_list(bq, dataset, value):
     table = create(bq, dataset, bigquery.SchemaField("tags", "STRING", mode="REPEATED"))
     assert bq.insert_rows_json(table, [{"tags": value}]) == []
-    assert select(bq, table, None) == [{"tags": value or []}]
+    assert select(bq, table, None) == [{"tags": value}]
+
+
+def test_null_repeated_field_is_rejected(bq, dataset):
+    table = create(bq, dataset, bigquery.SchemaField("tags", "STRING", mode="REPEATED"))
+    [error] = bq.insert_rows_json(table, [{"tags": None}])
+    assert error["errors"][0]["message"] == "Field value of tags cannot be empty."

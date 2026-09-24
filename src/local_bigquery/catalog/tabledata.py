@@ -102,11 +102,9 @@ def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> d
         schema = {
             c.casefold(): (c, t) for c, t in zip(relation.columns, relation.types)
         }
-    required = [
-        f.name
-        for f in columns(project_id, dataset_id, table_id)
-        if f.mode == "REQUIRED"
-    ]
+    fields = columns(project_id, dataset_id, table_id)
+    required = [f.name for f in fields if f.mode == "REQUIRED"]
+    repeated = [f.name for f in fields if f.mode == "REPEATED"]
     rows = body.get("rows") or []
     known = [
         {
@@ -128,6 +126,11 @@ def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> d
             _problem(key, f"Missing required field: {key}.")
             for key in required
             if known[index].get(key) is None
+        ]
+        problems += [
+            _problem(key, f"Field value of {key} cannot be empty.")
+            for key in repeated
+            if key in known[index] and known[index][key] is None
         ]
         problems += [
             _problem(

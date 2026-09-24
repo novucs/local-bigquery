@@ -2,7 +2,7 @@ from fastapi import Body, Header
 
 from local_bigquery.api import Router, paginate
 from local_bigquery.catalog import datasets, metadata, routines
-from local_bigquery.errors import already_exists
+from local_bigquery.errors import BigQueryError, already_exists
 from local_bigquery.jobs.query import run_ddl
 from local_bigquery.models import ListRoutinesResponse, Routine
 
@@ -66,9 +66,11 @@ def update_routine(
     body: dict = Body(),
     if_match: str | None = Header(None),
 ) -> Routine:
+    if not body.get("routineType"):
+        raise BigQueryError("invalid", "Routine type must be specified")
     current = load(project_id, dataset_id, routine_id)
     metadata.check_etag(current, if_match)
-    return define(project_id, dataset_id, routine_id, current | body, True)
+    return define(project_id, dataset_id, routine_id, body, True)
 
 
 @router.delete(ROUTINE, status_code=204)

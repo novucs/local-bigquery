@@ -2,6 +2,7 @@ from sqlglot import exp
 
 from local_bigquery.catalog import tables
 from local_bigquery.engine import database
+from local_bigquery.errors import BigQueryError
 
 PSEUDO_COLUMNS = {"_PARTITIONTIME", "_PARTITIONDATE"}
 INGESTION_TIME = exp.ColumnDef(
@@ -49,12 +50,6 @@ def _hide_from_stars(select: exp.Select):
             star.set("except_", [*(star.args.get("except_") or []), hidden])
 
 
-def _name_insert_columns(insert: exp.Insert, table: exp.Table):
-    visible = tables.columns(table.catalog, table.db, table.name)
-    columns = [exp.to_identifier(field.name, quoted=True) for field in visible]
-    insert.set("this", exp.Schema(this=table.copy(), expressions=columns))
-
-
 def ingestion_time(tree: exp.Expression, context) -> exp.Expression:
     if isinstance(tree, exp.Create) and _ingestion_partitioned(tree):
         if isinstance(tree.this, exp.Schema):
@@ -64,8 +59,12 @@ def ingestion_time(tree: exp.Expression, context) -> exp.Expression:
         if not _hidden(table):
             continue
         if isinstance(tree, exp.Insert) and tree.this is table:
-            _name_insert_columns(tree, table)
-        elif isinstance(select := table.find_ancestor(exp.Select), exp.Select):
+            raise BigQueryError(
+                "invalidQuery",
+                "Omitting INSERT target column list is unsupported for "
+                f"ingestion-time partitioned table {table.db}.{table.name}",
+            )
+        if isinstance(select := table.find_ancestor(exp.Select), exp.Select):
             _hide_from_stars(select)
     return tree
 

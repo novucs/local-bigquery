@@ -141,6 +141,13 @@ def ddl(
                 delete(*keys)
             return {"statementType": "DROP_ALL_ROW_ACCESS_POLICIES"}
         exists = metadata.load("row_access_policies", *keys, name)
+        if exists and len(list_(*keys)) == 1:
+            raise BigQueryError(
+                "invalid",
+                "Dropping the last row access policy would make the table accessible "
+                "to all users who have access to the table. If this is intended, "
+                "please use a DROP ALL statement instead.",
+            )
         if not dry_run and (exists or not if_exists):
             delete(*keys, name)
         return {"statementType": "DROP_ROW_ACCESS_POLICY"}

@@ -1,7 +1,7 @@
 import pytest
 import requests
 from google.api_core.client_options import ClientOptions
-from google.api_core.exceptions import Conflict, NotFound
+from google.api_core.exceptions import BadRequest, Conflict, NotFound
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery
 from google.cloud.bigquery_storage_v1 import types
@@ -134,9 +134,9 @@ def test_create_or_replace_and_if_not_exists(bq, caller, orders):
 
 
 def test_duplicate_policy(bq, orders):
-    policy(bq, orders, "p", [ALICE], "TRUE")
+    policy(bq, orders, "p", ["allAuthenticatedUsers"], "TRUE")
     with fails(Conflict, "duplicate"):
-        policy(bq, orders, "p", [ALICE], "TRUE")
+        policy(bq, orders, "p", ["allAuthenticatedUsers"], "TRUE")
 
 
 def test_drop_missing_policy(bq, orders):
@@ -148,8 +148,18 @@ def test_drop_missing_policy(bq, orders):
 def test_statement_types(bq, orders):
     job = run_job(bq, f"CREATE ROW ACCESS POLICY p ON {orders} FILTER USING (TRUE)")
     assert job.statement_type == "CREATE_ROW_ACCESS_POLICY"
+    run(bq, f"CREATE ROW ACCESS POLICY q ON {orders} FILTER USING (TRUE)")
     job = run_job(bq, f"DROP ROW ACCESS POLICY p ON {orders}")
     assert job.statement_type == "DROP_ROW_ACCESS_POLICY"
+    job = run_job(bq, f"DROP ALL ROW ACCESS POLICIES ON {orders}")
+    assert job.statement_type == "DROP_ALL_ROW_ACCESS_POLICIES"
+
+
+def test_dropping_the_last_policy_needs_drop_all(bq, orders):
+    run(bq, f"CREATE ROW ACCESS POLICY p ON {orders} FILTER USING (TRUE)")
+    with fails(BadRequest, "invalid") as info:
+        run(bq, f"DROP ROW ACCESS POLICY p ON {orders}")
+    assert "please use a DROP ALL statement instead" in info.value.message
 
 
 @pytest.fixture
@@ -241,7 +251,7 @@ def test_authorized_views_still_apply_policies(bq, caller, dataset, orders):
 
 
 def test_information_schema_row_access_policies_not_found(bq, orders):
-    policy(bq, orders, "us", [ALICE], "TRUE")
+    policy(bq, orders, "us", ["allAuthenticatedUsers"], "TRUE")
     with fails(NotFound, "notFound"):
         run(
             bq,
