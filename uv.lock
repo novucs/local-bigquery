@@ -612,6 +612,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "cryptography" },
     { name = "datamodel-code-generator" },
     { name = "db-dtypes" },
     { name = "google-cloud-bigquery" },
@@ -643,6 +644,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "cryptography", specifier = ">=49.0.0" },
     { name = "datamodel-code-generator", specifier = ">=0.82.0" },
     { name = "db-dtypes", specifier = ">=1.7.1" },
     { name = "google-cloud-bigquery", specifier = ">=3.31.0" },

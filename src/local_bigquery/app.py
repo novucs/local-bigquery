@@ -85,10 +85,7 @@ app.add_middleware(GzipRequests)
 
 @app.middleware("http")
 async def identify_caller(request: Request, call_next):
-    headers = request.headers
-    identity = row_access.identify(
-        headers.get("x-local-bigquery-caller"), headers.get("x-local-bigquery-groups")
-    )
+    identity = row_access.identify(request.headers.get("authorization"))
     token = row_access.caller.set(identity)
     try:
         return await call_next(request)

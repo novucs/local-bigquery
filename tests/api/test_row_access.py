@@ -1,35 +1,65 @@
+import functools
+
 import pytest
-import requests
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from google.api_core.client_options import ClientOptions
 from google.api_core.exceptions import BadRequest, Conflict, NotFound
-from google.auth.credentials import AnonymousCredentials
+from google.auth.transport.requests import Request
 from google.cloud import bigquery
 from google.cloud.bigquery_storage_v1 import types
+from google.oauth2 import service_account
 
 from tests.cases import fails, run, run_job, unique
 
 ALICE = "user:alice@example.com"
 TEAM = "group:team@example.com"
+SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+
+
+@functools.cache
+def _key() -> str:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+
+
+def credentials(member: str) -> service_account.Credentials:
+    info = {
+        "client_email": member.split(":", 1)[1],
+        "private_key": _key(),
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    return service_account.Credentials.from_service_account_info(
+        info, scopes=[SCOPE], always_use_jwt_access=True
+    )
 
 
 @pytest.fixture
 def caller(endpoint, project):
     if endpoint == "google":
-        pytest.skip("caller identity headers are emulator-only")
+        pytest.skip("callers sign their own tokens, which only the emulator accepts")
 
-    def caller(member: str, groups: str = "") -> bigquery.Client:
-        session = requests.Session()
-        session.headers.update(
-            {"X-Local-BigQuery-Caller": member, "X-Local-BigQuery-Groups": groups}
-        )
+    def caller(member: str) -> bigquery.Client:
         return bigquery.Client(
             project=project,
-            credentials=AnonymousCredentials(),
+            credentials=credentials(member),
             client_options=ClientOptions(api_endpoint=endpoint),
-            _http=session,
         )
 
     return caller
+
+
+@pytest.fixture
+def groups(request, monkeypatch):
+    if request.config.getoption("--endpoint"):
+        pytest.skip("group membership is configured on the in-process server")
+    from local_bigquery.settings import settings
+
+    monkeypatch.setattr(settings, "groups", {ALICE: [TEAM]})
 
 
 @pytest.fixture
@@ -78,17 +108,11 @@ def test_matching_policies_are_unioned(bq, caller, orders):
 
 
 @pytest.mark.parametrize(
-    "grantee, groups",
-    [
-        (TEAM, TEAM),
-        ("allUsers", ""),
-        ("allAuthenticatedUsers", ""),
-        ("domain:example.com", ""),
-    ],
+    "grantee", [TEAM, "allUsers", "allAuthenticatedUsers", "domain:example.com"]
 )
-def test_grantee_kinds(bq, caller, orders, grantee, groups):
+def test_grantee_kinds(bq, caller, groups, orders, grantee):
     policy(bq, orders, "eu", [grantee], "country = 'EU'")
-    assert ids(caller(ALICE, groups), f"SELECT id FROM {orders}") == [3]
+    assert ids(caller(ALICE), f"SELECT id FROM {orders}") == [3]
 
 
 def test_policy_applies_to_subqueries_and_aggregates(bq, caller, orders):
@@ -259,6 +283,12 @@ def test_information_schema_row_access_policies_not_found(bq, orders):
         )
 
 
+def token(member: str) -> str:
+    signer = credentials(member)
+    signer.refresh(Request())
+    return signer.token
+
+
 def test_storage_read_applies_policies(bq, bqstorage, caller, orders, project):
     policy(bq, orders, "us_only", [ALICE], "country = 'US'")
     dataset_id, table_id = orders.split(".")
@@ -271,7 +301,7 @@ def test_storage_read_applies_policies(bq, bqstorage, caller, orders, project):
                 table=table, data_format=types.DataFormat.ARROW
             ),
             max_stream_count=1,
-            metadata=[("x-local-bigquery-caller", member)],
+            metadata=[("authorization", f"Bearer {token(member)}")],
         )
         if not session.streams:
             return []
@@ -289,3 +319,10 @@ def test_session_user_is_the_caller(bq, caller, orders):
     sql = f"SELECT id FROM {orders} ORDER BY id"
     assert ids(caller(ALICE), sql) == [1, 2]
     assert ids(caller("user:bob@example.com"), sql) == [3]
+
+
+def test_service_account_callers(bq, caller, orders):
+    robot = "serviceAccount:etl@local.iam.gserviceaccount.com"
+    policy(bq, orders, "jp", [robot], "country = 'JP'")
+    assert ids(caller(robot), f"SELECT id FROM {orders}") == [4]
+    assert ids(caller(ALICE), f"SELECT id FROM {orders}") == []

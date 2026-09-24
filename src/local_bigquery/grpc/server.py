@@ -29,10 +29,7 @@ def _abort(context: grpc.ServicerContext, error: Exception):
 @contextlib.contextmanager
 def _caller(context: grpc.ServicerContext):
     metadata = dict(context.invocation_metadata())
-    identity = row_access.identify(
-        metadata.get("x-local-bigquery-caller"), metadata.get("x-local-bigquery-groups")
-    )
-    token = row_access.caller.set(identity)
+    token = row_access.caller.set(row_access.identify(metadata.get("authorization")))
     try:
         yield
     finally:

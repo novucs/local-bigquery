@@ -1,4 +1,7 @@
+import base64
+import binascii
 import contextvars
+import json
 import re
 
 from local_bigquery.catalog import metadata, names, tables
@@ -26,9 +29,25 @@ def members() -> tuple[str, ...]:
     return caller.get() or (settings.caller,)
 
 
-def identify(principal: str | None, groups: str | None) -> tuple[str, ...]:
-    principal = principal or settings.caller
-    return (principal, *(g.strip() for g in (groups or "").split(",") if g.strip()))
+def _claims(authorization: str | None) -> dict:
+    scheme, _, token = (authorization or "").partition(" ")
+    parts = token.split(".")
+    if scheme.lower() != "bearer" or len(parts) != 3:
+        return {}
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
+    except (ValueError, binascii.Error):
+        return {}
+    return claims if isinstance(claims, dict) else {}
+
+
+def identify(authorization: str | None) -> tuple[str, ...]:
+    claims = _claims(authorization)
+    principal = settings.caller
+    if email := claims.get("email") or claims.get("sub"):
+        kind = "serviceAccount" if email.endswith(".gserviceaccount.com") else "user"
+        principal = f"{kind}:{email}"
+    return (principal, *settings.groups.get(principal, []))
 
 
 def _grants(grantee: str, identity: tuple[str, ...]) -> bool:

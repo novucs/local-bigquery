@@ -13,8 +13,8 @@ Uses [SQLGlot](https://github.com/tobymao/sqlglot) for translation, and [DuckDB]
   scripting and procedures, SQL/JavaScript UDFs and table functions,
   `INFORMATION_SCHEMA`, wildcard tables, time travel, snapshots and clones,
   `GEOGRAPHY`, `RANGE`, `EXPORT DATA` and `EXTERNAL_QUERY` against Postgres.
-- **Row access policies** filter rows for the caller named by the `X-Local-BigQuery-Caller` and
-  `X-Local-BigQuery-Groups` headers (default `CALLER=user:local-bigquery@localhost`).
+- **Row access policies** filter rows for the calling principal. See
+  [Row access policies](#row-access-policies).
 - **Known gaps** are the strict `xfail` cases in [`tests/`](tests), each with its reason.
 
 ## Usage
@@ -101,6 +101,27 @@ from google.cloud import bigquery
 client = bigquery.Client(client_options={"api_endpoint": "http://localhost:9050"})
 # ... your code here ...
 ```
+
+### Row access policies
+The caller is the service account that signed the request, just as in BigQuery.
+Sign requests locally with any key, as the emulator doesn't verify signatures:
+
+```python
+from google.cloud import bigquery
+from google.oauth2 import service_account
+
+alice = service_account.Credentials.from_service_account_file(
+    "alice.json", always_use_jwt_access=True
+)
+client = bigquery.Client(
+    credentials=alice, client_options={"api_endpoint": "http://localhost:9050"}
+)
+```
+
+A `client_email` ending in `.gserviceaccount.com` becomes `serviceAccount:<email>`,
+and any other email becomes `user:<email>`. Unsigned requests run as
+`CALLER` (default `user:local-bigquery@localhost`). Group membership comes from
+`GROUPS`, e.g. `GROUPS='{"user:alice@example.com": ["group:team@example.com"]}'`.
 
 ### SQLAlchemy
 ```bash

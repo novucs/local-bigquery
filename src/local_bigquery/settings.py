@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     default_project_id: str = Field("local")
     default_dataset_id: str = Field("local")
     caller: str = Field("user:local-bigquery@localhost")
+    groups: dict[str, list[str]] = Field(default_factory=dict)
     postgres_connection_id: str = Field("us.default")
     gcs_local_root: Path | None = Field(None)
     storage_emulator_host: str | None = Field(None)

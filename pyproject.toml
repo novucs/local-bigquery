@@ -27,6 +27,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "cryptography>=49.0.0",
     "datamodel-code-generator>=0.82.0",
     "db-dtypes>=1.7.1",
     "google-cloud-bigquery>=3.31.0",
