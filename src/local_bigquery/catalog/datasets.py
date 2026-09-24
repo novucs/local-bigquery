@@ -119,7 +119,7 @@ def check_empty(project_id: str, dataset_id: str):
 
 
 def forget(project_id: str, dataset_id: str):
-    for kind in metadata.KEYS:
+    for kind in database.RESOURCES:
         metadata.delete(kind, project_id, dataset_id)
 
 

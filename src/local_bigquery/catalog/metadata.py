@@ -2,17 +2,9 @@ import hashlib
 import json
 import time
 
-from local_bigquery.engine.database import execute, fetch
+from local_bigquery.engine.database import RESOURCES, execute, fetch
 from local_bigquery.errors import BigQueryError
 
-KEYS = {
-    "datasets": ("project_id", "dataset_id"),
-    "tables": ("project_id", "dataset_id", "table_id"),
-    "routines": ("project_id", "dataset_id", "routine_id"),
-    "row_access_policies": ("project_id", "dataset_id", "table_id", "policy_id"),
-    "models": ("project_id", "dataset_id", "model_id"),
-    "indexes": ("project_id", "dataset_id", "table_id", "index_id"),
-}
 COLLECTIONS = {
     "project_id": "projects",
     "dataset_id": "datasets",
@@ -57,7 +49,7 @@ def check_etag(resource: dict, etag: str | None):
 
 
 def _where(kind: str, count: int) -> str:
-    return " AND ".join(f"{key} = ?" for key in KEYS[kind][:count])
+    return " AND ".join(f"{key} = ?" for key in RESOURCES[kind][:count])
 
 
 def load(kind: str, *keys: str) -> dict | None:
@@ -83,7 +75,7 @@ def save(kind: str, resource: dict, *keys: str) -> dict:
     resource = resource | {"etag": hashlib.md5(body.encode()).hexdigest()}
     params = ", ".join("?" for _ in keys)
     execute(
-        f"INSERT OR REPLACE INTO emulator.{kind} ({', '.join(KEYS[kind])}, resource) "
+        f"INSERT OR REPLACE INTO emulator.{kind} ({', '.join(RESOURCES[kind])}, resource) "
         f"VALUES ({params}, ?)",
         [*keys, json.dumps(resource)],
     )
@@ -92,7 +84,7 @@ def save(kind: str, resource: dict, *keys: str) -> dict:
 
 def delete(kind: str, *keys: str):
     execute(f"DELETE FROM emulator.{kind} WHERE {_where(kind, len(keys))}", list(keys))
-    names = [COLLECTIONS[key] for key in KEYS[kind]]
+    names = [COLLECTIONS[key] for key in RESOURCES[kind]]
     path = "".join(f"{name}/{key}/" for name, key in zip(names, keys))
     path += "".join(f"{name}/" for name in names[len(keys) : len(keys) + 1])
     execute(

@@ -10,54 +10,19 @@ from local_bigquery.settings import settings
 from local_bigquery.sql import native
 from local_bigquery.sql.dialect import FUNCTIONS, MACRO
 
+RESOURCES = {
+    "datasets": ("project_id", "dataset_id"),
+    "tables": ("project_id", "dataset_id", "table_id"),
+    "routines": ("project_id", "dataset_id", "routine_id"),
+    "row_access_policies": ("project_id", "dataset_id", "table_id", "policy_id"),
+    "models": ("project_id", "dataset_id", "model_id"),
+    "indexes": ("project_id", "dataset_id", "table_id", "index_id"),
+}
 EMULATOR_SCHEMA = """
 CREATE SCHEMA IF NOT EXISTS emulator._results;
-CREATE TABLE IF NOT EXISTS emulator.datasets (
-    project_id VARCHAR,
-    dataset_id VARCHAR,
-    resource JSON NOT NULL,
-    PRIMARY KEY (project_id, dataset_id)
-);
-CREATE TABLE IF NOT EXISTS emulator.tables (
-    project_id VARCHAR,
-    dataset_id VARCHAR,
-    table_id VARCHAR,
-    resource JSON NOT NULL,
-    PRIMARY KEY (project_id, dataset_id, table_id)
-);
-CREATE TABLE IF NOT EXISTS emulator.routines (
-    project_id VARCHAR,
-    dataset_id VARCHAR,
-    routine_id VARCHAR,
-    resource JSON NOT NULL,
-    PRIMARY KEY (project_id, dataset_id, routine_id)
-);
-CREATE TABLE IF NOT EXISTS emulator.row_access_policies (
-    project_id VARCHAR,
-    dataset_id VARCHAR,
-    table_id VARCHAR,
-    policy_id VARCHAR,
-    resource JSON NOT NULL,
-    PRIMARY KEY (project_id, dataset_id, table_id, policy_id)
-);
-CREATE TABLE IF NOT EXISTS emulator.models (
-    project_id VARCHAR,
-    dataset_id VARCHAR,
-    model_id VARCHAR,
-    resource JSON NOT NULL,
-    PRIMARY KEY (project_id, dataset_id, model_id)
-);
 CREATE TABLE IF NOT EXISTS emulator.iam_policies (
     resource VARCHAR PRIMARY KEY,
     policy JSON NOT NULL
-);
-CREATE TABLE IF NOT EXISTS emulator.indexes (
-    project_id VARCHAR,
-    dataset_id VARCHAR,
-    table_id VARCHAR,
-    index_id VARCHAR,
-    resource JSON NOT NULL,
-    PRIMARY KEY (project_id, dataset_id, table_id, index_id)
 );
 CREATE TABLE IF NOT EXISTS emulator.js_functions (
     name VARCHAR PRIMARY KEY,
@@ -72,7 +37,12 @@ CREATE TABLE IF NOT EXISTS emulator.jobs (
     resource JSON NOT NULL,
     PRIMARY KEY (project_id, job_id)
 );
-"""
+""" + "".join(
+    f"CREATE TABLE IF NOT EXISTS emulator.{name} "
+    f"({''.join(f'{key} VARCHAR, ' for key in keys)}resource JSON NOT NULL, "
+    f"PRIMARY KEY ({', '.join(keys)}));\n"
+    for name, keys in RESOURCES.items()
+)
 _attach_lock = threading.Lock()
 _attached: set[str] = set()
 _writers: dict[tuple[str, ...], threading.Lock] = {}
