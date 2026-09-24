@@ -18,6 +18,7 @@ from local_bigquery.engine import database, sessions, types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import from_duckdb
 from local_bigquery.jobs import extract, merge
+from local_bigquery.models import TableFieldSchema
 from local_bigquery.sql import js, params, script
 from local_bigquery.sql.dialect import DuckDBDialect
 from local_bigquery.sql.rules import ddl
@@ -131,17 +132,21 @@ def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated
     )
 
 
-def _fields(relation: duckdb.DuckDBPyRelation, required: set[str]) -> list[dict]:
+def _fields(
+    relation: duckdb.DuckDBPyRelation, required: set[str] = frozenset()
+) -> list[TableFieldSchema]:
     return [
-        types.field(n, t, n in required).model_dump(exclude_none=True)
+        types.field(n, t, n in required)
         for n, t in zip(relation.columns, relation.types)
     ]
 
 
-def _declared_schema(cur, tree: exp.Create, context: Context) -> list[dict] | None:
+def _declared_schema(
+    cur, tree: exp.Create, context: Context
+) -> list[TableFieldSchema] | None:
     if isinstance(tree.expression, exp.Query):
         sql, bound = translate(tree.expression, context)
-        return _fields(cur.sql(sql, params=bound), set())
+        return _fields(cur.sql(sql, params=bound))
     if not isinstance(tree.this, exp.Schema):
         return None
     translated = sqlglot.parse_one(translate(tree, context)[0], dialect=DuckDBDialect)
@@ -157,18 +162,20 @@ def _declared_schema(cur, tree: exp.Create, context: Context) -> list[dict] | No
     return _fields(cur.sql(select.sql(dialect=DuckDBDialect)), required)
 
 
-def _result_schema(cur, tree, context, statistics: dict, dry_run: bool) -> list | None:
+def _result_schema(
+    cur, tree, context, statistics: dict, dry_run: bool
+) -> list[TableFieldSchema] | None:
     target = statistics.get("ddlTargetTable")
     if tree.find(exp.TemporaryProperty):
         return None
     if isinstance(tree, exp.Create) and target:
         if dry_run or statistics.get("ddlOperationPerformed") == "SKIP":
             return _declared_schema(cur, tree, context)
-        return tables.load(*tables.reference(target))["schema"]["fields"]
+        return tables.fields(tables.load(*tables.reference(target)))
     if dry_run and type(tree) in DML_COUNTS:
         table = tree.find(exp.Table)
         reference = names.reference(table, context.project_id, context.dataset_id)
-        return tables.load(*reference)["schema"]["fields"]
+        return tables.fields(tables.load(*reference))
     return None
 
 
@@ -245,12 +252,9 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
         for part in parts:
             sql, bound = translate(part, context)
             if isinstance(part, exp.Query):
-                relation = cur.sql(sql, params=bound)
-                fields = [
-                    types.field(n, t).model_dump(exclude_none=True)
-                    for n, t in zip(relation.columns, relation.types)
-                ]
-                statistics["schema"] = {"fields": fields}
+                statistics = _with_schema(
+                    statistics, _fields(cur.sql(sql, params=bound))
+                )
             elif not isinstance(part, exp.Create):
                 cur.execute(f"EXPLAIN {sql}", bound)
         return _with_schema(
@@ -279,8 +283,10 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
     )
 
 
-def _with_schema(statistics: dict, fields: list | None) -> dict:
-    return statistics if fields is None else statistics | {"schema": {"fields": fields}}
+def _with_schema(statistics: dict, fields: list[TableFieldSchema] | None) -> dict:
+    if fields is None:
+        return statistics
+    return statistics | {"schema": {"fields": [field.dump() for field in fields]}}
 
 
 def execute(

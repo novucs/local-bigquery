@@ -11,6 +11,7 @@ from local_bigquery.catalog.options import (
     options,
 )
 from local_bigquery.errors import BigQueryError
+from local_bigquery.models import Dataset, Table, TableConstraints
 from local_bigquery.sql.dialect import AlterColumnOptions, DropPrimaryKey
 
 PARAMETERS = {
@@ -79,8 +80,10 @@ def _foreign_key(reference: exp.Reference, table: tuple, position: int) -> dict:
 def check_references(tree: exp.Expression, project_id: str, dataset_id: str | None):
     for reference in tree.find_all(exp.Reference):
         target = names.reference(reference.this.this, project_id, dataset_id)
-        stored = metadata.load("tables", *target) or {}
-        if not (stored.get("tableConstraints") or {}).get("primaryKey"):
+        stored = metadata.load(Table, *target)
+        if not (
+            stored and stored.tableConstraints and stored.tableConstraints.primaryKey
+        ):
             raise BigQueryError(
                 "invalid",
                 f"Table {target[1]}.{target[2]} does not have Primary Key constraints",
@@ -103,21 +106,21 @@ def _keys(node: exp.Expression, table: tuple, foreign: int = 0) -> dict:
 
 
 def _alteration(
-    stored: dict, action: exp.Expression, reference: tuple, evaluate: Evaluate
+    stored: Table, action: exp.Expression, reference: tuple, evaluate: Evaluate
 ) -> dict:
     if isinstance(action, exp.AlterSet):
         return options(action, TABLE_OPTIONS, evaluate)
     if isinstance(action, AlterColumnOptions):
         extras = options(action, COLUMN_OPTIONS, evaluate)
         fields = [
-            field | extras
-            if field["name"].casefold() == action.name.casefold()
+            field.replace(**extras)
+            if field.name.casefold() == action.name.casefold()
             else field
-            for field in stored["schema"]["fields"]
+            for field in tables.fields(stored)
         ]
         return {"schema": {"fields": fields}}
-    keys = stored.get("tableConstraints") or {}
-    foreign = keys.get("foreignKeys") or []
+    keys = stored.tableConstraints or TableConstraints()
+    foreign = keys.foreignKeys or []
     label = names.label(*reference)
     if isinstance(action, exp.AddConstraint):
         added = _keys(action, reference, len(foreign))
@@ -125,14 +128,14 @@ def _alteration(
         return {"tableConstraints": added | {"foreignKeys": foreign or None}}
     if isinstance(action, exp.Drop) and action.args.get("kind") == "CONSTRAINT":
         name = action.find(exp.Table).name
-        kept = [key for key in foreign if key.get("name") != name]
+        kept = [key for key in foreign if key.name != name]
         if len(kept) == len(foreign) and not action.args.get("exists"):
             raise BigQueryError(
                 "invalidQuery", f"Constraint {name} does not exist in table {label}"
             )
         return {"tableConstraints": {"foreignKeys": kept or None}}
     if isinstance(action, DropPrimaryKey):
-        if "primaryKey" not in keys and not action.args.get("exists"):
+        if not keys.primaryKey and not action.args.get("exists"):
             raise BigQueryError(
                 "invalidQuery", f"Primary key does not exist in table {label}"
             )
@@ -187,11 +190,12 @@ def apply(tree: exp.Expression, project_id: str, dataset_id: str, evaluate: Eval
         reference = (target.catalog or project_id, target.db or target.name)
         if isinstance(tree, exp.Create):
             properties = tree.args.get("properties")
-            datasets.record(*reference, options(properties, DATASET_OPTIONS, evaluate))
+            resource = options(properties, DATASET_OPTIONS, evaluate)
+            datasets.record(*reference, Dataset.model_validate(resource))
         elif isinstance(tree, exp.Drop):
             datasets.forget(*reference)
         elif isinstance(tree, exp.Alter):
-            changes = options(tree, DATASET_OPTIONS, evaluate)
+            changes = Dataset.model_validate(options(tree, DATASET_OPTIONS, evaluate))
             datasets.update(*reference, changes, None, replace=False)
         return
     reference = names.reference(target, project_id, dataset_id)
@@ -199,7 +203,8 @@ def apply(tree: exp.Expression, project_id: str, dataset_id: str, evaluate: Eval
         resource = _table(tree, reference, evaluate) | _definition(
             tree, project_id, dataset_id
         )
-        tables.record(*reference, tables.defaults(*reference) | resource)
+        resource = tables.defaults(*reference).merged(Table.model_validate(resource))
+        tables.record(*reference, resource)
     elif isinstance(tree, exp.Drop):
         tables.forget(*reference)
     elif isinstance(tree, exp.Alter):
@@ -209,4 +214,4 @@ def apply(tree: exp.Expression, project_id: str, dataset_id: str, evaluate: Eval
             elif changes := _alteration(
                 stored := tables.load(*reference), action, reference, evaluate
             ):
-                tables.record(*reference, metadata.merge(stored, changes))
+                tables.record(*reference, stored.merged(Table.model_validate(changes)))

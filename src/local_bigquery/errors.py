@@ -52,6 +52,14 @@ def already_exists(kind: str, name: str) -> BigQueryError:
     return BigQueryError("duplicate", f"Already Exists: {kind} {name}")
 
 
+def invalid_payload(problem: dict) -> BigQueryError:
+    field = ".".join(map(str, problem["loc"]))
+    detail = f"Invalid value at '{field}': " if field else ""
+    return BigQueryError(
+        "invalid", f"Invalid JSON payload received. {detail}{problem['msg']}"
+    )
+
+
 def not_implemented(feature: str) -> BigQueryError:
     return BigQueryError(
         "notImplemented",

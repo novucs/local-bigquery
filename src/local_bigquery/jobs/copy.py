@@ -24,7 +24,7 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
     sources = config.get("sourceTables") or [config["sourceTable"]]
     references = [tables.reference(source) for source in sources]
     destination = tables.reference(config["destinationTable"])
-    datasets.load(*destination[:2])
+    datasets.get(*destination[:2])
     select = " UNION ALL BY NAME ".join(
         f"SELECT * FROM {_source(reference)}" for reference in references
     )

@@ -1,11 +1,17 @@
 import uuid
 
-from fastapi import Body, Query
+from fastapi import Query
 
 from local_bigquery.api import Router, paginate, with_rows
 from local_bigquery.catalog import tabledata, tables
 from local_bigquery.jobs import runner, store
-from local_bigquery.models import Job, JobCancelResponse, JobList, JobListJobsItem
+from local_bigquery.models import (
+    Job,
+    JobCancelResponse,
+    JobList,
+    JobListJobsItem,
+    QueryRequest,
+)
 
 router = Router(tags=["jobs"])
 LIST_FIELDS = set(JobListJobsItem.model_fields)
@@ -75,9 +81,10 @@ def list_jobs(
 
 
 @router.post("/projects/{project_id}/jobs")
-def insert_job(project_id: str, body: dict = Body()) -> Job:
-    job_id = (body.get("jobReference") or {}).get("jobId") or str(uuid.uuid4())
-    job = runner.submit(project_id, job_id, body.get("configuration") or {})
+def insert_job(project_id: str, body: Job) -> Job:
+    job_id = (body.jobReference and body.jobReference.jobId) or str(uuid.uuid4())
+    configuration = body.configuration.given() if body.configuration else {}
+    job = runner.submit(project_id, job_id, configuration)
     if job["jobReference"].get("jobId") is None:
         return job
     return runner.submitted(project_id, job_id)
@@ -105,15 +112,18 @@ def delete_job(project_id: str, job_id: str) -> dict:
 
 
 @router.post("/projects/{project_id}/queries")
-def run_query(project_id: str, body: dict = Body()):
-    configuration = {key: body[key] for key in QUERY_CONFIGURATION if key in body} | {
+def run_query(project_id: str, body: QueryRequest):
+    request = body.given()
+    configuration = {
+        key: request[key] for key in QUERY_CONFIGURATION if key in request
+    } | {
         "query": {
             key: value
-            for key, value in body.items()
+            for key, value in request.items()
             if key not in (*QUERY_CONFIGURATION, "kind", "formatOptions", "timeoutMs")
         }
     }
-    job_id = body.get("requestId") or str(uuid.uuid4())
+    job_id = body.requestId or str(uuid.uuid4())
     job = runner.submit(project_id, job_id, configuration)
     if job["jobReference"].get("jobId") is None:
         statistics = job["statistics"]["query"]
@@ -128,11 +138,11 @@ def run_query(project_id: str, body: dict = Body()):
             },
             [],
         )
-    job = runner.wait(project_id, job_id, body.get("timeoutMs"))
+    job = runner.wait(project_id, job_id, body.timeoutMs)
     if error := runner.error(job):
         raise runner.synchronous(error)
-    int64_timestamps = (body.get("formatOptions") or {}).get("useInt64Timestamp", False)
-    payload, rows = results(job, body.get("maxResults"), 0, int64_timestamps)
+    int64_timestamps = bool(body.formatOptions and body.formatOptions.useInt64Timestamp)
+    payload, rows = results(job, body.maxResults, 0, int64_timestamps)
     statistics = job["statistics"]
     return with_rows(
         {"kind": "bigquery#queryResponse"}

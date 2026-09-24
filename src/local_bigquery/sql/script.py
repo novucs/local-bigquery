@@ -10,6 +10,7 @@ from sqlglot.tokens import TokenType
 
 from local_bigquery.catalog import metadata, names, routines, tables
 from local_bigquery.errors import BigQueryError, from_exception, syntax_error
+from local_bigquery.models import Argument, Routine
 from local_bigquery.sql.dialect import BigQueryDialect
 from local_bigquery.sql.rules.parameters import VALUE, read
 from local_bigquery.sql.translate import Context, parse, translate
@@ -588,24 +589,24 @@ class Interpreter:
             return
         project_id, dataset_id, routine_id = self.reference(statement.text)
         routine = routines.load(project_id, dataset_id, routine_id)
-        if routine is None or routine.get("routineType") != "PROCEDURE":
+        if routine is None or routine.routineType != "PROCEDURE":
             raise BigQueryError(
                 "invalidQuery",
                 f"Procedure not found: {project_id}.{dataset_id}.{routine_id}",
             )
         variables, outputs = {}, []
-        for argument, (expression, _) in zip(routine["arguments"], statement.items):
+        for argument, (expression, _) in zip(routine.arguments, statement.items):
             kind = exp.DataType.build(
-                routines.sql_type(argument["dataType"]), dialect=BigQueryDialect
+                routines.sql_type(argument.dataType), dialect=BigQueryDialect
             )
-            name = argument["name"].lower()
+            name = argument.name.lower()
             variables[name] = self.store(exp.cast(self.expression(expression), kind))
-            if argument.get("mode") in ("OUT", "INOUT"):
+            if argument.mode in ("OUT", "INOUT"):
                 outputs.append((self.variable(expression.strip()), variables[name]))
         saved = self.context.variables
         self.context.variables = variables
         try:
-            self.statements(parse_script(routine["definitionBody"]))
+            self.statements(parse_script(routine.definitionBody))
         except Return:
             pass
         finally:
@@ -646,19 +647,15 @@ class Interpreter:
                 mode = parts.pop(0).upper()
             kind = exp.DataType.build(" ".join(parts[1:]), dialect=BigQueryDialect)
             arguments.append(
-                {"name": parts[0], "mode": mode, "dataType": routines.data_type(kind)}
+                Argument(name=parts[0], mode=mode, dataType=routines.data_type(kind))
             )
-        routines.save(
-            project_id,
-            dataset_id,
-            routine_id,
-            {
-                "routineType": "PROCEDURE",
-                "language": "SQL",
-                "arguments": arguments,
-                "definitionBody": statement.text,
-            },
+        routine = Routine(
+            routineType="PROCEDURE",
+            language="SQL",
+            arguments=arguments,
+            definitionBody=statement.text,
         )
+        routines.save(project_id, dataset_id, routine_id, routine)
 
     def drop_procedure(self, statement: Statement):
         words = statement.text.split()

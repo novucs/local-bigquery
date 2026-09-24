@@ -4,6 +4,7 @@ import sqlglot
 from sqlglot import exp
 
 from local_bigquery.catalog import metadata, names, row_access
+from local_bigquery.models import Table
 from local_bigquery.sql.dialect import BigQueryDialect
 from local_bigquery.sql.rules.tables import resolve
 
@@ -26,7 +27,8 @@ def _view(
 ) -> exp.Expression | None:
     if depth > 16 or not any(key[0] == reference[0] for key in row_access.secured()):
         return None
-    query = ((metadata.load("tables", *reference) or {}).get("view") or {}).get("query")
+    stored = metadata.load(Table, *reference)
+    query = stored and stored.view and stored.view.query
     if not query:
         return None
     scope = dataclasses.replace(

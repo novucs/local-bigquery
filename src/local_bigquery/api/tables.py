@@ -1,9 +1,14 @@
-from fastapi import Body, Header, Query
+from fastapi import Header, Query
 
 from local_bigquery.api import Router, paginate, with_rows
 from local_bigquery.catalog import tabledata, tables
 from local_bigquery.jobs.query import translate_view
-from local_bigquery.models import Table, TableDataInsertAllResponse, TableList
+from local_bigquery.models import (
+    Table,
+    TableDataInsertAllRequest,
+    TableDataInsertAllResponse,
+    TableList,
+)
 
 router = Router(tags=["tables"])
 TABLE = "/projects/{project_id}/datasets/{dataset_id}/tables/{table_id}"
@@ -20,14 +25,14 @@ def list_tables(
     page, token = paginate(summaries, maxResults, pageToken)
     return TableList(
         kind="bigquery#tableList",
-        tables=page,
+        tables=[table.dump() for table in page],
         nextPageToken=token,
         totalItems=len(summaries),
     )
 
 
 @router.post("/projects/{project_id}/datasets/{dataset_id}/tables")
-def insert_table(project_id: str, dataset_id: str, body: dict = Body()) -> Table:
+def insert_table(project_id: str, dataset_id: str, body: Table) -> Table:
     return tables.create(project_id, dataset_id, body, translate_view)
 
 
@@ -47,7 +52,7 @@ def patch_table(
     project_id: str,
     dataset_id: str,
     table_id: str,
-    body: dict = Body(),
+    body: Table,
     if_match: str | None = Header(None),
 ) -> Table:
     return tables.update(project_id, dataset_id, table_id, body, if_match, False)
@@ -58,7 +63,7 @@ def update_table(
     project_id: str,
     dataset_id: str,
     table_id: str,
-    body: dict = Body(),
+    body: Table,
     if_match: str | None = Header(None),
 ) -> Table:
     return tables.update(project_id, dataset_id, table_id, body, if_match, True)
@@ -71,7 +76,7 @@ def delete_table(project_id: str, dataset_id: str, table_id: str):
 
 @router.post(f"{TABLE}/insertAll")
 def insert_all(
-    project_id: str, dataset_id: str, table_id: str, body: dict = Body()
+    project_id: str, dataset_id: str, table_id: str, body: TableDataInsertAllRequest
 ) -> TableDataInsertAllResponse:
     response = tabledata.insert_all(project_id, dataset_id, table_id, body)
     return TableDataInsertAllResponse(

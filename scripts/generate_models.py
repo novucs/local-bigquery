@@ -26,6 +26,7 @@ CODEGEN_OPTIONS = """
     --base-class local_bigquery.resource.Resource
     --formatters ruff-format
 """
+INTEGERS = {"int64": "^-?[0-9]+$", "uint64": "^[0-9]+$"}
 PACKAGE = pathlib.Path(__file__).parent.parent / "src" / "local_bigquery"
 
 
@@ -33,7 +34,10 @@ def to_json_schema(node, name: str, key: str = ""):
     if not isinstance(node, dict):
         return node
     ignored = IGNORED_KEYS if key == "kind" else IGNORED_KEYS | {"default"}
+    pattern = INTEGERS.get(node.get("format"))
     node = {k: v for k, v in node.items() if k not in ignored}
+    if pattern:
+        node["pattern"] = pattern
     if "$ref" in node:
         return {"$ref": f"#/$defs/{node['$ref']}"}
     if "properties" in node:
@@ -45,9 +49,10 @@ def to_json_schema(node, name: str, key: str = ""):
     if "items" in node:
         node["items"] = to_json_schema(node["items"], name + "Item")
     if isinstance(node.get("additionalProperties"), dict):
-        node["additionalProperties"] = to_json_schema(
-            node["additionalProperties"], name + "Value"
-        )
+        value = to_json_schema(node["additionalProperties"], name + "Value")
+        if "type" in value:
+            value["type"] = [value["type"], "null"]
+        node["additionalProperties"] = value
     return node
 
 

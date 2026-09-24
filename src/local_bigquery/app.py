@@ -20,7 +20,12 @@ from local_bigquery.api import (
     uploads,
 )
 from local_bigquery.catalog import row_access
-from local_bigquery.errors import BigQueryError, from_exception, not_implemented
+from local_bigquery.errors import (
+    BigQueryError,
+    from_exception,
+    invalid_payload,
+    not_implemented,
+)
 
 DISCOVERY = json.loads((pathlib.Path(__file__).parent / "discovery.json").read_text())
 PREFIX = "/" + DISCOVERY["servicePath"].rstrip("/")
@@ -29,10 +34,17 @@ PROJECT_ID = re.compile(r"^(?:[a-z0-9.-]+:)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 app = FastAPI(title=DISCOVERY["title"], version=DISCOVERY["version"])
 
 
+def _invalid(problem: dict) -> BigQueryError:
+    source, *field = problem["loc"]
+    if source == "body":
+        return invalid_payload(problem | {"loc": field})
+    return BigQueryError("invalid", f"Invalid value for {field[-1]}: {problem['msg']}")
+
+
 @app.exception_handler(Exception)
 async def handle_error(request: Request, error: Exception) -> JSONResponse:
     if isinstance(error, RequestValidationError):
-        error = BigQueryError("invalid", str(error))
+        error = _invalid(error.errors()[0])
     error = from_exception(error)
     if error.reason == "dontRetry":
         logging.exception(error.message, exc_info=error.__context__)

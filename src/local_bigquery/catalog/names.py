@@ -4,6 +4,7 @@ import unicodedata
 from sqlglot import exp
 
 from local_bigquery.errors import BigQueryError
+from local_bigquery.models import TableFieldSchema
 
 DML = exp.Insert | exp.Update | exp.Delete | exp.Merge | exp.TruncateTable
 DATASET_ID = re.compile(r"^[A-Za-z0-9_]{1,1024}$")
@@ -36,16 +37,16 @@ def table(table_id: str):
         )
 
 
-def fields(schema: list[dict]):
+def fields(schema: list[TableFieldSchema]):
     for field in schema:
-        name = field.get("name") or ""
+        name = field.name or ""
         if not name or len(name) > 300 or FIELD_FORBIDDEN & set(name):
             raise BigQueryError(
                 "invalid",
                 f'Invalid field name "{name}". Fields must contain the allowed '
                 "characters, and be at most 300 characters long.",
             )
-        fields(field.get("fields") or [])
+        fields(field.fields or [])
 
 
 def label(*parts: str) -> str:

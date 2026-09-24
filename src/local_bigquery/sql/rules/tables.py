@@ -9,6 +9,7 @@ from sqlglot import exp
 from local_bigquery.catalog import datasets, metadata, names, tables
 from local_bigquery.engine import database
 from local_bigquery.errors import BigQueryError
+from local_bigquery.models import Table
 
 DECORATOR = re.compile(r"^(.+)@(-?\d+)$")
 
@@ -58,21 +59,20 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
         or kind not in (None, "TABLE", "VIEW")
     ):
         return
-    stored = metadata.load("tables", project_id, dataset_id, table_id) or {}
+    stored = metadata.load(Table, project_id, dataset_id, table_id) or Table()
     if not database.objects(project_id, dataset_id, table_id) or tables.expired(stored):
         raise _not_found(project_id, dataset_id, table_id)
-    if is_target and isinstance(tree, names.DML) and stored.get("type") == "SNAPSHOT":
+    if is_target and isinstance(tree, names.DML) and stored.type == "SNAPSHOT":
         raise BigQueryError(
             "invalid",
             f"Table {names.label(project_id, dataset_id, table_id)} is a snapshot, "
             "and snapshots are immutable.",
         )
-    if stored.get("requirePartitionFilter") and not is_target:
-        partitioning = stored.get("timePartitioning") or {}
-        fields = {
-            partitioning.get("field", "_PARTITIONTIME").casefold(),
-            "_partitiondate",
-        }
+    if stored.requirePartitionFilter and not is_target:
+        field = (stored.timePartitioning and stored.timePartitioning.field) or (
+            "_PARTITIONTIME"
+        )
+        fields = {field.casefold(), "_partitiondate"}
         filtered = {
             column.name.casefold()
             for where in tree.find_all(exp.Where)
@@ -82,7 +82,7 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
             raise BigQueryError(
                 "invalidQuery",
                 f"Cannot query over table '{project_id}.{dataset_id}.{table_id}' without a filter "
-                f"over column(s) '{partitioning.get('field', '_PARTITIONTIME')}' "
+                f"over column(s) '{field}' "
                 "that can be used for partition elimination",
             )
 

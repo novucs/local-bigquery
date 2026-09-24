@@ -424,3 +424,31 @@ def test_put_table_replaces_its_fields(api, dataset):
     ).json()
     assert (replaced.get("description"), replaced["friendlyName"]) == (None, "f")
     assert [f["name"] for f in replaced["schema"]["fields"]] == ["x"]
+
+
+@pytest.mark.parametrize(
+    "method, path, body, field",
+    [
+        ("POST", "/datasets", {"datasetReference": "d"}, "datasetReference"),
+        ("POST", "/datasets", {"labels": "oops"}, "labels"),
+        ("PATCH", "/datasets/{d}", {"defaultTableExpirationMs": "soon"}, "default"),
+        ("POST", "/datasets/{d}/tables", {"schema": {"fields": "a"}}, "schema.fields"),
+        ("POST", "/datasets/{d}/tables/t/insertAll", {"rows": "x"}, "rows"),
+        ("POST", "/jobs", {"configuration": {"query": {"query": []}}}, "query.query"),
+        ("POST", "/queries", {"query": "SELECT 1", "maxResults": "lots"}, "maxResults"),
+    ],
+)
+def test_malformed_payload_is_rejected(api, dataset, method, path, body, field):
+    response = api(method, path.format(d=dataset.dataset_id), json=body)
+    assert response.status_code == 400, response.text
+    error = response.json()["error"]
+    assert error["errors"][0]["reason"] == "invalid"
+    assert error["message"].startswith("Invalid JSON payload received.")
+    assert field in error["message"]
+
+
+def test_malformed_payload_stores_nothing(api):
+    dataset_id = unique("malformed")
+    body = {"datasetReference": {"datasetId": dataset_id}, "labels": ["a"]}
+    assert api("POST", "/datasets", json=body).status_code == 400
+    assert api("GET", f"/datasets/{dataset_id}").status_code == 404

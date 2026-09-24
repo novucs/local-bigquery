@@ -12,9 +12,11 @@ IVF = re.compile(r"index_type\s*=\s*['\"]IVF['\"]", re.IGNORECASE)
 MINIMUM_IVF_ROWS = 5000
 
 
-def list_(project_id: str, dataset_id: str, table_id: str, kind: str) -> list[dict]:
-    indexes = metadata.list_("indexes", project_id, dataset_id, table_id)
-    return [index for index in indexes if index["kind"] == kind]
+def list_(
+    project_id: str, dataset_id: str, table_id: str, kind: str
+) -> list[metadata.Index]:
+    indexes = metadata.list_(metadata.Index, project_id, dataset_id, table_id)
+    return [index for index in indexes if index.kind == kind]
 
 
 def ddl(
@@ -27,7 +29,7 @@ def ddl(
     kind = kind.upper()
     keys = (*row_access.table(table, project_id, dataset_id), name)
     tables.load(*keys[:3])
-    found = metadata.load("indexes", *keys) is not None
+    found = metadata.load(metadata.Index, *keys) is not None
     operation = metadata.outcome(
         f"{kind.title()} index",
         names.label(*keys),
@@ -37,7 +39,7 @@ def ddl(
         bool(replace),
     )
     if operation in ("CREATE", "REPLACE") and IVF.search(command):
-        total = int(tables.load(*keys[:3])["numRows"])
+        total = int(tables.load(*keys[:3]).numRows)
         if total < MINIMUM_IVF_ROWS:
             raise BigQueryError(
                 "invalid",
@@ -47,13 +49,10 @@ def ddl(
                 "similarity search.",
             )
     if not dry_run and operation == "DROP":
-        metadata.delete("indexes", *keys)
+        metadata.delete(metadata.Index, *keys)
     elif not dry_run and operation != "SKIP":
-        resource = {
-            "kind": kind,
-            "name": name,
-            "ddl": f"CREATE {command}",
-            "creationTime": metadata.now(),
-        }
-        metadata.save("indexes", resource, *keys)
+        index = metadata.Index(
+            kind=kind, name=name, ddl=f"CREATE {command}", creationTime=metadata.now()
+        )
+        metadata.save(index, *keys)
     return {"statementType": f"{keyword}_{kind}_INDEX"}

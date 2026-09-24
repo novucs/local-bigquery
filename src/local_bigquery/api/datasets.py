@@ -1,4 +1,4 @@
-from fastapi import Body, Header
+from fastapi import Header
 
 from local_bigquery.api import Router, paginate
 from local_bigquery.catalog import datasets
@@ -25,7 +25,7 @@ def list_datasets(
 
 
 @router.post("/projects/{project_id}/datasets")
-def insert_dataset(project_id: str, body: dict = Body()) -> Dataset:
+def insert_dataset(project_id: str, body: Dataset) -> Dataset:
     return datasets.create(project_id, body)
 
 
@@ -38,7 +38,7 @@ def get_dataset(project_id: str, dataset_id: str) -> Dataset:
 def patch_dataset(
     project_id: str,
     dataset_id: str,
-    body: dict = Body(),
+    body: Dataset,
     if_match: str | None = Header(None),
 ) -> Dataset:
     return datasets.update(project_id, dataset_id, body, if_match, replace=False)
@@ -48,7 +48,7 @@ def patch_dataset(
 def update_dataset(
     project_id: str,
     dataset_id: str,
-    body: dict = Body(),
+    body: Dataset,
     if_match: str | None = Header(None),
 ) -> Dataset:
     return datasets.update(project_id, dataset_id, body, if_match, replace=True)

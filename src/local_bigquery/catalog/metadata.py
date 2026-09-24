@@ -4,6 +4,25 @@ import time
 
 from local_bigquery.engine.database import RESOURCES, execute, fetch
 from local_bigquery.errors import BigQueryError, already_exists, not_found
+from local_bigquery.models import Dataset, Model, Routine, RowAccessPolicy, Table
+from local_bigquery.resource import Resource
+
+
+class Index(Resource):
+    kind: str
+    name: str
+    ddl: str
+    creationTime: str
+
+
+KINDS: dict[type[Resource], str] = {
+    Dataset: "datasets",
+    Table: "tables",
+    Routine: "routines",
+    RowAccessPolicy: "row_access_policies",
+    Model: "models",
+    Index: "indexes",
+}
 
 COLLECTIONS = {
     "project_id": "projects",
@@ -20,18 +39,6 @@ def now() -> str:
     return str(int(time.time() * 1000))
 
 
-def merge(target: dict, patch: dict) -> dict:
-    merged = dict(target)
-    for key, value in patch.items():
-        if value is None:
-            merged.pop(key, None)
-        elif isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = merge(merged[key], value)
-        else:
-            merged[key] = value
-    return merged
-
-
 def existing(load, keys) -> list:
     found = []
     for key in keys:
@@ -43,8 +50,8 @@ def existing(load, keys) -> list:
     return found
 
 
-def check_etag(resource: dict, etag: str | None):
-    if etag and etag != resource.get("etag"):
+def check_etag(resource: Resource, etag: str | None):
+    if etag and etag != resource.etag:
         raise BigQueryError("conditionNotMet", "Precondition check failed.")
 
 
@@ -52,37 +59,33 @@ def _where(kind: str, count: int) -> str:
     return " AND ".join(f"{key} = ?" for key in RESOURCES[kind][:count])
 
 
-def load(kind: str, *keys: str) -> dict | None:
+def list_[R: Resource](model: type[R], *keys: str) -> list[R]:
+    kind = KINDS[model]
     rows = fetch(
         f"SELECT resource FROM emulator.{kind} WHERE {_where(kind, len(keys))}",
         list(keys),
     )
-    return json.loads(rows[0][0]) if rows else None
+    return [model.model_validate_json(resource) for (resource,) in rows]
 
 
-def list_(kind: str, *keys: str) -> list[dict]:
-    rows = fetch(
-        f"SELECT resource FROM emulator.{kind} WHERE {_where(kind, len(keys))}",
-        list(keys),
-    )
-    return [json.loads(resource) for (resource,) in rows]
+def load[R: Resource](model: type[R], *keys: str) -> R | None:
+    return next(iter(list_(model, *keys)), None)
 
 
-def save(kind: str, resource: dict, *keys: str) -> dict:
-    body = json.dumps(
-        {k: v for k, v in resource.items() if k != "etag"}, sort_keys=True
-    )
-    resource = resource | {"etag": hashlib.md5(body.encode()).hexdigest()}
-    params = ", ".join("?" for _ in keys)
+def save[R: Resource](resource: R, *keys: str) -> R:
+    body = {k: v for k, v in resource.dump().items() if k != "etag"}
+    etag = hashlib.md5(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    kind = KINDS[type(resource)]
     execute(
         f"INSERT OR REPLACE INTO emulator.{kind} ({', '.join(RESOURCES[kind])}, resource) "
-        f"VALUES ({params}, ?)",
-        [*keys, json.dumps(resource)],
+        f"VALUES ({', '.join('?' for _ in keys)}, ?)",
+        [*keys, json.dumps(body | {"etag": etag})],
     )
-    return resource
+    return resource.replace(etag=etag)
 
 
-def delete(kind: str, *keys: str):
+def delete(model: type[Resource], *keys: str):
+    kind = KINDS[model]
     execute(f"DELETE FROM emulator.{kind} WHERE {_where(kind, len(keys))}", list(keys))
     names = [COLLECTIONS[key] for key in RESOURCES[kind]]
     path = "".join(f"{name}/{key}/" for name, key in zip(names, keys))

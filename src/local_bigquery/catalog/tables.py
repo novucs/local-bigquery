@@ -10,7 +10,12 @@ from local_bigquery.errors import (
     already_exists,
     not_found,
 )
-from local_bigquery.models import Table, TableFieldSchema
+from local_bigquery.models import (
+    Dataset,
+    MaterializedViewDefinition,
+    Table,
+    TableFieldSchema,
+)
 
 STORAGE_STATS = (
     "numRows",
@@ -54,7 +59,7 @@ def _lookup(project_id: str, dataset_id: str, table_id: str) -> tuple[str, int] 
     rows = [
         row[1:] for row in database.objects(*physical(project_id, dataset_id, table_id))
     ]
-    stored = metadata.load("tables", project_id, dataset_id, table_id)
+    stored = metadata.load(Table, project_id, dataset_id, table_id)
     if expired(stored):
         if rows:
             database.execute(
@@ -67,43 +72,52 @@ def _lookup(project_id: str, dataset_id: str, table_id: str) -> tuple[str, int] 
     return ("EMPTY", 0) if stored else None
 
 
-def expired(stored: dict | None) -> bool:
-    expiration = (stored or {}).get("expirationTime")
+def expired(stored: Table | None) -> bool:
+    expiration = stored and stored.expirationTime
     return expiration is not None and int(expiration) <= int(metadata.now())
 
 
-def defaults(project_id: str, dataset_id: str, table_id: str) -> dict:
+def fields(table: Table) -> list[TableFieldSchema]:
+    return (table.schema_ and table.schema_.fields) or []
+
+
+def defaults(project_id: str, dataset_id: str, table_id: str) -> Table:
     now = metadata.now()
-    dataset = metadata.load("datasets", project_id, dataset_id) or {}
-    expiration = dataset.get("defaultTableExpirationMs")
-    return (
-        {"expirationTime": str(int(now) + int(expiration))} if expiration else {}
-    ) | {
-        "kind": "bigquery#table",
-        "id": names.label(project_id, dataset_id, table_id),
-        "selfLink": f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}/tables/{table_id}",
-        "tableReference": {
-            "projectId": project_id,
-            "datasetId": dataset_id,
-            "tableId": table_id,
-        },
-        "location": "US",
-        "creationTime": now,
-        "lastModifiedTime": now,
-    }
+    dataset = metadata.load(Dataset, project_id, dataset_id)
+    expiration = dataset and dataset.defaultTableExpirationMs
+    return Table.model_validate(
+        ({"expirationTime": str(int(now) + int(expiration))} if expiration else {})
+        | {
+            "kind": "bigquery#table",
+            "id": names.label(project_id, dataset_id, table_id),
+            "selfLink": f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}/tables/{table_id}",
+            "tableReference": {
+                "projectId": project_id,
+                "datasetId": dataset_id,
+                "tableId": table_id,
+            },
+            "location": "US",
+            "creationTime": now,
+            "lastModifiedTime": now,
+        }
+    )
 
 
 def _overlay(
-    fields: list[dict], extras: list[dict], nested: bool = False
-) -> list[dict]:
-    extras_by_name = {extra["name"].casefold(): extra for extra in extras}
+    fields: list[TableFieldSchema],
+    extras: list[TableFieldSchema],
+    nested: bool = False,
+) -> list[TableFieldSchema]:
+    extras_by_name = {extra.name.casefold(): extra for extra in extras}
     merged = []
     for field in fields:
-        extra = extras_by_name.get(field["name"].casefold(), {})
-        children = _overlay(field.get("fields", []), extra.get("fields", []), True)
-        field = extra | field | ({"fields": children} if children else {})
-        if nested and extra.get("mode") == "REQUIRED":
-            field["mode"] = "REQUIRED"
+        extra = extras_by_name.get(field.name.casefold(), TableFieldSchema())
+        children = _overlay(field.fields or [], extra.fields or [], True)
+        field = extra.replace(
+            **field.dump() | ({"fields": children} if children else {})
+        )
+        if nested and extra.mode == "REQUIRED":
+            field = field.replace(mode="REQUIRED")
         merged.append(field)
     return merged
 
@@ -129,47 +143,42 @@ def logical_bytes(rows: int, columns: int) -> int:
     return rows * columns * 8
 
 
-def load(project_id: str, dataset_id: str, table_id: str) -> dict:
+def load(project_id: str, dataset_id: str, table_id: str) -> Table:
     found = _lookup(project_id, dataset_id, table_id)
     if not found:
         raise not_found("Table", names.label(project_id, dataset_id, table_id))
     kind, num_rows = found
-    stored = metadata.load("tables", project_id, dataset_id, table_id)
+    stored = metadata.load(Table, project_id, dataset_id, table_id)
     resource = stored or defaults(project_id, dataset_id, table_id)
-    fields = (
-        [
-            field.model_dump(exclude_none=True)
-            for field in columns(project_id, dataset_id, table_id)
-        ]
-        if kind != "EMPTY"
-        else []
-    )
+    actual = columns(project_id, dataset_id, table_id) if kind != "EMPTY" else []
     kind = "TABLE" if kind == "EMPTY" else kind
-    extras = resource.get("schema", {}).get("fields", [])
-    return resource | {
-        "type": _type(resource, kind),
-        "schema": {"fields": _overlay(fields, extras)},
-        "numRows": str(num_rows),
-        "numBytes": str(num_bytes := logical_bytes(num_rows, len(fields))),
-        "numLongTermBytes": "0",
-        "numTotalLogicalBytes": str(num_bytes),
-        "numActiveLogicalBytes": str(num_bytes),
-        "numLongTermLogicalBytes": "0",
-    }
+    num_bytes = str(logical_bytes(num_rows, len(actual)))
+    return resource.replace(
+        type=_type(resource, kind),
+        schema={"fields": _overlay(actual, fields(resource))},
+        numRows=str(num_rows),
+        numBytes=num_bytes,
+        numLongTermBytes="0",
+        numTotalLogicalBytes=num_bytes,
+        numActiveLogicalBytes=num_bytes,
+        numLongTermLogicalBytes="0",
+    )
 
 
-def _type(resource: dict, kind: str) -> str:
-    return resource["type"] if resource.get("type") in STORED_TYPES else kind
+def _type(resource: Table, kind: str) -> str:
+    return resource.type if resource.type in STORED_TYPES else kind
 
 
-def _select(fields: list[dict], paths: list[list[str]]) -> list[dict]:
+def _select(
+    fields: list[TableFieldSchema], paths: list[list[str]]
+) -> list[TableFieldSchema]:
     selected = []
     for field in fields:
-        rest = [path[1:] for path in paths if path[0] == field["name"].casefold()]
+        rest = [path[1:] for path in paths if path[0] == field.name.casefold()]
         if not rest:
             continue
         if [] not in rest:
-            field = field | {"fields": _select(field.get("fields", []), rest)}
+            field = field.replace(fields=_select(field.fields or [], rest))
         selected.append(field)
     return selected
 
@@ -183,101 +192,93 @@ def get(
 ) -> Table:
     resource = load(project_id, dataset_id, table_id)
     if view == "BASIC":
-        resource = {k: v for k, v in resource.items() if k not in STORAGE_STATS}
+        resource = resource.without(*STORAGE_STATS)
     if selected_fields:
         paths = [f.strip().casefold().split(".") for f in selected_fields.split(",")]
-        resource["schema"] = {"fields": _select(resource["schema"]["fields"], paths)}
-    return Table.model_validate(resource)
+        resource = resource.replace(schema={"fields": _select(fields(resource), paths)})
+    return resource
 
 
-def list_(project_id: str, dataset_id: str) -> list[dict]:
-    datasets.load(project_id, dataset_id)
+def list_(project_id: str, dataset_id: str) -> list[Table]:
+    datasets.get(project_id, dataset_id)
     rows = [row[:2] for row in database.objects(project_id, dataset_id)]
     physical_ids = {table_id for table_id, _ in rows}
     rows += [
-        (resource["tableReference"]["tableId"], "TABLE")
-        for resource in metadata.list_("tables", project_id, dataset_id)
-        if resource["tableReference"]["tableId"] not in physical_ids
+        (resource.tableReference.tableId, "TABLE")
+        for resource in metadata.list_(Table, project_id, dataset_id)
+        if resource.tableReference.tableId not in physical_ids
     ]
     summaries = []
     for table_id, kind in sorted(rows):
-        stored = metadata.load("tables", project_id, dataset_id, table_id)
+        stored = metadata.load(Table, project_id, dataset_id, table_id)
         if expired(stored):
             continue
         resource = stored or defaults(project_id, dataset_id, table_id)
-        summaries.append(
-            {key: value for key, value in resource.items() if key not in DERIVED}
-            | {"type": _type(resource, kind)}
-        )
+        summaries.append(resource.without(*DERIVED).replace(type=_type(resource, kind)))
     return summaries
 
 
-def record(project_id: str, dataset_id: str, table_id: str, resource: dict):
-    if partitioning := resource.get("timePartitioning"):
-        partitioning.setdefault("type", "DAY")
-    stored = {
-        key: value
-        for key, value in resource.items()
-        if key not in DERIVED[1:] or value in STORED_TYPES
-    }
-    metadata.save("tables", stored, project_id, dataset_id, table_id)
+def record(project_id: str, dataset_id: str, table_id: str, resource: Table):
+    if partitioning := resource.timePartitioning:
+        resource = resource.replace(
+            timePartitioning=partitioning.replace(type=partitioning.type or "DAY")
+        )
+    derived = STORAGE_STATS if resource.type in STORED_TYPES else DERIVED[1:]
+    metadata.save(resource.without(*derived), project_id, dataset_id, table_id)
 
 
-def _store(project_id: str, dataset_id: str, table_id: str, resource: dict) -> Table:
+def _store(project_id: str, dataset_id: str, table_id: str, resource: Table) -> Table:
     record(project_id, dataset_id, table_id, resource)
     return get(project_id, dataset_id, table_id)
 
 
 def forget(project_id: str, dataset_id: str, table_id: str):
-    metadata.delete("tables", project_id, dataset_id, table_id)
-    metadata.delete("indexes", project_id, dataset_id, table_id)
+    metadata.delete(Table, project_id, dataset_id, table_id)
+    metadata.delete(metadata.Index, project_id, dataset_id, table_id)
 
 
 def rename(project_id: str, dataset_id: str, table_id: str, new_id: str):
-    stored = metadata.load("tables", project_id, dataset_id, table_id)
+    stored = metadata.load(Table, project_id, dataset_id, table_id)
     forget(project_id, dataset_id, table_id)
     if stored:
         fresh = defaults(project_id, dataset_id, new_id)
-        identity = {key: fresh[key] for key in ("id", "selfLink", "tableReference")}
-        record(project_id, dataset_id, new_id, stored | identity)
+        identity = fresh.only("id", "selfLink", "tableReference")
+        record(project_id, dataset_id, new_id, stored.merged(identity))
 
 
-def create(project_id: str, dataset_id: str, body: dict, translate) -> Table:
-    table_id = body.get("tableReference", {}).get("tableId")
+def create(project_id: str, dataset_id: str, body: Table, translate) -> Table:
+    table_id = body.tableReference and body.tableReference.tableId
     if not table_id:
         raise BigQueryError("invalid", "Required parameter is missing: tableId")
     names.table(table_id)
-    names.fields(body.get("schema", {}).get("fields", []))
-    datasets.load(project_id, dataset_id)
+    names.fields(fields(body))
+    datasets.get(project_id, dataset_id)
     if _lookup(project_id, dataset_id, table_id):
         raise already_exists("Table", names.label(project_id, dataset_id, table_id))
     table = name(project_id, dataset_id, table_id)
-    fields = [
-        TableFieldSchema.model_validate(field)
-        for field in body.get("schema", {}).get("fields", [])
-    ]
-    if view := body.get("view"):
-        query = translate(project_id, dataset_id, view["query"])
+    if body.view:
+        query = translate(project_id, dataset_id, body.view.query)
         database.execute(f"CREATE VIEW {table} AS {query}")
-    elif fields:
-        database.execute(
-            f"CREATE TABLE {table} ({', '.join(types.column(f) for f in fields)})"
-        )
-    resource = defaults(project_id, dataset_id, table_id) | body
+    elif fields(body):
+        columns_sql = ", ".join(types.column(f) for f in fields(body))
+        database.execute(f"CREATE TABLE {table} ({columns_sql})")
+    resource = defaults(project_id, dataset_id, table_id).merged(body)
     return _store(project_id, dataset_id, table_id, resource)
 
 
-def _alter(project_id: str, dataset_id: str, table_id: str, fields: list[dict]):
+def _alter(
+    project_id: str, dataset_id: str, table_id: str, fields: list[TableFieldSchema]
+):
     table = name(project_id, dataset_id, table_id)
     current = {f.name.casefold(): f for f in columns(project_id, dataset_id, table_id)}
-    given = {field["name"].casefold() for field in fields}
+    given = {field.name.casefold() for field in fields}
     if removed := [f.name for key, f in current.items() if key not in given]:
         raise BigQueryError(
             "invalid",
             f"Provided Schema does not match Table {names.label(project_id, dataset_id, table_id)}. "
             f"Cannot remove field: {removed[0]}",
         )
-    for field in map(TableFieldSchema.model_validate, fields):
+    for field in fields:
         existing = current.get(field.name.casefold())
         if existing is None:
             database.execute(
@@ -293,36 +294,26 @@ def update(
     project_id: str,
     dataset_id: str,
     table_id: str,
-    body: dict,
+    body: Table,
     etag: str | None,
     replace: bool,
 ) -> Table:
     current = load(project_id, dataset_id, table_id)
     metadata.check_etag(current, etag)
-    if fields := body.get("schema", {}).get("fields"):
-        names.fields(fields)
+    if given := fields(body):
+        names.fields(given)
         if _lookup(project_id, dataset_id, table_id)[0] == "EMPTY":
-            columns_sql = ", ".join(
-                types.column(TableFieldSchema.model_validate(f)) for f in fields
-            )
+            columns_sql = ", ".join(types.column(f) for f in given)
             database.execute(
                 f"CREATE TABLE {name(project_id, dataset_id, table_id)} ({columns_sql})"
             )
         else:
-            _alter(project_id, dataset_id, table_id, fields)
-    stored = metadata.load("tables", project_id, dataset_id, table_id) or current
-    identity = {
-        key: current[key]
-        for key in defaults(project_id, dataset_id, table_id)
-        if key in current
-    }
-    resource = identity | body if replace else metadata.merge(stored, body)
-    return _store(
-        project_id,
-        dataset_id,
-        table_id,
-        resource | {"lastModifiedTime": metadata.now()},
-    )
+            _alter(project_id, dataset_id, table_id, given)
+    stored = metadata.load(Table, project_id, dataset_id, table_id) or current
+    if replace:
+        stored = current.only(*defaults(project_id, dataset_id, table_id).dump())
+    resource = stored.merged(body).replace(lastModifiedTime=metadata.now())
+    return _store(project_id, dataset_id, table_id, resource)
 
 
 def evolve(
@@ -377,16 +368,17 @@ def layout(columns: list[str], config: dict, write: str) -> dict:
 
 
 def refreshed(project_id: str, dataset_id: str, table_id: str):
-    stored = load(project_id, dataset_id, table_id)
-    view = stored.get("materializedView") or {}
-    changes = {"materializedView": view | {"lastRefreshTime": metadata.now()}}
-    annotate((project_id, dataset_id, table_id), changes)
+    view = load(project_id, dataset_id, table_id).materializedView
+    view = (view or MaterializedViewDefinition()).replace(
+        lastRefreshTime=metadata.now()
+    )
+    annotate((project_id, dataset_id, table_id), Table(materializedView=view))
 
 
-def annotate(reference: tuple[str, str, str], changes: dict):
-    if changes:
-        stored = metadata.load("tables", *reference) or defaults(*reference)
-        record(*reference, stored | changes)
+def annotate(reference: tuple[str, str, str], changes: Table):
+    if changes.model_fields_set:
+        stored = metadata.load(Table, *reference) or defaults(*reference)
+        record(*reference, stored.replace(**changes.given()))
 
 
 def write(
@@ -420,7 +412,7 @@ def write(
         results.materialise(
             cur, query, table, params, append, writer if isolated else None
         )
-    annotate(reference, changes)
+    annotate(reference, Table.model_validate(changes))
     return not found
 
 

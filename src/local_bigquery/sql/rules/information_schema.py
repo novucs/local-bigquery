@@ -9,7 +9,7 @@ from local_bigquery.catalog.options import DATASET_OPTIONS, TABLE_OPTIONS, rende
 from local_bigquery.engine import database
 from local_bigquery.engine.database import quote
 from local_bigquery.engine.types import bigquery_type
-from local_bigquery.models import TableFieldSchema
+from local_bigquery.models import Argument, Routine, Table, TableFieldSchema
 
 TABLE_TYPES = {
     "TABLE": "BASE TABLE",
@@ -37,16 +37,18 @@ WHERE project_id = {project}
 """
 
 
-def _type(field: dict) -> str:
-    return bigquery_type(TableFieldSchema.model_validate(field), quoted=False)
+def _type(field: TableFieldSchema) -> str:
+    return bigquery_type(field, quoted=False)
 
 
-def _paths(fields: list[dict], prefix: str = "") -> list[tuple[str, dict]]:
+def _paths(
+    fields: list[TableFieldSchema], prefix: str = ""
+) -> list[tuple[str, TableFieldSchema]]:
     return [
         path
         for field in fields
-        for path in [(prefix + field["name"], field)]
-        + _paths(field.get("fields", []), f"{prefix}{field['name']}.")
+        for path in [(prefix + field.name, field)]
+        + _paths(field.fields or [], f"{prefix}{field.name}.")
     ]
 
 
@@ -59,7 +61,7 @@ def _timestamp(value: str | None) -> exp.Expression:
     return exp.cast(exp.Literal.string(value), exp.DataType.build("TIMESTAMPTZ"))
 
 
-def _tables(project_id: str, dataset_id: str | None) -> list[dict]:
+def _tables(project_id: str, dataset_id: str | None) -> list[Table]:
     dataset_ids = (
         [dataset_id]
         if dataset_id
@@ -71,8 +73,8 @@ def _tables(project_id: str, dataset_id: str | None) -> list[dict]:
     references = [
         (
             project_id,
-            summary["tableReference"]["datasetId"],
-            summary["tableReference"]["tableId"],
+            summary.tableReference.datasetId,
+            summary.tableReference.tableId,
         )
         for listing in listings
         for summary in listing
@@ -80,9 +82,9 @@ def _tables(project_id: str, dataset_id: str | None) -> list[dict]:
     return metadata.existing(tables.load, references)
 
 
-def _identity(table: dict) -> list[str]:
-    reference = table["tableReference"]
-    return [reference["projectId"], reference["datasetId"], reference["tableId"]]
+def _identity(table: Table) -> list[str]:
+    reference = table.tableReference
+    return [reference.projectId, reference.datasetId, reference.tableId]
 
 
 def schemata(project_id: str, dataset_id: str | None):
@@ -117,23 +119,24 @@ def table_list(project_id: str, dataset_id: str | None):
     rows = [
         _identity(t)
         + [
-            TABLE_TYPES.get(t["type"], t["type"]),
-            "YES" if t["type"] == "TABLE" else "NO",
+            TABLE_TYPES.get(t.type, t.type),
+            "YES" if t.type == "TABLE" else "NO",
             "NO",
-            _timestamp(t.get("creationTime")),
+            _timestamp(t.creationTime),
         ]
         for t in _tables(project_id, dataset_id)
     ]
     return columns, rows
 
 
-def _partitioning_column(table: dict) -> str | None:
-    partitioning = table.get("timePartitioning") or table.get("rangePartitioning")
-    return (partitioning or {}).get("field")
+def _partitioning_column(table: Table) -> str | None:
+    partitioning = table.timePartitioning or table.rangePartitioning
+    return partitioning and partitioning.field
 
 
-def _clustering_position(table: dict, name: str) -> exp.Expression:
-    fields = [f.casefold() for f in (table.get("clustering") or {}).get("fields", [])]
+def _clustering_position(table: Table, name: str) -> exp.Expression:
+    clustering = (table.clustering and table.clustering.fields) or []
+    fields = [f.casefold() for f in clustering]
     position = fields.index(name.casefold()) + 1 if name.casefold() in fields else None
     return exp.cast(exp.convert(position), "BIGINT")
 
@@ -154,18 +157,18 @@ def column_list(project_id: str, dataset_id: str | None):
     rows = [
         _identity(t)
         + [
-            f["name"],
+            f.name,
             position,
-            "NO" if f.get("mode") == "REQUIRED" else "YES",
+            "NO" if f.mode == "REQUIRED" else "YES",
             _type(f),
             "NEVER",
             "NO",
             "NO",
-            "YES" if f["name"] == _partitioning_column(t) else "NO",
-            _clustering_position(t, f["name"]),
+            "YES" if f.name == _partitioning_column(t) else "NO",
+            _clustering_position(t, f.name),
         ]
         for t in _tables(project_id, dataset_id)
-        for position, f in enumerate(t["schema"]["fields"], start=1)
+        for position, f in enumerate(tables.fields(t), start=1)
     ]
     return columns, rows
 
@@ -173,9 +176,9 @@ def column_list(project_id: str, dataset_id: str | None):
 def column_field_paths(project_id: str, dataset_id: str | None):
     columns = [*IDENTITY, "column_name", "field_path", "data_type", "description"]
     rows = [
-        _identity(t) + [path.split(".")[0], path, _type(f), f.get("description")]
+        _identity(t) + [path.split(".")[0], path, _type(f), f.description]
         for t in _tables(project_id, dataset_id)
-        for path, f in _paths(t["schema"]["fields"])
+        for path, f in _paths(tables.fields(t))
     ]
     return columns, rows
 
@@ -183,9 +186,9 @@ def column_field_paths(project_id: str, dataset_id: str | None):
 def views(project_id: str, dataset_id: str | None):
     columns = [*IDENTITY, "view_definition", "check_option", "use_standard_sql"]
     rows = [
-        _identity(t) + [t["view"]["query"], None, "YES"]
+        _identity(t) + [t.view.query, None, "YES"]
         for t in _tables(project_id, dataset_id)
-        if "view" in t
+        if t.view
     ]
     return columns, rows
 
@@ -211,26 +214,27 @@ def schemata_options(project_id: str, dataset_id: str | None):
     rows = [
         [project_id, d.datasetReference.datasetId, *option]
         for d in datasets.list_(project_id, all=True)
-        for option in rendered(d.model_dump(exclude_none=True), DATASET_OPTIONS)
+        for option in rendered(d, DATASET_OPTIONS)
     ]
     return columns, rows
 
 
-def _keys(table: dict):
-    keys = table.get("tableConstraints") or {}
-    if primary := keys.get("primaryKey"):
-        name = f"{table['tableReference']['tableId']}.pk$"
-        yield name, "PRIMARY KEY", primary["columns"], None
-    for key in keys.get("foreignKeys") or []:
-        pairs = key["columnReferences"]
-        referenced = key["referencedTable"]
-        table_id = table["tableReference"]["tableId"]
-        name = key.get("name")
+def _keys(table: Table):
+    keys = table.tableConstraints
+    table_id = table.tableReference.tableId
+    if keys and keys.primaryKey:
+        yield f"{table_id}.pk$", "PRIMARY KEY", keys.primaryKey.columns, None
+    for key in (keys and keys.foreignKeys) or []:
+        pairs, referenced = key.columnReferences, key.referencedTable
+        name = key.name
         yield (
             name if name.startswith(f"{table_id}.") else f"{table_id}.{name}",
             "FOREIGN KEY",
-            [pair["referencingColumn"] for pair in pairs],
-            (list(referenced.values()), [pair["referencedColumn"] for pair in pairs]),
+            [pair.referencingColumn for pair in pairs],
+            (
+                [referenced.projectId, referenced.datasetId, referenced.tableId],
+                [pair.referencedColumn for pair in pairs],
+            ),
         )
 
 
@@ -301,9 +305,9 @@ def materialized_views(project_id: str, dataset_id: str | None):
     ]
     rows = [
         _identity(t)
-        + [_timestamp((t.get("materializedView") or {}).get("lastRefreshTime"))] * 2
+        + [_timestamp(t.materializedView and t.materializedView.lastRefreshTime)] * 2
         for t in _tables(project_id, dataset_id)
-        if t["type"] == "MATERIALIZED_VIEW"
+        if t.type == "MATERIALIZED_VIEW"
     ]
     return columns, rows
 
@@ -318,10 +322,11 @@ def table_snapshots(project_id: str, dataset_id: str | None):
     ]
     rows = [
         _identity(t)
-        + list(definition["baseTableReference"].values())
-        + [_timestamp(definition["snapshotTime"])]
+        + [base.projectId, base.datasetId, base.tableId]
+        + [_timestamp(t.snapshotDefinition.snapshotTime)]
         for t in _tables(project_id, dataset_id)
-        if (definition := t.get("snapshotDefinition"))
+        if t.snapshotDefinition
+        for base in [t.snapshotDefinition.baseTableReference]
     ]
     return columns, rows
 
@@ -345,30 +350,31 @@ def table_storage(project_id: str, dataset_id: str | None):
         [
             project_id,
             *_identity(t),
-            _timestamp(t.get("creationTime")),
-            int(t["numRows"]),
+            _timestamp(t.creationTime),
+            int(t.numRows),
             len(_partitions(t)),
             size,
             size,
             0,
             size,
-            _timestamp(t.get("lastModifiedTime")),
+            _timestamp(t.lastModifiedTime),
             False,
-            TABLE_TYPES.get(t["type"], t["type"]),
+            TABLE_TYPES.get(t.type, t.type),
         ]
         for t in _tables(project_id, dataset_id)
-        if t["type"] != "VIEW"
-        for size in [int(t["numBytes"])]
+        if t.type != "VIEW"
+        for size in [int(t.numBytes)]
     ]
     return columns, rows
 
 
-def _partitions(table: dict) -> list[tuple[str | None, int]]:
+def _partitions(table: Table) -> list[tuple[str | None, int]]:
     name = tables.name(*_identity(table))
-    partitioning = table.get("timePartitioning") or {}
-    if not (field := partitioning.get("field")) or table["type"] != "TABLE":
-        return [(None, int(table["numRows"]))]
-    fmt = PARTITION_FORMATS.get(partitioning.get("type", "DAY"), "%Y%m%d")
+    partitioning = table.timePartitioning
+    if not (partitioning and partitioning.field) or table.type != "TABLE":
+        return [(None, int(table.numRows))]
+    field = partitioning.field
+    fmt = PARTITION_FORMATS.get(partitioning.type or "DAY", "%Y%m%d")
     return database.fetch(
         f"SELECT coalesce(strftime({quote(field)}, '{fmt}'), '__NULL__'), count(*) "
         f"FROM {name} GROUP BY 1 ORDER BY 1"
@@ -397,19 +403,19 @@ def routines(project_id: str, dataset_id: str | None):
     rows = [
         [
             project_id,
-            r["routineReference"]["datasetId"],
-            r["routineReference"]["routineId"],
-            catalog_routines.ROUTINE_TYPES[r["routineType"]],
-            "EXTERNAL" if r.get("language") == "JAVASCRIPT" else "SQL",
-            catalog_routines.sql_type(r["returnType"]) if "returnType" in r else None,
+            r.routineReference.datasetId,
+            r.routineReference.routineId,
+            catalog_routines.ROUTINE_TYPES[r.routineType],
+            "EXTERNAL" if r.language == "JAVASCRIPT" else "SQL",
+            catalog_routines.sql_type(r.returnType) if r.returnType else None,
         ]
         for r in catalog_routines.list_(project_id, dataset_id)
     ]
     return columns, rows
 
 
-def _index_status(kind: str, table: dict) -> str:
-    small = int(table["numBytes"]) < SEARCH_INDEX_MINIMUM_BYTES
+def _index_status(kind: str, table: Table) -> str:
+    small = int(table.numBytes) < SEARCH_INDEX_MINIMUM_BYTES
     return "TEMPORARILY DISABLED" if kind == "SEARCH" and small else "ACTIVE"
 
 
@@ -429,8 +435,8 @@ def _indexes(kind: str):
         ]
         rows = [
             _identity(t)
-            + [index["name"], index["ddl"], _index_status(kind, t), 100, 0]
-            + [_timestamp(index["creationTime"])] * 2
+            + [index.name, index.ddl, _index_status(kind, t), 100, 0]
+            + [_timestamp(index.creationTime)] * 2
             for t in _tables(project_id, dataset_id)
             for index in indexes.list_(*_identity(t), kind)
         ]
@@ -442,14 +448,15 @@ def _indexes(kind: str):
 ROUTINE_IDENTITY = ("specific_catalog", "specific_schema", "specific_name")
 
 
-def _routine_identity(routine: dict) -> list[str]:
-    return list(routine["routineReference"].values())
+def _routine_identity(routine: Routine) -> list[str]:
+    reference = routine.routineReference
+    return [reference.projectId, reference.datasetId, reference.routineId]
 
 
-def _arguments(routine: dict) -> list[tuple[int, dict]]:
-    arguments = list(enumerate(routine.get("arguments", []), start=1))
-    if "returnType" in routine:
-        return [(0, {"dataType": routine["returnType"]}), *arguments]
+def _arguments(routine: Routine) -> list[tuple[int, Argument]]:
+    arguments = list(enumerate(routine.arguments or [], start=1))
+    if routine.returnType:
+        return [(0, Argument(dataType=routine.returnType)), *arguments]
     return arguments
 
 
@@ -466,8 +473,8 @@ def parameters(project_id: str, dataset_id: str | None):
     ]
     rows = [
         _routine_identity(r)
-        + [position, argument.get("mode"), "YES" if position == 0 else "NO"]
-        + [argument.get("name"), (argument.get("dataType") or {}).get("typeKind")]
+        + [position, argument.mode, "YES" if position == 0 else "NO"]
+        + [argument.name, argument.dataType and argument.dataType.typeKind]
         + [None, None]
         for r in catalog_routines.list_(project_id, dataset_id)
         for position, argument in _arguments(r)
@@ -499,12 +506,12 @@ def legacy_tables(project_id: str, dataset_id: str | None):
     rows = [
         _identity(t)
         + [
-            int(t.get("creationTime") or 0),
-            int(t.get("lastModifiedTime") or 0),
-            int(t["numRows"]),
-            int(t["numBytes"]),
+            int(t.creationTime or 0),
+            int(t.lastModifiedTime or 0),
+            int(t.numRows),
+            int(t.numBytes),
         ]
-        + [1 if t["type"] == "TABLE" else 2]
+        + [1 if t.type == "TABLE" else 2]
         for t in _tables(project_id, dataset_id)
     ]
     return columns, rows

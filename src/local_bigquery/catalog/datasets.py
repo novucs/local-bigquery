@@ -18,35 +18,33 @@ def exists(project_id: str, dataset_id: str) -> bool:
     )
 
 
-def _defaults(project_id: str, dataset_id: str) -> dict:
+def _defaults(project_id: str, dataset_id: str) -> Dataset:
     now = metadata.now()
-    return {
-        "kind": "bigquery#dataset",
-        "id": f"{project_id}:{dataset_id}",
-        "selfLink": f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}",
-        "datasetReference": {"projectId": project_id, "datasetId": dataset_id},
-        "location": "US",
-        "type": "DEFAULT",
-        "maxTimeTravelHours": "168",
-        "access": [
-            {"role": "WRITER", "specialGroup": "projectWriters"},
-            {"role": "OWNER", "specialGroup": "projectOwners"},
-            {"role": "READER", "specialGroup": "projectReaders"},
-        ],
-        "creationTime": now,
-        "lastModifiedTime": now,
-    }
-
-
-def load(project_id: str, dataset_id: str) -> dict:
-    if not exists(project_id, dataset_id):
-        raise not_found("Dataset", f"{project_id}:{dataset_id}")
-    stored = metadata.load("datasets", project_id, dataset_id)
-    return stored or _defaults(project_id, dataset_id)
+    return Dataset.model_validate(
+        {
+            "kind": "bigquery#dataset",
+            "id": f"{project_id}:{dataset_id}",
+            "selfLink": f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}",
+            "datasetReference": {"projectId": project_id, "datasetId": dataset_id},
+            "location": "US",
+            "type": "DEFAULT",
+            "maxTimeTravelHours": "168",
+            "access": [
+                {"role": "WRITER", "specialGroup": "projectWriters"},
+                {"role": "OWNER", "specialGroup": "projectOwners"},
+                {"role": "READER", "specialGroup": "projectReaders"},
+            ],
+            "creationTime": now,
+            "lastModifiedTime": now,
+        }
+    )
 
 
 def get(project_id: str, dataset_id: str) -> Dataset:
-    return Dataset.model_validate(load(project_id, dataset_id))
+    if not exists(project_id, dataset_id):
+        raise not_found("Dataset", f"{project_id}:{dataset_id}")
+    stored = metadata.load(Dataset, project_id, dataset_id)
+    return stored or _defaults(project_id, dataset_id)
 
 
 def _matches(dataset: Dataset, filter: str | None) -> bool:
@@ -72,14 +70,8 @@ def list_(
     return [dataset for dataset in datasets if _matches(dataset, filter)]
 
 
-def save(project_id: str, dataset_id: str, resource: dict) -> Dataset:
-    return Dataset.model_validate(
-        metadata.save("datasets", resource, project_id, dataset_id)
-    )
-
-
-def create(project_id: str, body: dict) -> Dataset:
-    dataset_id = body.get("datasetReference", {}).get("datasetId")
+def create(project_id: str, body: Dataset) -> Dataset:
+    dataset_id = body.datasetReference and body.datasetReference.datasetId
     if not dataset_id:
         raise BigQueryError("invalid", "Required parameter is missing: datasetId")
     names.dataset(dataset_id)
@@ -87,22 +79,24 @@ def create(project_id: str, body: dict) -> Dataset:
     if exists(project_id, dataset_id):
         raise already_exists("Dataset", f"{project_id}:{dataset_id}")
     database.execute(f"CREATE SCHEMA {quote(project_id, dataset_id)}")
-    return save(project_id, dataset_id, _defaults(project_id, dataset_id) | body)
+    return record(project_id, dataset_id, body)
 
 
 def update(
-    project_id: str, dataset_id: str, body: dict, etag: str | None, replace: bool
+    project_id: str, dataset_id: str, body: Dataset, etag: str | None, replace: bool
 ) -> Dataset:
-    current = load(project_id, dataset_id)
+    current = get(project_id, dataset_id)
     metadata.check_etag(current, etag)
-    identity = {key: current[key] for key in _defaults(project_id, dataset_id)}
-    resource = identity | body if replace else metadata.merge(current, body)
-    resource |= {"lastModifiedTime": metadata.now()}
-    return save(project_id, dataset_id, resource)
+    if replace:
+        identity = _defaults(project_id, dataset_id).model_fields_set
+        current = Dataset.model_validate(current.model_dump(include=identity))
+    resource = current.merged(body).replace(lastModifiedTime=metadata.now())
+    return metadata.save(resource, project_id, dataset_id)
 
 
-def record(project_id: str, dataset_id: str, resource: dict) -> Dataset:
-    return save(project_id, dataset_id, _defaults(project_id, dataset_id) | resource)
+def record(project_id: str, dataset_id: str, resource: Dataset) -> Dataset:
+    resource = _defaults(project_id, dataset_id).merged(resource)
+    return metadata.save(resource, project_id, dataset_id)
 
 
 def check_empty(project_id: str, dataset_id: str):
@@ -113,12 +107,12 @@ def check_empty(project_id: str, dataset_id: str):
 
 
 def forget(project_id: str, dataset_id: str):
-    for kind in database.RESOURCES:
-        metadata.delete(kind, project_id, dataset_id)
+    for model in metadata.KINDS:
+        metadata.delete(model, project_id, dataset_id)
 
 
 def delete(project_id: str, dataset_id: str, delete_contents: bool):
-    load(project_id, dataset_id)
+    get(project_id, dataset_id)
     if not delete_contents:
         check_empty(project_id, dataset_id)
     database.execute(f"DROP SCHEMA {quote(project_id, dataset_id)} CASCADE")

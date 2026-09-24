@@ -5,6 +5,8 @@ from collections.abc import Callable
 
 from sqlglot import exp
 
+from local_bigquery.resource import Resource
+
 Evaluate = Callable[[exp.Expression], object]
 
 
@@ -91,9 +93,10 @@ def options(node: exp.Expression | None, mapping: dict, evaluate: Evaluate) -> d
     }
 
 
-def rendered(resource: dict, mapping: dict) -> list[tuple[str, str, str]]:
+def rendered(resource: Resource, mapping: dict) -> list[tuple[str, str, str]]:
+    values = resource.dump()
     return [
-        (name, option.kind, option.render(resource[option.key]))
+        (name, option.kind, option.render(values[option.key]))
         for name, option in mapping.items()
-        if resource.get(option.key) not in (None, {}, False)
+        if values.get(option.key) not in (None, {}, False)
     ]

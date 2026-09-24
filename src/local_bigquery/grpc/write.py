@@ -18,7 +18,7 @@ from google.rpc import status_pb2
 
 from local_bigquery.catalog import tabledata, tables
 from local_bigquery.grpc.read import StorageError, table
-from local_bigquery.models import TableFieldSchema
+from local_bigquery.models import TableDataInsertAllRequest, TableFieldSchema
 
 Type = types.WriteStream.Type
 EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
@@ -140,7 +140,7 @@ def _row(fields: list[TableFieldSchema], values: dict) -> dict:
 
 
 def _insert(stream: Stream, rows: list[dict]) -> list[dict]:
-    body = {"rows": [{"json": row} for row in rows]}
+    body = TableDataInsertAllRequest(rows=[{"json": row} for row in rows])
     response = tabledata.insert_all(*stream.table, body)
     return [
         error

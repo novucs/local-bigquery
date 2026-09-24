@@ -12,7 +12,7 @@ from local_bigquery.engine import types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import DUCKDB_PREFIX, BigQueryError
 from local_bigquery.jobs.storage import literal, paths
-from local_bigquery.models import TableFieldSchema
+from local_bigquery.models import Table, TableFieldSchema
 
 ENCODINGS = {"UTF-8": "utf-8", "ISO-8859-1": "latin-1", "UTF-16LE": "utf-16"}
 HIVE_KEY = re.compile(r"\{(\w+):(\w+)\}")
@@ -219,7 +219,7 @@ def _reading(locations: dict[str, str | None]):
 
 def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
     reference = tables.reference(config["destinationTable"])
-    datasets.load(*reference[:2])
+    datasets.get(*reference[:2])
     uris = config.get("sourceUris") or []
     locations = (
         {upload: None} if upload else {p: uri for uri in uris for p in paths(cur, uri)}
@@ -250,7 +250,7 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
             cur, query, None, reference, config, "WRITE_APPEND", prefix
         )
     if created and fields:
-        tables.annotate(reference, {"schema": config["schema"]})
+        tables.annotate(reference, Table(schema=config["schema"]))
     count, size = cur.sql(
         f"SELECT count(*), coalesce(sum(size), 0) FROM read_blob({files})"
     ).fetchone()

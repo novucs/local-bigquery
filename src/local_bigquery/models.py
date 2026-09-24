@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from pydantic import Field, RootModel
+from pydantic import Field, RootModel, constr
 from local_bigquery.resource import Resource
 
 
@@ -12,13 +12,13 @@ class Discovery(RootModel[Any]):
 
 
 class ModelExtractOptions(Resource):
-    trialId: str | None = None
+    trialId: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class SerDeInfo(Resource):
     serializationLibrary: str | None = None
     name: str | None = None
-    parameters: dict[str, str] | None = None
+    parameters: dict[str, str | None] | None = None
 
 
 class StoredColumnsUnusedReason(Resource):
@@ -61,12 +61,12 @@ class ForeignViewDefinition(Resource):
 
 class BinaryConfusionMatrix(Resource):
     accuracy: float | None = None
-    truePositives: str | None = None
-    falseNegatives: str | None = None
+    truePositives: constr(pattern=r"^-?[0-9]+$") | None = None
+    falseNegatives: constr(pattern=r"^-?[0-9]+$") | None = None
     recall: float | None = None
-    trueNegatives: str | None = None
+    trueNegatives: constr(pattern=r"^-?[0-9]+$") | None = None
     f1Score: float | None = None
-    falsePositives: str | None = None
+    falsePositives: constr(pattern=r"^-?[0-9]+$") | None = None
     positiveClassThreshold: float | None = None
     precision: float | None = None
 
@@ -91,7 +91,7 @@ class ExternalDatasetReference(Resource):
 
 
 class JobStatisticsReservationUsageItem(Resource):
-    slotMs: str | None = None
+    slotMs: constr(pattern=r"^-?[0-9]+$") | None = None
     name: str | None = None
 
 
@@ -105,7 +105,7 @@ class SparkOptions(Resource):
     runtimeVersion: str | None = None
     mainClass: str | None = None
     connection: str | None = None
-    properties: dict[str, str] | None = None
+    properties: dict[str, str | None] | None = None
 
 
 class QueryInfo(Resource):
@@ -119,12 +119,12 @@ class DatasetTagsItem(Resource):
 
 class QueryTimelineSample(Resource):
     shuffleRamUsageRatio: float | None = None
-    completedUnits: str | None = None
-    activeUnits: str | None = None
-    elapsedMs: str | None = None
-    estimatedRunnableUnits: str | None = None
-    pendingUnits: str | None = None
-    totalSlotMs: str | None = None
+    completedUnits: constr(pattern=r"^-?[0-9]+$") | None = None
+    activeUnits: constr(pattern=r"^-?[0-9]+$") | None = None
+    elapsedMs: constr(pattern=r"^-?[0-9]+$") | None = None
+    estimatedRunnableUnits: constr(pattern=r"^-?[0-9]+$") | None = None
+    pendingUnits: constr(pattern=r"^-?[0-9]+$") | None = None
+    totalSlotMs: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class DataMaskingStatistics(Resource):
@@ -133,8 +133,8 @@ class DataMaskingStatistics(Resource):
 
 class ScriptOptions(Resource):
     keyResultStatement: str | None = None
-    statementTimeoutMs: str | None = None
-    statementByteBudget: str | None = None
+    statementTimeoutMs: constr(pattern=r"^-?[0-9]+$") | None = None
+    statementByteBudget: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class MetadataCacheStalenessInsight(Resource):
@@ -148,14 +148,14 @@ class ExplainQueryStep(Resource):
 
 
 class ExportDataStatistics(Resource):
-    rowCount: str | None = None
-    fileCount: str | None = None
+    rowCount: constr(pattern=r"^-?[0-9]+$") | None = None
+    fileCount: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class PruningStats(Resource):
-    postCmetaPruningParallelInputCount: str | None = None
-    postCmetaPruningPartitionCount: str | None = None
-    preCmetaPruningParallelInputCount: str | None = None
+    postCmetaPruningParallelInputCount: constr(pattern=r"^-?[0-9]+$") | None = None
+    postCmetaPruningPartitionCount: constr(pattern=r"^-?[0-9]+$") | None = None
+    preCmetaPruningParallelInputCount: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class DataPolicyOption(Resource):
@@ -163,7 +163,7 @@ class DataPolicyOption(Resource):
 
 
 class GenAiFunctionCostOptimizationStats(Resource):
-    numCostOptimizedRows: str | None = None
+    numCostOptimizedRows: constr(pattern=r"^-?[0-9]+$") | None = None
     message: str | None = None
 
 
@@ -171,7 +171,7 @@ class DestinationTableProperties(Resource):
     expirationTime: str | None = None
     description: str | None = None
     friendlyName: str | None = None
-    labels: dict[str, str] | None = None
+    labels: dict[str, str | None] | None = None
 
 
 class RoutineReference(Resource):
@@ -192,13 +192,13 @@ class Expr(Resource):
 
 
 class IntArray(Resource):
-    elements: list[str] | None = None
+    elements: list[constr(pattern=r"^-?[0-9]+$")] | None = None
 
 
 class ObjectStorageStats(Resource):
     cloudProvider: str | None = None
-    objectStorageBytesRead: str | None = None
-    cacheBytesRead: str | None = None
+    objectStorageBytesRead: constr(pattern=r"^-?[0-9]+$") | None = None
+    cacheBytesRead: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class JsonOptions(Resource):
@@ -243,14 +243,14 @@ class SparkLoggingInfo(Resource):
 
 
 class JobStatistics5(Resource):
-    copiedLogicalBytes: str | None = None
-    copiedRows: str | None = None
+    copiedLogicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
+    copiedRows: constr(pattern=r"^-?[0-9]+$") | None = None
     remoteDestinationRegion: str | None = None
 
 
 class GoogleSheetsOptions(Resource):
     range: str | None = None
-    skipLeadingRows: str | None = None
+    skipLeadingRows: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class Binding(Resource):
@@ -260,19 +260,19 @@ class Binding(Resource):
 
 
 class IntRange(Resource):
-    min: str | None = None
-    max: str | None = None
+    min: constr(pattern=r"^-?[0-9]+$") | None = None
+    max: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class GenAiFunctionCacheStats(Resource):
-    numCacheHitRows: str | None = None
+    numCacheHitRows: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class DatasetListDatasetsItem(Resource):
     externalDatasetReference: ExternalDatasetReference | None = None
     catalogSource: str | None = None
     id: str | None = None
-    labels: dict[str, str] | None = None
+    labels: dict[str, str | None] | None = None
     location: str | None = None
     datasetReference: DatasetReference | None = None
     friendlyName: str | None = None
@@ -290,8 +290,8 @@ class DatasetList(Resource):
 
 class ClusterInfo(Resource):
     clusterRadius: float | None = None
-    clusterSize: str | None = None
-    centroidId: str | None = None
+    clusterSize: constr(pattern=r"^-?[0-9]+$") | None = None
+    centroidId: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class RowLevelSecurityStatistics(Resource):
@@ -305,9 +305,9 @@ class TestIamPermissionsResponse(Resource):
 class MaterializedViewDefinition(Resource):
     allowNonIncrementalDefinition: bool | None = None
     enableRefresh: bool | None = None
-    lastRefreshTime: str | None = None
+    lastRefreshTime: constr(pattern=r"^-?[0-9]+$") | None = None
     query: str | None = None
-    refreshIntervalMs: str | None = None
+    refreshIntervalMs: constr(pattern=r"^-?[0-9]+$") | None = None
     maxStaleness: str | None = None
 
 
@@ -316,9 +316,9 @@ class LocationMetadata(Resource):
 
 
 class Streamingbuffer(Resource):
-    estimatedBytes: str | None = None
-    estimatedRows: str | None = None
-    oldestEntryTime: str | None = None
+    estimatedBytes: constr(pattern=r"^[0-9]+$") | None = None
+    estimatedRows: constr(pattern=r"^[0-9]+$") | None = None
+    oldestEntryTime: constr(pattern=r"^[0-9]+$") | None = None
 
 
 class ForeignTypeInfo(Resource):
@@ -326,10 +326,10 @@ class ForeignTypeInfo(Resource):
 
 
 class DmlStatistics(Resource):
-    deletedRowCount: str | None = None
-    updatedRowCount: str | None = None
+    deletedRowCount: constr(pattern=r"^-?[0-9]+$") | None = None
+    updatedRowCount: constr(pattern=r"^-?[0-9]+$") | None = None
     fineGrainedDmlUnusedReason: str | None = None
-    insertedRowCount: str | None = None
+    insertedRowCount: constr(pattern=r"^-?[0-9]+$") | None = None
     dmlMode: str | None = None
 
 
@@ -344,7 +344,7 @@ class IncrementalResultStats(Resource):
     disabledReasonDetails: str | None = None
     lastIncrementalRowTime: str | None = None
     firstIncrementalRowTime: str | None = None
-    incrementalRowCount: str | None = None
+    incrementalRowCount: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class JoinRestrictionPolicy(Resource):
@@ -369,7 +369,7 @@ class StorageDescriptor(Resource):
 
 
 class IntCandidates(Resource):
-    candidates: list[str] | None = None
+    candidates: list[constr(pattern=r"^-?[0-9]+$")] | None = None
 
 
 class DoubleCandidates(Resource):
@@ -386,7 +386,7 @@ class ScriptStackFrame(Resource):
 
 
 class TimePartitioning(Resource):
-    expirationMs: str | None = None
+    expirationMs: constr(pattern=r"^-?[0-9]+$") | None = None
     requirePartitionFilter: bool | None = Field(None, deprecated=True)
     field: str | None = None
     type: str | None = None
@@ -419,7 +419,7 @@ class TableFieldSchemaPolicyTags(Resource):
 
 
 class TableFieldSchemaDataGovernanceTagsInfo(Resource):
-    dataGovernanceTags: dict[str, str] | None = None
+    dataGovernanceTags: dict[str, str | None] | None = None
 
 
 class TableFieldSchemaCategories(Resource):
@@ -429,7 +429,7 @@ class TableFieldSchemaCategories(Resource):
 class ProjectListProjectsItem(Resource):
     projectReference: ProjectReference | None = None
     id: str | None = None
-    numericId: str | None = None
+    numericId: constr(pattern=r"^[0-9]+$") | None = None
     friendlyName: str | None = None
     kind: str | None = None
 
@@ -451,7 +451,7 @@ class ModelDefinitionModelOptions(Resource):
 class DifferentialPrivacyPolicy(Resource):
     epsilonBudget: float | None = None
     maxEpsilonPerQuery: float | None = None
-    maxGroupsContributed: str | None = None
+    maxGroupsContributed: constr(pattern=r"^-?[0-9]+$") | None = None
     privacyUnitColumn: str | None = None
     deltaBudgetRemaining: float | None = None
     deltaBudget: float | None = None
@@ -464,7 +464,7 @@ class BqmlIterationResult(Resource):
     evalLoss: float | None = None
     learnRate: float | None = None
     trainingLoss: float | None = None
-    durationMs: str | None = None
+    durationMs: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class PropertyGraphReference(Resource):
@@ -496,7 +496,7 @@ class PrincipalComponentInfo(Resource):
     cumulativeExplainedVarianceRatio: float | None = None
     explainedVariance: float | None = None
     explainedVarianceRatio: float | None = None
-    principalComponentId: str | None = None
+    principalComponentId: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class BigtableProtoConfig(Resource):
@@ -513,7 +513,7 @@ class RowAccessPolicyReference(Resource):
 
 class Entry(Resource):
     predictedLabel: str | None = None
-    itemCount: str | None = None
+    itemCount: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class ErrorProto(Resource):
@@ -525,7 +525,7 @@ class ErrorProto(Resource):
 
 class CsvOptions(Resource):
     nullMarker: str | None = None
-    skipLeadingRows: str | None = None
+    skipLeadingRows: constr(pattern=r"^-?[0-9]+$") | None = None
     allowQuotedNewlines: bool | None = None
     encoding: str | None = None
     preserveAsciiControlCharacters: bool | None = None
@@ -583,7 +583,7 @@ class Clustering(Resource):
 
 class GenAiFunctionErrorStats(Resource):
     errors: list[str] | None = None
-    numFailedRows: str | None = None
+    numFailedRows: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class TableConstraintsPrimaryKey(Resource):
@@ -619,21 +619,21 @@ class TableConstraints(Resource):
 
 
 class SkewSource(Resource):
-    stageId: str | None = None
-    outputBytesMedian: str | None = None
-    outputBytesP95: str | None = None
-    outputBytesMax: str | None = None
+    stageId: constr(pattern=r"^-?[0-9]+$") | None = None
+    outputBytesMedian: constr(pattern=r"^-?[0-9]+$") | None = None
+    outputBytesP95: constr(pattern=r"^-?[0-9]+$") | None = None
+    outputBytesMax: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class RemoteFunctionOptions(Resource):
     endpoint: str | None = None
     connection: str | None = None
-    maxBatchingRows: str | None = None
-    userDefinedContext: dict[str, str] | None = None
+    maxBatchingRows: constr(pattern=r"^-?[0-9]+$") | None = None
+    userDefinedContext: dict[str, str | None] | None = None
 
 
 class JobStatistics2ReservationUsageItem(Resource):
-    slotMs: str | None = None
+    slotMs: constr(pattern=r"^-?[0-9]+$") | None = None
     name: str | None = None
 
 
@@ -645,7 +645,7 @@ class SparkStatistics(Resource):
     kmsKeyName: str | None = None
     sparkJobLocation: str | None = None
     sparkJobId: str | None = None
-    endpoints: dict[str, str] | None = None
+    endpoints: dict[str, str | None] | None = None
     loggingInfo: SparkLoggingInfo | None = None
     gcsStagingBucket: str | None = None
 
@@ -660,7 +660,7 @@ class TestIamPermissionsRequest(Resource):
 
 class ExternalCatalogDatasetOptions(Resource):
     defaultStorageLocationUri: str | None = None
-    parameters: dict[str, str] | None = None
+    parameters: dict[str, str | None] | None = None
 
 
 class BqmlTrainingRunTrainingOptions(Resource):
@@ -670,7 +670,7 @@ class BqmlTrainingRunTrainingOptions(Resource):
     earlyStop: bool | None = None
     learnRate: float | None = None
     l1Reg: float | None = None
-    maxIteration: str | None = None
+    maxIteration: constr(pattern=r"^-?[0-9]+$") | None = None
     minRelProgress: float | None = None
     learnRateStrategy: str | None = None
 
@@ -705,7 +705,7 @@ class MaterializedViewStatus(Resource):
 
 class AggregationThresholdPolicy(Resource):
     privacyUnitColumns: list[str] | None = None
-    threshold: str | None = None
+    threshold: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class GeneratedExpressionInfo(Resource):
@@ -730,30 +730,30 @@ class AggregateClassificationMetrics(Resource):
 
 
 class BigQueryModelTraining(Resource):
-    expectedTotalIterations: str | None = None
+    expectedTotalIterations: constr(pattern=r"^-?[0-9]+$") | None = None
     currentIteration: int | None = None
 
 
 class HighCardinalityJoin(Resource):
-    leftRows: str | None = None
-    outputRows: str | None = None
-    rightRows: str | None = None
+    leftRows: constr(pattern=r"^-?[0-9]+$") | None = None
+    outputRows: constr(pattern=r"^-?[0-9]+$") | None = None
+    rightRows: constr(pattern=r"^-?[0-9]+$") | None = None
     stepIndex: int | None = None
 
 
 class ExternalCatalogTableOptions(Resource):
     storageDescriptor: StorageDescriptor | None = None
     connectionId: str | None = None
-    parameters: dict[str, str] | None = None
+    parameters: dict[str, str | None] | None = None
 
 
 class CategoryCount(Resource):
     category: str | None = None
-    count: str | None = None
+    count: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class RemoteModelInfo(Resource):
-    maxBatchingRows: str | None = None
+    maxBatchingRows: constr(pattern=r"^-?[0-9]+$") | None = None
     endpoint: str | None = None
     remoteModelVersion: str | None = None
     speechRecognizer: str | None = None
@@ -762,18 +762,18 @@ class RemoteModelInfo(Resource):
 
 
 class ArimaOrder(Resource):
-    p: str | None = None
-    q: str | None = None
-    d: str | None = None
+    p: constr(pattern=r"^-?[0-9]+$") | None = None
+    q: constr(pattern=r"^-?[0-9]+$") | None = None
+    d: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class JobStatistics3(Resource):
-    inputFileBytes: str | None = None
-    inputFiles: str | None = None
-    outputBytes: str | None = None
-    outputRows: str | None = None
+    inputFileBytes: constr(pattern=r"^-?[0-9]+$") | None = None
+    inputFiles: constr(pattern=r"^-?[0-9]+$") | None = None
+    outputBytes: constr(pattern=r"^-?[0-9]+$") | None = None
+    outputRows: constr(pattern=r"^-?[0-9]+$") | None = None
     timeline: list[QueryTimelineSample] | None = None
-    badRecords: str | None = None
+    badRecords: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class PartitionedColumn(Resource):
@@ -781,9 +781,9 @@ class PartitionedColumn(Resource):
 
 
 class RangePartitioningRange(Resource):
-    end: str | None = None
-    interval: str | None = None
-    start: str | None = None
+    end: constr(pattern=r"^-?[0-9]+$") | None = None
+    interval: constr(pattern=r"^-?[0-9]+$") | None = None
+    start: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class RangePartitioning(Resource):
@@ -802,35 +802,35 @@ class ArimaFittingMetrics(Resource):
 
 
 class ExplainQueryStage(Resource):
-    computeMsMax: str | None = None
-    readMsMax: str | None = None
-    endMs: str | None = None
-    shuffleOutputBytes: str | None = None
+    computeMsMax: constr(pattern=r"^-?[0-9]+$") | None = None
+    readMsMax: constr(pattern=r"^-?[0-9]+$") | None = None
+    endMs: constr(pattern=r"^-?[0-9]+$") | None = None
+    shuffleOutputBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     writeRatioAvg: float | None = None
-    recordsWritten: str | None = None
-    recordsRead: str | None = None
+    recordsWritten: constr(pattern=r"^-?[0-9]+$") | None = None
+    recordsRead: constr(pattern=r"^-?[0-9]+$") | None = None
     status: str | None = None
-    waitMsMax: str | None = None
-    shuffleOutputBytesSpilled: str | None = None
-    startMs: str | None = None
-    slotMs: str | None = None
+    waitMsMax: constr(pattern=r"^-?[0-9]+$") | None = None
+    shuffleOutputBytesSpilled: constr(pattern=r"^-?[0-9]+$") | None = None
+    startMs: constr(pattern=r"^-?[0-9]+$") | None = None
+    slotMs: constr(pattern=r"^-?[0-9]+$") | None = None
     writeRatioMax: float | None = None
-    computeMsAvg: str | None = None
-    id: str | None = None
+    computeMsAvg: constr(pattern=r"^-?[0-9]+$") | None = None
+    id: constr(pattern=r"^-?[0-9]+$") | None = None
     computeMode: str | None = None
-    writeMsMax: str | None = None
+    writeMsMax: constr(pattern=r"^-?[0-9]+$") | None = None
     readRatioAvg: float | None = None
     readRatioMax: float | None = None
     name: str | None = None
     computeRatioMax: float | None = None
-    waitMsAvg: str | None = None
-    readMsAvg: str | None = None
+    waitMsAvg: constr(pattern=r"^-?[0-9]+$") | None = None
+    readMsAvg: constr(pattern=r"^-?[0-9]+$") | None = None
     waitRatioMax: float | None = None
     computeRatioAvg: float | None = None
-    inputStages: list[str] | None = None
-    writeMsAvg: str | None = None
-    completedParallelInputs: str | None = None
-    parallelInputs: str | None = None
+    inputStages: list[constr(pattern=r"^-?[0-9]+$")] | None = None
+    writeMsAvg: constr(pattern=r"^-?[0-9]+$") | None = None
+    completedParallelInputs: constr(pattern=r"^-?[0-9]+$") | None = None
+    parallelInputs: constr(pattern=r"^-?[0-9]+$") | None = None
     steps: list[ExplainQueryStep] | None = None
     waitRatioAvg: float | None = None
 
@@ -838,19 +838,21 @@ class ExplainQueryStage(Resource):
 class ExternalRuntimeOptions(Resource):
     containerMemory: str | None = None
     containerCpu: float | None = None
-    maxBatchingRows: str | None = None
+    maxBatchingRows: constr(pattern=r"^-?[0-9]+$") | None = None
     runtimeVersion: str | None = None
-    containerRequestConcurrency: str | None = None
+    containerRequestConcurrency: constr(pattern=r"^-?[0-9]+$") | None = None
     runtimeConnection: str | None = None
 
 
 class LoadQueryStatistics(Resource):
-    outputBytes: str | None = None
-    outputRows: str | None = None
-    bytesTransferred: str | None = Field(None, deprecated=True)
-    inputFiles: str | None = None
-    badRecords: str | None = None
-    inputFileBytes: str | None = None
+    outputBytes: constr(pattern=r"^-?[0-9]+$") | None = None
+    outputRows: constr(pattern=r"^-?[0-9]+$") | None = None
+    bytesTransferred: constr(pattern=r"^-?[0-9]+$") | None = Field(
+        None, deprecated=True
+    )
+    inputFiles: constr(pattern=r"^-?[0-9]+$") | None = None
+    badRecords: constr(pattern=r"^-?[0-9]+$") | None = None
+    inputFileBytes: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class GetPolicyOptions(Resource):
@@ -868,10 +870,10 @@ class ConnectionProperty(Resource):
 
 class ExternalServiceCost(Resource):
     billingMethod: str | None = None
-    bytesProcessed: str | None = None
-    reservedSlotCount: str | None = None
-    bytesBilled: str | None = None
-    slotMs: str | None = None
+    bytesProcessed: constr(pattern=r"^-?[0-9]+$") | None = None
+    reservedSlotCount: constr(pattern=r"^-?[0-9]+$") | None = None
+    bytesBilled: constr(pattern=r"^-?[0-9]+$") | None = None
+    slotMs: constr(pattern=r"^-?[0-9]+$") | None = None
     externalService: str | None = None
 
 
@@ -882,14 +884,14 @@ class TableReference(Resource):
 
 
 class JobStatistics4(Resource):
-    destinationUriFileCounts: list[str] | None = None
-    inputBytes: str | None = None
+    destinationUriFileCounts: list[constr(pattern=r"^-?[0-9]+$")] | None = None
+    inputBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     timeline: list[QueryTimelineSample] | None = None
 
 
 class StagePerformanceChangeInsight(Resource):
     inputDataChange: InputDataChange | None = None
-    stageId: str | None = None
+    stageId: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class JobConfigurationTableCopy(Resource):
@@ -904,7 +906,7 @@ class JobConfigurationTableCopy(Resource):
 
 
 class TrainingOptions(Resource):
-    maxTreeDepth: str | None = None
+    maxTreeDepth: constr(pattern=r"^-?[0-9]+$") | None = None
     modelUri: str | None = None
     dimensionIdColumns: list[str] | None = None
     warmStart: bool | None = None
@@ -922,15 +924,15 @@ class TrainingOptions(Resource):
     minAprioriSupport: float | None = None
     dataSplitEvalFraction: float | None = None
     forecastLimitUpperBound: float | None = None
-    hiddenUnits: list[str] | None = None
-    numFactors: str | None = None
+    hiddenUnits: list[constr(pattern=r"^-?[0-9]+$")] | None = None
+    numFactors: constr(pattern=r"^-?[0-9]+$") | None = None
     dartNormalizeType: str | None = None
     standardizeFeatures: bool | None = None
     feedbackType: str | None = None
     itemColumn: str | None = None
     walsAlpha: float | None = None
-    autoArimaMinOrder: str | None = None
-    minTreeChildWeight: str | None = None
+    autoArimaMinOrder: constr(pattern=r"^-?[0-9]+$") | None = None
+    minTreeChildWeight: constr(pattern=r"^-?[0-9]+$") | None = None
     activationFn: str | None = None
     tfVersion: str | None = None
     decomposeTimeSeries: bool | None = None
@@ -938,41 +940,41 @@ class TrainingOptions(Resource):
     l1Regularization: float | None = None
     kmeansInitializationColumn: str | None = None
     categoryEncodingMethod: str | None = None
-    batchSize: str | None = None
-    sampledShapleyNumPaths: str | None = None
+    batchSize: constr(pattern=r"^-?[0-9]+$") | None = None
+    sampledShapleyNumPaths: constr(pattern=r"^-?[0-9]+$") | None = None
     colsampleBylevel: float | None = None
     minSplitLoss: float | None = None
     subsample: float | None = None
-    integratedGradientsNumSteps: str | None = None
+    integratedGradientsNumSteps: constr(pattern=r"^-?[0-9]+$") | None = None
     modelGardenModelName: str | None = None
     adjustStepChanges: bool | None = None
-    maxReplicaCount: str | None = None
-    labelClassWeights: dict[str, float] | None = None
+    maxReplicaCount: constr(pattern=r"^-?[0-9]+$") | None = None
+    labelClassWeights: dict[str, float | None] | None = None
     minRelativeProgress: float | None = None
     dataSplitMethod: str | None = None
     timeSeriesLengthFraction: float | None = None
     timeSeriesDataColumn: str | None = None
-    numPrincipalComponents: str | None = None
+    numPrincipalComponents: constr(pattern=r"^-?[0-9]+$") | None = None
     earlyStop: bool | None = None
-    numTrials: str | None = None
+    numTrials: constr(pattern=r"^-?[0-9]+$") | None = None
     reservationAffinityValues: list[str] | None = None
     timeSeriesIdColumns: list[str] | None = None
     autoArima: bool | None = None
-    numClusters: str | None = None
+    numClusters: constr(pattern=r"^-?[0-9]+$") | None = None
     calculatePValues: bool | None = None
     huggingFaceModelId: str | None = None
     cleanSpikesAndDips: bool | None = None
     optimizer: str | None = None
     distanceType: str | None = None
-    numParallelTree: str | None = None
+    numParallelTree: constr(pattern=r"^-?[0-9]+$") | None = None
     approxGlobalFeatureContrib: bool | None = None
     contributionMetric: str | None = None
     includeDrift: bool | None = None
     timeSeriesTimestampColumn: str | None = None
     colsampleBytree: float | None = None
-    minTimeSeriesLength: str | None = None
-    maxParallelTrials: str | None = None
-    maxTimeSeriesLength: str | None = None
+    minTimeSeriesLength: constr(pattern=r"^-?[0-9]+$") | None = None
+    maxParallelTrials: constr(pattern=r"^-?[0-9]+$") | None = None
+    maxTimeSeriesLength: constr(pattern=r"^-?[0-9]+$") | None = None
     userColumn: str | None = None
     pcaExplainedVarianceRatio: float | None = None
     timeSeriesIdColumn: str | None = None
@@ -984,15 +986,15 @@ class TrainingOptions(Resource):
     enableGlobalExplain: bool | None = None
     learnRate: float | None = None
     dataSplitColumn: str | None = None
-    horizon: str | None = None
+    horizon: constr(pattern=r"^-?[0-9]+$") | None = None
     reservationAffinityKey: str | None = None
     nonSeasonalOrder: ArimaOrder | None = None
     optimizationStrategy: str | None = None
     boosterType: str | None = None
-    autoArimaMaxOrder: str | None = None
-    trendSmoothingWindowSize: str | None = None
+    autoArimaMaxOrder: constr(pattern=r"^-?[0-9]+$") | None = None
+    trendSmoothingWindowSize: constr(pattern=r"^-?[0-9]+$") | None = None
     colsampleBynode: float | None = None
-    maxIterations: str | None = None
+    maxIterations: constr(pattern=r"^-?[0-9]+$") | None = None
     inputLabelColumns: list[str] | None = None
     treeMethod: str | None = None
     isTestColumn: str | None = None
@@ -1004,7 +1006,7 @@ class TrainingOptions(Resource):
     learnRateStrategy: str | None = None
     lossType: str | None = None
     xgboostVersion: str | None = None
-    minReplicaCount: str | None = None
+    minReplicaCount: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class ScriptStatistics(Resource):
@@ -1053,12 +1055,12 @@ class DatasetAccessItem(Resource):
 
 
 class Dataset(Resource):
-    creationTime: str | None = None
+    creationTime: constr(pattern=r"^-?[0-9]+$") | None = None
     restrictions: RestrictionConfig | None = None
-    resourceTags: dict[str, str] | None = None
+    resourceTags: dict[str, str | None] | None = None
     etag: str | None = None
     datasetReference: DatasetReference | None = None
-    maxTimeTravelHours: str | None = None
+    maxTimeTravelHours: constr(pattern=r"^-?[0-9]+$") | None = None
     defaultRoundingMode: str | None = None
     description: str | None = None
     isCaseInsensitive: bool | None = None
@@ -1067,7 +1069,7 @@ class Dataset(Resource):
     externalDatasetReference: ExternalDatasetReference | None = None
     satisfiesPzs: bool | None = None
     type: str | None = None
-    defaultPartitionExpirationMs: str | None = None
+    defaultPartitionExpirationMs: constr(pattern=r"^-?[0-9]+$") | None = None
     storageBillingModel: str | None = None
     tags: list[DatasetTagsItem] | None = Field(None, deprecated=True)
     access: list[DatasetAccessItem] | None = None
@@ -1076,20 +1078,20 @@ class Dataset(Resource):
     location: str | None = None
     satisfiesPzi: bool | None = None
     linkedDatasetMetadata: LinkedDatasetMetadata | None = None
-    defaultTableExpirationMs: str | None = None
+    defaultTableExpirationMs: constr(pattern=r"^-?[0-9]+$") | None = None
     linkedDatasetSource: LinkedDatasetSource | None = None
     defaultEncryptionConfiguration: EncryptionConfiguration | None = None
     externalCatalogDatasetOptions: ExternalCatalogDatasetOptions | None = None
-    labels: dict[str, str] | None = None
+    labels: dict[str, str | None] | None = None
     kind: str | None = "bigquery#dataset"
     friendlyName: str | None = None
-    lastModifiedTime: str | None = None
+    lastModifiedTime: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class GenAiFunctionStats(Resource):
     errorStats: GenAiFunctionErrorStats | None = None
     prompt: str | None = None
-    numProcessedRows: str | None = None
+    numProcessedRows: constr(pattern=r"^-?[0-9]+$") | None = None
     costOptimizationStats: GenAiFunctionCostOptimizationStats | None = None
     cacheStats: GenAiFunctionCacheStats | None = None
     functionName: str | None = None
@@ -1230,16 +1232,16 @@ class TableFieldSchema(Resource):
     rangeElementType: TableFieldSchemaRangeElementType | None = Field(
         None, title="TableFieldSchemaRangeElementType"
     )
-    scale: str | None = None
+    scale: constr(pattern=r"^-?[0-9]+$") | None = None
     defaultValueExpression: str | None = None
     policyTags: TableFieldSchemaPolicyTags | None = Field(
         None, title="TableFieldSchemaPolicyTags"
     )
-    precision: str | None = None
+    precision: constr(pattern=r"^-?[0-9]+$") | None = None
     dataGovernanceTagsInfo: TableFieldSchemaDataGovernanceTagsInfo | None = Field(
         None, title="TableFieldSchemaDataGovernanceTagsInfo"
     )
-    timestampPrecision: str | None = None
+    timestampPrecision: constr(pattern=r"^-?[0-9]+$") | None = None
     categories: TableFieldSchemaCategories | None = Field(
         None, title="TableFieldSchemaCategories"
     )
@@ -1247,7 +1249,7 @@ class TableFieldSchema(Resource):
     foreignTypeDefinition: str | None = None
     generatedColumn: GeneratedColumn | None = None
     dataPolicyList: DataPolicyList | None = None
-    maxLength: str | None = None
+    maxLength: constr(pattern=r"^-?[0-9]+$") | None = None
     mode: str | None = None
     fields: list[TableFieldSchema] | None = None
     type: str | None = None
@@ -1298,27 +1300,27 @@ class RoutineBuildStatus(Resource):
     buildState: str | None = None
     errorResult: ErrorProto | None = None
     buildStateUpdateTime: str | None = None
-    imageSizeBytes: str | None = None
+    imageSizeBytes: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class MaterializedView(Resource):
-    estimatedBytesSaved: str | None = None
+    estimatedBytesSaved: constr(pattern=r"^-?[0-9]+$") | None = None
     tableReference: TableReference | None = None
     rejectedReason: str | None = None
     chosen: bool | None = None
 
 
 class IndexPruningStats(Resource):
-    postIndexPruningParallelInputCount: str | None = None
+    postIndexPruningParallelInputCount: constr(pattern=r"^-?[0-9]+$") | None = None
     baseTable: TableReference | None = None
     indexId: str | None = None
-    preIndexPruningParallelInputCount: str | None = None
+    preIndexPruningParallelInputCount: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class TableReplicationInfo(Resource):
-    replicationIntervalMs: str | None = None
+    replicationIntervalMs: constr(pattern=r"^-?[0-9]+$") | None = None
     replicationError: ErrorProto | None = None
-    replicatedSourceLastRefreshTime: str | None = None
+    replicatedSourceLastRefreshTime: constr(pattern=r"^-?[0-9]+$") | None = None
     replicationStatus: str | None = None
     sourceTable: TableReference | None = None
 
@@ -1376,7 +1378,7 @@ class VectorSearchStatistics(Resource):
 
 
 class TableDataList(Resource):
-    totalRows: str | None = None
+    totalRows: constr(pattern=r"^-?[0-9]+$") | None = None
     pageToken: str | None = None
     etag: str | None = None
     kind: str | None = "bigquery#tableDataList"
@@ -1404,7 +1406,7 @@ class StagePerformanceStandaloneInsight(Resource):
     insufficientShuffleQuota: bool | None = None
     biEngineReasons: list[BiEngineReason] | None = None
     partitionSkew: PartitionSkew | None = None
-    stageId: str | None = None
+    stageId: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class SearchStatistics(Resource):
@@ -1414,16 +1416,16 @@ class SearchStatistics(Resource):
 
 
 class Cluster(Resource):
-    centroidId: str | None = None
-    count: str | None = None
+    centroidId: constr(pattern=r"^-?[0-9]+$") | None = None
+    count: constr(pattern=r"^-?[0-9]+$") | None = None
     featureValues: list[FeatureValue] | None = None
 
 
 class GetQueryResultsResponse(Resource):
     jobComplete: bool | None = None
     jobReference: JobReference | None = None
-    numDmlAffectedRows: str | None = None
-    totalRows: str | None = None
+    numDmlAffectedRows: constr(pattern=r"^-?[0-9]+$") | None = None
+    totalRows: constr(pattern=r"^[0-9]+$") | None = None
     errors: list[ErrorProto] | None = None
     rows: list[TableRow] | None = None
     schema_: TableSchema | None = Field(None, alias="schema")
@@ -1431,7 +1433,7 @@ class GetQueryResultsResponse(Resource):
     pageToken: str | None = None
     etag: str | None = None
     kind: str | None = "bigquery#getQueryResultsResponse"
-    totalBytesProcessed: str | None = None
+    totalBytesProcessed: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class HparamSearchSpaces(Resource):
@@ -1483,7 +1485,7 @@ class ConfusionMatrix(Resource):
 class IterationResult(Resource):
     trainingLoss: float | None = None
     arimaResult: ArimaResult | None = None
-    durationMs: str | None = None
+    durationMs: constr(pattern=r"^-?[0-9]+$") | None = None
     principalComponentInfos: list[PrincipalComponentInfo] | None = None
     clusterInfos: list[ClusterInfo] | None = None
     index: int | None = None
@@ -1498,15 +1500,15 @@ class TableListTablesItemView(Resource):
 
 class TableListTablesItem(Resource):
     rangePartitioning: RangePartitioning | None = None
-    expirationTime: str | None = None
+    expirationTime: constr(pattern=r"^-?[0-9]+$") | None = None
     id: str | None = None
-    labels: dict[str, str] | None = None
+    labels: dict[str, str | None] | None = None
     friendlyName: str | None = None
     clustering: Clustering | None = None
     type: str | None = None
     kind: str | None = None
     timePartitioning: TimePartitioning | None = None
-    creationTime: str | None = None
+    creationTime: constr(pattern=r"^-?[0-9]+$") | None = None
     requirePartitionFilter: bool | None = None
     view: TableListTablesItemView | None = Field(None, title="TableListTablesItemView")
     tableReference: TableReference | None = None
@@ -1537,7 +1539,7 @@ class QueryResponse(Resource):
     location: str | None = None
     cacheHit: bool | None = None
     pageToken: str | None = None
-    totalBytesBilled: str | None = None
+    totalBytesBilled: constr(pattern=r"^-?[0-9]+$") | None = None
     statementType: str | None = None
     queryId: str | None = None
     rows: list[TableRow] | None = None
@@ -1546,18 +1548,18 @@ class QueryResponse(Resource):
     dmlStats: DmlStatistics | None = None
     arrowRecordBatch: ArrowRecordBatch | None = None
     kind: str | None = "bigquery#queryResponse"
-    totalSlotMs: str | None = None
-    endTime: str | None = None
+    totalSlotMs: constr(pattern=r"^-?[0-9]+$") | None = None
+    endTime: constr(pattern=r"^-?[0-9]+$") | None = None
     jobComplete: bool | None = None
     jobReference: JobReference | None = None
     sessionInfo: SessionInfo | None = None
-    startTime: str | None = None
+    startTime: constr(pattern=r"^-?[0-9]+$") | None = None
     jobCreationReason: JobCreationReason | None = None
-    numDmlAffectedRows: str | None = None
-    creationTime: str | None = None
-    totalRows: str | None = None
-    pageRowCount: str | None = None
-    totalBytesProcessed: str | None = None
+    numDmlAffectedRows: constr(pattern=r"^-?[0-9]+$") | None = None
+    creationTime: constr(pattern=r"^-?[0-9]+$") | None = None
+    totalRows: constr(pattern=r"^[0-9]+$") | None = None
+    pageRowCount: constr(pattern=r"^-?[0-9]+$") | None = None
+    totalBytesProcessed: constr(pattern=r"^-?[0-9]+$") | None = None
     arrowSchema: ArrowSchema | None = None
 
 
@@ -1596,7 +1598,7 @@ class PerformanceInsights(Resource):
     stagePerformanceStandaloneInsights: (
         list[StagePerformanceStandaloneInsight] | None
     ) = None
-    avgPreviousExecutionMs: str | None = None
+    avgPreviousExecutionMs: constr(pattern=r"^-?[0-9]+$") | None = None
     tableChangeInsights: list[TableChangeInsight] | None = None
 
 
@@ -1669,19 +1671,19 @@ class EvaluationMetrics(Resource):
 
 
 class Table(Resource):
-    labels: dict[str, str] | None = None
+    labels: dict[str, str | None] | None = None
     kind: str | None = "bigquery#table"
-    lastModifiedTime: str | None = None
-    numLongTermPhysicalBytes: str | None = None
+    lastModifiedTime: constr(pattern=r"^[0-9]+$") | None = None
+    numLongTermPhysicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     managedTableType: str | None = None
-    numTotalPhysicalBytes: str | None = None
-    numActivePhysicalBytes: str | None = None
-    numLongTermBytes: str | None = None
+    numTotalPhysicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
+    numActivePhysicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
+    numLongTermBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     tableReference: TableReference | None = None
     timePartitioning: TimePartitioning | None = None
-    numPartitions: str | None = None
-    numRows: str | None = None
-    numTimeTravelPhysicalBytes: str | None = None
+    numPartitions: constr(pattern=r"^-?[0-9]+$") | None = None
+    numRows: constr(pattern=r"^[0-9]+$") | None = None
+    numTimeTravelPhysicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     defaultRoundingMode: str | None = None
     encryptionConfiguration: EncryptionConfiguration | None = None
     externalDataConfiguration: ExternalDataConfiguration | None = None
@@ -1689,17 +1691,17 @@ class Table(Resource):
     model: ModelDefinition | None = None
     cloneDefinition: CloneDefinition | None = None
     requirePartitionFilter: bool | None = None
-    creationTime: str | None = None
+    creationTime: constr(pattern=r"^-?[0-9]+$") | None = None
     restrictions: RestrictionConfig | None = None
-    numActiveLogicalBytes: str | None = None
+    numActiveLogicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     schema_: TableSchema | None = Field(None, alias="schema")
     materializedViewStatus: MaterializedViewStatus | None = None
     snapshotDefinition: SnapshotDefinition | None = None
     clustering: Clustering | None = None
     friendlyName: str | None = None
-    numBytes: str | None = None
+    numBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     tableConstraints: TableConstraints | None = None
-    expirationTime: str | None = None
+    expirationTime: constr(pattern=r"^-?[0-9]+$") | None = None
     selfLink: str | None = None
     location: str | None = None
     maxStaleness: str | None = None
@@ -1709,30 +1711,30 @@ class Table(Resource):
     partitionDefinition: PartitioningDefinition | None = None
     type: str | None = None
     description: str | None = None
-    numPhysicalBytes: str | None = None
-    numCurrentPhysicalBytes: str | None = None
+    numPhysicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
+    numCurrentPhysicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     rangePartitioning: RangePartitioning | None = None
-    numTotalLogicalBytes: str | None = None
+    numTotalLogicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     replicas: list[TableReference] | None = None
     view: ViewDefinition | None = None
     etag: str | None = None
     streamingBuffer: Streamingbuffer | None = None
     materializedView: MaterializedViewDefinition | None = None
-    numLongTermLogicalBytes: str | None = None
+    numLongTermLogicalBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     tableReplicationInfo: TableReplicationInfo | None = None
-    resourceTags: dict[str, str] | None = None
+    resourceTags: dict[str, str | None] | None = None
 
 
 class HparamTuningTrial(Resource):
     hparams: TrainingOptions | None = None
     evalLoss: float | None = None
-    endTimeMs: str | None = None
-    startTimeMs: str | None = None
+    endTimeMs: constr(pattern=r"^-?[0-9]+$") | None = None
+    startTimeMs: constr(pattern=r"^-?[0-9]+$") | None = None
     evaluationMetrics: EvaluationMetrics | None = None
     status: str | None = None
     errorMessage: str | None = None
     trainingLoss: float | None = None
-    trialId: str | None = None
+    trialId: constr(pattern=r"^-?[0-9]+$") | None = None
     hparamTuningEvaluationMetrics: EvaluationMetrics | None = None
 
 
@@ -1743,7 +1745,9 @@ class TrainingRun(Resource):
     dataSplitResult: DataSplitResult | None = None
     trainingOptions: TrainingOptions | None = None
     vertexAiModelId: str | None = None
-    trainingStartTime: str | None = Field(None, deprecated=True)
+    trainingStartTime: constr(pattern=r"^-?[0-9]+$") | None = Field(
+        None, deprecated=True
+    )
     results: list[IterationResult] | None = None
     startTime: str | None = None
     vertexAiModelVersion: str | None = None
@@ -1751,7 +1755,7 @@ class TrainingRun(Resource):
 
 class MlStatistics(Resource):
     trainingType: str | None = None
-    maxIterations: str | None = None
+    maxIterations: constr(pattern=r"^-?[0-9]+$") | None = None
     hparamTrials: list[HparamTuningTrial] | None = None
     iterationResults: list[IterationResult] | None = None
     modelType: str | None = None
@@ -1773,7 +1777,7 @@ class JobConfigurationQuery(Resource):
     createDisposition: str | None = None
     userDefinedFunctionResources: list[UserDefinedFunctionResource] | None = None
     schemaUpdateOptions: list[str] | None = None
-    maximumBytesBilled: str | None = None
+    maximumBytesBilled: constr(pattern=r"^-?[0-9]+$") | None = None
     useQueryCache: bool | None = None
     clustering: Clustering | None = None
     parameterMode: str | None = None
@@ -1804,18 +1808,18 @@ class JobStatistics(Resource):
     sessionInfo: SessionInfo | None = None
     edition: str | None = None
     extract: JobStatistics4 | None = None
-    startTime: str | None = None
-    numChildJobs: str | None = None
+    startTime: constr(pattern=r"^-?[0-9]+$") | None = None
+    numChildJobs: constr(pattern=r"^-?[0-9]+$") | None = None
     transactionInfo: TransactionInfo | None = None
-    creationTime: str | None = None
+    creationTime: constr(pattern=r"^-?[0-9]+$") | None = None
     load: JobStatistics3 | None = None
-    totalBytesProcessed: str | None = None
+    totalBytesProcessed: constr(pattern=r"^-?[0-9]+$") | None = None
     parentGlobalQueryJob: JobReference | None = None
     quotaDeferments: list[str] | None = None
     globalQueryRemoteRegions: list[str] | None = None
     reservationGroupPath: list[str] | None = None
     completionRatio: float | None = None
-    finalExecutionDurationMs: str | None = None
+    finalExecutionDurationMs: constr(pattern=r"^-?[0-9]+$") | None = None
     reservationUsage: list[JobStatisticsReservationUsageItem] | None = Field(
         None, deprecated=True
     )
@@ -1824,14 +1828,14 @@ class JobStatistics(Resource):
     dataMaskingStatistics: DataMaskingStatistics | None = None
     parentJobId: str | None = None
     query: JobStatistics2 | None = None
-    totalSlotMs: str | None = None
+    totalSlotMs: constr(pattern=r"^-?[0-9]+$") | None = None
     rowLevelSecurityStatistics: RowLevelSecurityStatistics | None = None
-    endTime: str | None = None
+    endTime: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class Routine(Resource):
     buildStatus: RoutineBuildStatus | None = None
-    lastModifiedTime: str | None = None
+    lastModifiedTime: constr(pattern=r"^-?[0-9]+$") | None = None
     strictMode: bool | None = None
     routineReference: RoutineReference | None = None
     language: str | None = None
@@ -1845,7 +1849,7 @@ class Routine(Resource):
     importedLibraries: list[str] | None = None
     remoteFunctionOptions: RemoteFunctionOptions | None = None
     sparkOptions: SparkOptions | None = None
-    creationTime: str | None = None
+    creationTime: constr(pattern=r"^-?[0-9]+$") | None = None
     securityMode: str | None = None
     routineType: str | None = None
     dataGovernanceType: str | None = None
@@ -1901,7 +1905,7 @@ class QueryParameterType(Resource):
     structTypes: list[QueryParameterTypeStructTypesItem] | None = None
     rangeElementType: QueryParameterType | None = None
     type: str | None = None
-    timestampPrecision: str | None = None
+    timestampPrecision: constr(pattern=r"^-?[0-9]+$") | None = None
 
 
 class SystemVariables(Resource):
@@ -1910,8 +1914,8 @@ class SystemVariables(Resource):
 
 
 class Model(Resource):
-    creationTime: str | None = None
-    defaultTrialId: str | None = None
+    creationTime: constr(pattern=r"^-?[0-9]+$") | None = None
+    defaultTrialId: constr(pattern=r"^-?[0-9]+$") | None = None
     hparamSearchSpaces: HparamSearchSpaces | None = None
     location: str | None = None
     remoteModelInfo: RemoteModelInfo | None = None
@@ -1921,16 +1925,16 @@ class Model(Resource):
     featureColumns: list[StandardSqlField] | None = None
     description: str | None = None
     hparamTrials: list[HparamTuningTrial] | None = None
-    expirationTime: str | None = None
+    expirationTime: constr(pattern=r"^-?[0-9]+$") | None = None
     transformColumns: list[TransformColumn] | None = None
-    bestTrialId: str | None = Field(None, deprecated=True)
+    bestTrialId: constr(pattern=r"^-?[0-9]+$") | None = Field(None, deprecated=True)
     modelType: str | None = None
-    labels: dict[str, str] | None = None
+    labels: dict[str, str | None] | None = None
     labelColumns: list[StandardSqlField] | None = None
     trainingRuns: list[TrainingRun] | None = None
     friendlyName: str | None = None
-    lastModifiedTime: str | None = None
-    optimalTrialIds: list[str] | None = None
+    lastModifiedTime: constr(pattern=r"^-?[0-9]+$") | None = None
+    optimalTrialIds: list[constr(pattern=r"^-?[0-9]+$")] | None = None
 
 
 class TransformColumn(Resource):
@@ -1960,7 +1964,7 @@ class ListModelsResponse(Resource):
 
 class QueryRequest(Resource):
     continuous: bool | None = None
-    jobTimeoutMs: str | None = None
+    jobTimeoutMs: constr(pattern=r"^-?[0-9]+$") | None = None
     defaultDataset: DatasetReference | None = None
     queryParameters: list[QueryParameter] | None = None
     writeIncrementalResults: bool | None = None
@@ -1978,8 +1982,8 @@ class QueryRequest(Resource):
     timeoutMs: int | None = None
     reservation: str | None = None
     dryRun: bool | None = None
-    labels: dict[str, str] | None = None
-    maximumBytesBilled: str | None = None
+    labels: dict[str, str | None] | None = None
+    maximumBytesBilled: constr(pattern=r"^-?[0-9]+$") | None = None
     kind: str | None = "bigquery#queryRequest"
     useQueryCache: bool | None = None
     formatOptions: DataFormatOptions | None = None
@@ -2005,28 +2009,28 @@ class Argument(Resource):
 class JobConfiguration(Resource):
     maxSlots: int | None = None
     dryRun: bool | None = None
-    labels: dict[str, str] | None = None
+    labels: dict[str, str | None] | None = None
     load: JobConfigurationLoad | None = None
     jobType: str | None = None
     extract: JobConfigurationExtract | None = None
-    jobTimeoutMs: str | None = None
+    jobTimeoutMs: constr(pattern=r"^-?[0-9]+$") | None = None
     query: JobConfigurationQuery | None = None
     copy_: JobConfigurationTableCopy | None = Field(None, alias="copy")
     reservation: str | None = None
 
 
 class JobStatistics2(Resource):
-    totalBytesBilled: str | None = None
-    totalServicesSkuSlotMs: str | None = None
+    totalBytesBilled: constr(pattern=r"^-?[0-9]+$") | None = None
+    totalServicesSkuSlotMs: constr(pattern=r"^-?[0-9]+$") | None = None
     statementType: str | None = None
     reservationUsage: list[JobStatistics2ReservationUsageItem] | None = Field(
         None, deprecated=True
     )
     exportDataStatistics: ExportDataStatistics | None = None
-    ddlAffectedRowAccessPolicyCount: str | None = None
+    ddlAffectedRowAccessPolicyCount: constr(pattern=r"^-?[0-9]+$") | None = None
     cacheHit: bool | None = None
     ddlTargetDataset: DatasetReference | None = None
-    transferredBytes: str | None = None
+    transferredBytes: constr(pattern=r"^-?[0-9]+$") | None = None
     undeclaredQueryParameters: list[QueryParameter] | None = None
     genAiStats: GenAiStats | None = None
     queryPlan: list[ExplainQueryStage] | None = None
@@ -2039,9 +2043,9 @@ class JobStatistics2(Resource):
     ddlDestinationTable: TableReference | None = None
     searchStatistics: SearchStatistics | None = None
     queryInfo: QueryInfo | None = None
-    estimatedBytesProcessed: str | None = None
+    estimatedBytesProcessed: constr(pattern=r"^-?[0-9]+$") | None = None
     biEngineStatistics: BiEngineStatistics | None = None
-    totalPartitionsProcessed: str | None = None
+    totalPartitionsProcessed: constr(pattern=r"^-?[0-9]+$") | None = None
     dclTargetTable: TableReference | None = None
     mlStatistics: MlStatistics | None = None
     referencedPropertyGraphs: list[PropertyGraphReference] | None = None
@@ -2052,20 +2056,20 @@ class JobStatistics2(Resource):
     sparkStatistics: SparkStatistics | None = None
     modelTrainingCurrentIteration: int | None = None
     dmlStats: DmlStatistics | None = None
-    totalSlotMs: str | None = None
+    totalSlotMs: constr(pattern=r"^-?[0-9]+$") | None = None
     ddlTargetRoutine: RoutineReference | None = None
     ddlTargetTable: TableReference | None = None
-    numDmlAffectedRows: str | None = None
+    numDmlAffectedRows: constr(pattern=r"^-?[0-9]+$") | None = None
     incrementalResultStats: IncrementalResultStats | None = None
     referencedRoutines: list[RoutineReference] | None = None
     totalBytesProcessedAccuracy: str | None = None
     performanceInsights: PerformanceInsights | None = None
     timeline: list[QueryTimelineSample] | None = None
-    modelTrainingExpectedTotalIteration: str | None = None
+    modelTrainingExpectedTotalIteration: constr(pattern=r"^-?[0-9]+$") | None = None
     objectStorageStats: list[ObjectStorageStats] | None = None
     dclTargetView: TableReference | None = None
     externalServiceCosts: list[ExternalServiceCost] | None = None
-    totalBytesProcessed: str | None = None
+    totalBytesProcessed: constr(pattern=r"^-?[0-9]+$") | None = None
     ddlOperationPerformed: str | None = None
 
 

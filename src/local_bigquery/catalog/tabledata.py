@@ -7,7 +7,7 @@ from local_bigquery.catalog import tables
 from local_bigquery.catalog.tables import columns, create, get, load, name
 from local_bigquery.engine import database, results, types
 from local_bigquery.engine.database import quote
-from local_bigquery.models import TableFieldSchema
+from local_bigquery.models import Table, TableDataInsertAllRequest, TableFieldSchema
 
 DEDUP_SECONDS = 60
 _recent: dict[tuple[str, str], float] = {}
@@ -28,15 +28,10 @@ def _select(column: str, t) -> str:
 def _template(project_id: str, dataset_id: str, table_id: str, suffix: str) -> str:
     template = get(project_id, dataset_id, table_id)
     if not tables.exists(project_id, dataset_id, table_id + suffix):
-        create(
-            project_id,
-            dataset_id,
-            {
-                "tableReference": {"tableId": table_id + suffix},
-                "schema": template.schema_.model_dump(exclude_none=True),
-            },
-            translate=None,
+        body = Table(
+            tableReference={"tableId": table_id + suffix}, schema=template.schema_
         )
+        create(project_id, dataset_id, body, translate=None)
     return table_id + suffix
 
 
@@ -92,8 +87,10 @@ def _deduplicate(table: str, rows: list) -> list:
     return unique
 
 
-def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> dict:
-    if suffix := body.get("templateSuffix"):
+def insert_all(
+    project_id: str, dataset_id: str, table_id: str, body: TableDataInsertAllRequest
+) -> dict:
+    if suffix := body.templateSuffix:
         table_id = _template(project_id, dataset_id, table_id, suffix)
     load(project_id, dataset_id, table_id)
     table = name(project_id, dataset_id, table_id)
@@ -105,22 +102,19 @@ def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> d
     fields = columns(project_id, dataset_id, table_id)
     required = [f.name for f in fields if f.mode == "REQUIRED"]
     repeated = [f.name for f in fields if f.mode == "REPEATED"]
-    rows = body.get("rows") or []
+    rows = body.rows or []
+    values = [row.json_.model_dump() if row.json_ else {} for row in rows]
     known = [
-        {
-            schema[k.casefold()][0]: v
-            for k, v in (row.get("json") or {}).items()
-            if k.casefold() in schema
-        }
-        for row in rows
+        {schema[k.casefold()][0]: v for k, v in row.items() if k.casefold() in schema}
+        for row in values
     ]
     unconvertible = _unconvertible(schema, known)
     errors, valid = [], []
     for index, row in enumerate(rows):
         problems = [
             _problem(key, f"no such field: {key}.")
-            for key in row.get("json") or {}
-            if key.casefold() not in schema and not body.get("ignoreUnknownValues")
+            for key in values[index]
+            if key.casefold() not in schema and not body.ignoreUnknownValues
         ]
         problems += [
             _problem(key, f"Missing required field: {key}.")
@@ -143,8 +137,8 @@ def insert_all(project_id: str, dataset_id: str, table_id: str, body: dict) -> d
         if problems:
             errors.append({"index": index, "errors": problems})
         else:
-            valid.append((index, row.get("insertId"), known[index]))
-    if errors and not body.get("skipInvalidRows"):
+            valid.append((index, row.insertId, known[index]))
+    if errors and not body.skipInvalidRows:
         stopped = {"reason": "stopped", "location": "", "message": ""}
         errors += [{"index": index, "errors": [stopped]} for index, _, _ in valid]
     else:

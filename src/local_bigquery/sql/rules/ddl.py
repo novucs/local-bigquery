@@ -5,6 +5,7 @@ from sqlglot import exp
 
 from local_bigquery.catalog import names
 from local_bigquery.errors import BigQueryError
+from local_bigquery.models import TableFieldSchema
 from local_bigquery.sql.dialect import (
     AlterColumnOptions,
     BigQueryDialect,
@@ -55,7 +56,9 @@ def _names(tree: exp.Expression):
             names.dataset(target.db.rsplit(".", 1)[-1])
         elif kind in ("TABLE", "VIEW"):
             names.table(target.name)
-    names.fields([{"name": column.name} for column in tree.find_all(exp.ColumnDef)])
+    names.fields(
+        [TableFieldSchema(name=column.name) for column in tree.find_all(exp.ColumnDef)]
+    )
 
 
 def normalise(tree: exp.Expression) -> exp.Expression:
