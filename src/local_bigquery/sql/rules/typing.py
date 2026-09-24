@@ -15,6 +15,7 @@ Type = exp.DataType.Type
 DECIMALS = {Type.DECIMAL: "DECIMAL(38, 9)", Type.BIGDECIMAL: "DECIMAL(38, 18)"}
 FLOATS = {Type.DOUBLE, Type.FLOAT}
 BYTES = {Type.BINARY, Type.VARBINARY}
+TEXT = {Type.VARCHAR, Type.TEXT}
 BITWISE = (exp.BitwiseAnd, exp.BitwiseOr, exp.BitwiseXor)
 FLOAT_TEXT = re.compile(r"[+-]?(\d+\.\d*|\.\d+|\d+(\.\d*)?[eE][+-]?\d+)")
 TO_JSON = {"bq.main.to_json_string", "bq.main.to_json"}
@@ -48,6 +49,12 @@ def _schema(tree: exp.Expression) -> dict:
             columns
         )
     return schema
+
+
+def kind(node: exp.Expression) -> exp.DataType.Type | None:
+    if isinstance(node, exp.Cast):
+        return node.to.this
+    return node.type.this if node.type else None
 
 
 def _is(datatype: exp.DataType | None, kinds: set) -> bool:

@@ -3,6 +3,7 @@ import pytest
 from tests.cases import q
 
 CASES = [
+    q("SELECT CAST(f AS STRING) FROM (SELECT CAST(2 AS FLOAT64) AS f)", "2"),
     q("SELECT CONCAT('a', 'b', 'c')", "abc", types="STRING"),
     q("SELECT CONCAT('a', NULL)", None),
     q("SELECT 'a' || 'b'", "ab"),

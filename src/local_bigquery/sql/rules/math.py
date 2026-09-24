@@ -1,18 +1,11 @@
 from sqlglot import exp
 
 from local_bigquery.sql.dialect import macro
+from local_bigquery.sql.rules.typing import DECIMALS, FLOATS, kind
 
 Type = exp.DataType.Type
-DECIMALS = {Type.DECIMAL: "DECIMAL(38, 9)", Type.BIGDECIMAL: "DECIMAL(38, 18)"}
-FLOATS = {Type.DOUBLE, Type.FLOAT}
 SHIFTS = {exp.BitwiseLeftShift: "_shift_left", exp.BitwiseRightShift: "_shift_right"}
 OPERATORS = {exp.Div: "/", exp.IntDiv: "DIV", exp.Mod: "MOD"}
-
-
-def _type(node: exp.Expression) -> exp.DataType.Type | None:
-    if isinstance(node, exp.Cast):
-        return node.to.this
-    return node.type.this if node.type else None
 
 
 def decimal_type(node: exp.Expression, context) -> exp.Expression:
@@ -60,7 +53,7 @@ def _nonzero(node: exp.Binary, value: exp.Expression) -> exp.Expression:
 
 
 def division(node: exp.Expression, context) -> exp.Expression:
-    decimal = _type(node) in DECIMALS
+    decimal = kind(node) in DECIMALS
     if isinstance(node, exp.Div) and not node.args.get("safe"):
         return _nonzero(node, _numeric(node.copy()) if decimal else node.copy())
     if isinstance(node, exp.IntDiv):
@@ -76,14 +69,14 @@ def float_to_integer(node: exp.Expression, context) -> exp.Expression:
     if (
         isinstance(node, exp.Cast)
         and node.to.this == Type.BIGINT
-        and _type(node.this) in FLOATS
+        and kind(node.this) in FLOATS
     ):
         node.set("this", exp.func("round", node.this))
     return node
 
 
 def float_sign(node: exp.Expression, context) -> exp.Expression:
-    if isinstance(node, exp.Sign) and _type(node.this) in FLOATS:
+    if isinstance(node, exp.Sign) and kind(node.this) in FLOATS:
         nan = exp.If(this=exp.func("isnan", node.this.copy()), true=node.this.copy())
         return exp.Case(ifs=[nan], default=exp.cast(node, exp.DataType.build("DOUBLE")))
     return node

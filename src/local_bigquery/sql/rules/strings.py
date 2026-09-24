@@ -1,23 +1,15 @@
 import re
 
 from sqlglot import exp
-from sqlglot.optimizer.annotate_types import annotate_types
 
 from local_bigquery.errors import BigQueryError
 from local_bigquery.sql.dialect import macro
+from local_bigquery.sql.rules.typing import BYTES, FLOATS, TEXT, kind
 
 ESCAPE = re.compile(
     r"\\(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2})|([0-7]{3}))"
 )
 SPECIFIER = re.compile(r"%(?:%|[-+ #0']*\d*(?:\.\d+)?[a-zA-Z])")
-TEXT = (exp.DataType.Type.VARCHAR, exp.DataType.Type.TEXT)
-FLOATS = (exp.DataType.Type.DOUBLE, exp.DataType.Type.FLOAT)
-
-
-def _type(node: exp.Expression) -> exp.DataType:
-    return annotate_types(node.copy(), dialect="bigquery").type or exp.DataType.build(
-        "UNKNOWN"
-    )
 
 
 def string_escapes(node: exp.Expression, context) -> exp.Expression:
@@ -92,7 +84,7 @@ def like_escape(node: exp.Expression, context) -> exp.Expression:
 def float_to_string(node: exp.Expression, context) -> exp.Expression:
     if not (isinstance(node, exp.Cast) and node.to.this in TEXT):
         return node
-    if _type(node.this).this not in FLOATS:
+    if kind(node.this) not in FLOATS:
         return node
     return exp.Anonymous(
         this="regexp_replace",
@@ -117,8 +109,7 @@ def normalize(node: exp.Expression, context) -> exp.Expression:
 def _binary(node: exp.Expression) -> bool:
     if isinstance(node, exp.Anonymous) and node.name.lower() == "from_hex":
         return True
-    binary = (exp.DataType.Type.BINARY, exp.DataType.Type.VARBINARY)
-    return isinstance(node, exp.ByteString) or _type(node).is_type(*binary)
+    return isinstance(node, exp.ByteString) or kind(node) in BYTES
 
 
 def upper(node: exp.Expression, context) -> exp.Expression:
@@ -129,7 +120,7 @@ def upper(node: exp.Expression, context) -> exp.Expression:
 
 
 def concat(node: exp.Expression, context) -> exp.Expression:
-    if isinstance(node, exp.Concat) and _type(node).is_type(*TEXT):
+    if isinstance(node, exp.Concat) and kind(node) in TEXT:
         return exp.cast(node, exp.DataType.build("VARCHAR"), copy=False)
     return node
 

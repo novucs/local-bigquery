@@ -5,6 +5,10 @@ from tests.cases import q, run, unique
 
 CASES = [
     q(
+        "SELECT j = j FROM (SELECT JSON '1' AS j)",
+        error="Equality is not defined for arguments of type JSON",
+    ),
+    q(
         "SELECT INT64_ARRAY(JSON '[1]')",
         error=r"Function not found: INT64_ARRAY at \[1:8\]",
     ),
