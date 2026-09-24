@@ -424,7 +424,8 @@ def test_create_table_with_unenforced_keys(bq, dataset, table):
             a INT64, b INT64,
             c INT64 REFERENCES {dataset.dataset_id}.{parent}(id) NOT ENFORCED,
             PRIMARY KEY (a, b) NOT ENFORCED,
-            CONSTRAINT fk FOREIGN KEY (b) REFERENCES {parent}(id) NOT ENFORCED
+            CONSTRAINT fk FOREIGN KEY (b) REFERENCES {dataset.dataset_id}.{parent}(id)
+                NOT ENFORCED
         )
         """,
     )
@@ -440,17 +441,20 @@ def test_create_table_with_unenforced_keys(bq, dataset, table):
 
 
 @pytest.mark.parametrize(
-    "columns",
+    "columns, message",
     [
-        "id INT64 PRIMARY KEY",
-        "id INT64, PRIMARY KEY (id)",
-        "id INT64 REFERENCES other(id)",
+        ("id INT64 PRIMARY KEY", "Enforcement of primary keys is not supported"),
+        ("id INT64, PRIMARY KEY (id)", "Enforcement of primary keys is not supported"),
+        (
+            "id INT64 REFERENCES other(id) NOT ENFORCED",
+            'Table "other" must be qualified with a dataset (e.g. dataset.table).',
+        ),
     ],
 )
-def test_keys_must_not_be_enforced(bq, table, columns):
-    with fails(BadRequest, "invalidQuery") as info:
+def test_invalid_keys(bq, table, columns, message):
+    with pytest.raises(BadRequest) as info:
         run(bq, f"CREATE TABLE {table} ({columns})")
-    assert "NOT ENFORCED" in info.value.message
+    assert message in info.value.message
 
 
 def test_alter_table_keys(bq, dataset, table):
@@ -461,7 +465,8 @@ def test_alter_table_keys(bq, dataset, table):
     run(
         bq,
         f"ALTER TABLE {table} "
-        f"ADD CONSTRAINT fk FOREIGN KEY (b) REFERENCES {parent}(id) NOT ENFORCED",
+        "ADD CONSTRAINT fk FOREIGN KEY (b) "
+        f"REFERENCES {dataset.dataset_id}.{parent}(id) NOT ENFORCED",
     )
     assert constraints(bq, table) == (["a"], [("fk", parent, [("b", "id")])])
     run(bq, f"ALTER TABLE {table} DROP PRIMARY KEY")

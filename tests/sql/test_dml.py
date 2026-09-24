@@ -117,7 +117,14 @@ def test_delete_where_true(bq, table):
 
 
 def test_delete_null_predicate_deletes_nothing(bq, table):
-    assert run(bq, f"DELETE FROM {table} WHERE qty > NULL").num_dml_affected_rows == 0
+    sql = f"DELETE FROM {table} WHERE qty > CAST(NULL AS INT64)"
+    assert run(bq, sql).num_dml_affected_rows == 0
+
+
+def test_literal_null_comparison_is_rejected(bq, table):
+    with fails(BadRequest, "invalidQuery") as info:
+        run(bq, f"DELETE FROM {table} WHERE qty > NULL")
+    assert "Operands of > cannot be literal NULL" in info.value.message
 
 
 def test_delete_requires_where(bq, table):

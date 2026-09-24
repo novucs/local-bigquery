@@ -381,6 +381,13 @@ def layout(columns: list[str], config: dict, write: str) -> dict:
     return layout
 
 
+def refreshed(project_id: str, dataset_id: str, table_id: str):
+    stored = load(project_id, dataset_id, table_id)
+    view = stored.get("materializedView") or {}
+    changes = {"materializedView": view | {"lastRefreshTime": metadata.now()}}
+    annotate((project_id, dataset_id, table_id), changes)
+
+
 def annotate(reference: tuple[str, str, str], changes: dict):
     if changes:
         stored = metadata.load("tables", *reference) or defaults(*reference)

@@ -8,7 +8,7 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.tokens import TokenType
 
-from local_bigquery.catalog import routines
+from local_bigquery.catalog import routines, tables
 from local_bigquery.errors import BigQueryError, from_exception, syntax_error
 from local_bigquery.sql.dialect import BigQueryDialect
 from local_bigquery.sql.rules.parameters import VALUE, read
@@ -581,6 +581,8 @@ class Interpreter:
 
     def call(self, statement: Statement):
         if statement.text.upper() == "BQ.REFRESH_MATERIALIZED_VIEW":
+            ((argument, _),) = statement.items
+            tables.refreshed(*self.reference(self.evaluate(argument)))
             return
         project_id, dataset_id, routine_id = self.reference(statement.text)
         routine = routines.load(project_id, dataset_id, routine_id)

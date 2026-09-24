@@ -243,6 +243,7 @@ def schemata_options(project_id: str, dataset_id: str | None):
         [project_id, d.datasetReference.datasetId, *option]
         for d in datasets.list_(project_id, all=True)
         for option in _options(d.model_dump(exclude_none=True))
+        + [("location", "STRING", json.dumps(d.location.lower()))]
     ]
     return columns, rows
 
@@ -255,8 +256,10 @@ def _keys(table: dict):
     for key in keys.get("foreignKeys") or []:
         pairs = key["columnReferences"]
         referenced = key["referencedTable"]
+        table_id = table["tableReference"]["tableId"]
+        name = key.get("name")
         yield (
-            key.get("name"),
+            name if name.startswith(f"{table_id}.") else f"{table_id}.{name}",
             "FOREIGN KEY",
             [pair["referencingColumn"] for pair in pairs],
             (list(referenced.values()), [pair["referencedColumn"] for pair in pairs]),
@@ -329,7 +332,8 @@ def materialized_views(project_id: str, dataset_id: str | None):
         "refresh_watermark TIMESTAMP",
     ]
     rows = [
-        _identity(t) + [_timestamp(t.get("lastModifiedTime"))] * 2
+        _identity(t)
+        + [_timestamp((t.get("materializedView") or {}).get("lastRefreshTime"))] * 2
         for t in _tables(project_id, dataset_id)
         if t["type"] == "MATERIALIZED_VIEW"
     ]

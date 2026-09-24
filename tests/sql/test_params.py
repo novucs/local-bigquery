@@ -157,10 +157,11 @@ CASES = [
     ),
     q("SELECT 1", 1, params=[Scalar("unused", "INT64", 1)]),
     q("SELECT @missing", error="missing"),
+    q("SELECT @s + 1", error="Invalid date: 'a'", params=[Scalar("s", "STRING", "a")]),
     q(
         "SELECT @s + 1",
-        error="No matching signature",
-        params=[Scalar("s", "STRING", "a")],
+        datetime.date(2024, 1, 2),
+        params=[Scalar("s", "STRING", "2024-01-01")],
     ),
 ]
 

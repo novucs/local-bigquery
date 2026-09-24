@@ -231,7 +231,7 @@ def test_table_constraints(bq, dataset):
     ) == sorted(
         [
             (ds, f"{child}.pk$", child, "PRIMARY KEY", "NO", "NO"),
-            (ds, "fk", child, "FOREIGN KEY", "NO", "NO"),
+            (ds, f"{child}.fk", child, "FOREIGN KEY", "NO", "NO"),
             (ds, f"{parent}.pk$", parent, "PRIMARY KEY", "NO", "NO"),
         ]
     )
@@ -246,7 +246,7 @@ def test_table_constraints(bq, dataset):
         [
             (f"{child}.pk$", child, "a", 1, None),
             (f"{child}.pk$", child, "b", 2, None),
-            ("fk", child, "b", 1, 1),
+            (f"{child}.fk", child, "b", 1, 1),
             (f"{parent}.pk$", parent, "id", 1, None),
         ]
     )
@@ -260,7 +260,7 @@ def test_table_constraints(bq, dataset):
         [
             (child, "a", f"{child}.pk$"),
             (child, "b", f"{child}.pk$"),
-            (parent, "id", "fk"),
+            (parent, "id", f"{child}.fk"),
             (parent, "id", f"{parent}.pk$"),
         ]
     )
@@ -269,11 +269,13 @@ def test_table_constraints(bq, dataset):
 def test_materialized_views(bq, dataset):
     ds, view = dataset.dataset_id, unique("mv")
     run(bq, f"CREATE MATERIALIZED VIEW {ds}.{view} AS SELECT COUNT(*) AS n FROM {ds}.t")
-    assert rows(
-        bq,
+    sql = (
         "SELECT table_name, last_refresh_time IS NOT NULL "
-        f"FROM {ds}.INFORMATION_SCHEMA.MATERIALIZED_VIEWS",
-    ) == [(view, True)]
+        f"FROM {ds}.INFORMATION_SCHEMA.MATERIALIZED_VIEWS"
+    )
+    assert rows(bq, sql) == [(view, False)]
+    run(bq, f"CALL BQ.REFRESH_MATERIALIZED_VIEW('{ds}.{view}')")
+    assert rows(bq, sql) == [(view, True)]
 
 
 def test_table_snapshots(bq, dataset):
@@ -311,6 +313,7 @@ def test_schemata_options(bq, dataset):
     ) == [
         ("description", "STRING", '"about"'),
         ("labels", "ARRAY<STRUCT<STRING, STRING>>", '[STRUCT("k", "v")]'),
+        ("location", "STRING", '"us"'),
     ]
     bq.delete_dataset(ds)
 

@@ -145,6 +145,11 @@ def comparable(node: exp.Expression, context) -> exp.Expression:
     operator = COMPARISONS.get(type(node))
     if operator is None:
         return node
+    assignment = isinstance(node.parent, exp.Update)
+    if not assignment and exp.Null in (type(node.this), type(node.expression)):
+        raise BigQueryError(
+            "invalidQuery", f"Operands of {operator} cannot be literal NULL"
+        )
     left, right = node.this.type, node.expression.type
     families = {_family(left), _family(right)}
     if None in families or len(families) == 1:
@@ -174,6 +179,14 @@ def _date_literal(node: exp.Literal) -> exp.Expression:
     return exp.cast(node, Type.DATE)
 
 
+def _string_parameter(node: exp.Expression) -> bool:
+    return (
+        isinstance(node, exp.Cast)
+        and node.to.this in exp.DataType.TEXT_TYPES
+        and node.find(exp.Parameter, exp.Placeholder) is not None
+    )
+
+
 def date_arithmetic(node: exp.Expression, context) -> exp.Expression:
     if not isinstance(node, (exp.Add, exp.Sub)):
         return node
@@ -184,6 +197,8 @@ def date_arithmetic(node: exp.Expression, context) -> exp.Expression:
             continue
         if isinstance(date, exp.Literal) and date.is_string:
             date = _date_literal(date)
+        elif _string_parameter(date):
+            date = exp.cast(date, Type.DATE)
         elif not _is(date.type, {Type.DATE}):
             continue
         node.set(date_key, date)

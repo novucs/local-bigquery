@@ -27,12 +27,18 @@ def _schema_path(tree: exp.Expression) -> exp.Expression:
 
 def _unenforced(tree: exp.Expression):
     for key in tree.find_all(*KEYS):
+        if isinstance(key, exp.Reference):
+            referenced = key.find(exp.Table)
+            if referenced is not None and not referenced.db:
+                raise BigQueryError(
+                    "invalid",
+                    f'Table "{referenced.name}" must be qualified with a dataset '
+                    "(e.g. dataset.table).",
+                )
         if "NOT ENFORCED" not in map(str, key.args.get("options") or []):
-            kind = "FOREIGN" if isinstance(key, exp.Reference) else "PRIMARY"
+            kind = "foreign" if isinstance(key, exp.Reference) else "primary"
             raise BigQueryError(
-                "invalidQuery",
-                f"Enforced {kind} KEY constraints are not supported. "
-                "Please use NOT ENFORCED qualifier and try again.",
+                "invalidQuery", f"Enforcement of {kind} keys is not supported"
             )
 
 
