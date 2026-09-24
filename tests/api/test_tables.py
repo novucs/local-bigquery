@@ -291,3 +291,45 @@ def test_delete_missing(bq, dataset):
     with fails(NotFound, "notFound"):
         bq.delete_table(table_ref(dataset))
     bq.delete_table(table_ref(dataset), not_found_ok=True)
+
+
+@pytest.mark.parametrize(
+    "dataset_id",
+    ['bad"; DROP SCHEMA main; --', "has space", "a.b"],
+)
+def test_invalid_dataset_ids_are_rejected(bq, dataset_id):
+    with fails(BadRequest, "invalid") as info:
+        bq.create_dataset(bigquery.Dataset(f"{bq.project}.{dataset_id}"))
+    assert f'Invalid dataset ID "{dataset_id}"' in info.value.message
+
+
+@pytest.mark.parametrize("table_id", ['t"; DROP TABLE x; --', "t;", "t@1"])
+def test_invalid_table_ids_are_rejected(bq, dataset, table_id):
+    table = bigquery.Table(f"{dataset.project}.{dataset.dataset_id}.{table_id}")
+    with fails(BadRequest, "invalid") as info:
+        bq.create_table(table)
+    assert f'Invalid table ID "{table_id}"' in info.value.message
+
+
+def test_unicode_and_spaced_table_ids_are_allowed(bq, dataset):
+    table_id = f"{dataset.dataset_id}.{unique('tåble с пробелом')}"
+    assert bq.create_table(table_id).table_id == table_id.split(".")[1]
+
+
+@pytest.mark.parametrize("name", ['a"); DROP TABLE t; --', "a.b", "x" * 301])
+def test_invalid_field_names_are_rejected(bq, dataset, name):
+    table = bigquery.Table(
+        f"{dataset.project}.{dataset.dataset_id}.{unique('t')}",
+        schema=[bigquery.SchemaField(name, "STRING")],
+    )
+    with fails(BadRequest, "invalid") as info:
+        bq.create_table(table)
+    assert "Fields must contain the allowed characters" in info.value.message
+
+
+def test_flexible_field_names_are_allowed(bq, dataset):
+    table = bigquery.Table(
+        f"{dataset.project}.{dataset.dataset_id}.{unique('t')}",
+        schema=[bigquery.SchemaField("total & count-1", "STRING")],
+    )
+    assert [f.name for f in bq.create_table(table).schema] == ["total & count-1"]

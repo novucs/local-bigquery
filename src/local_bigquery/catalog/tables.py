@@ -1,6 +1,6 @@
 import duckdb
 
-from local_bigquery.catalog import datasets, metadata
+from local_bigquery.catalog import datasets, metadata, names
 from local_bigquery.engine import database, results, types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import (
@@ -254,6 +254,8 @@ def create(project_id: str, dataset_id: str, body: dict, translate) -> Table:
     table_id = body.get("tableReference", {}).get("tableId")
     if not table_id:
         raise BigQueryError("invalid", "Required parameter is missing: tableId")
+    names.table(table_id)
+    names.fields(body.get("schema", {}).get("fields", []))
     datasets.load(project_id, dataset_id)
     if _lookup(project_id, dataset_id, table_id):
         raise already_exists("Table", f"{project_id}:{dataset_id}.{table_id}")
@@ -306,6 +308,7 @@ def update(
     current = load(project_id, dataset_id, table_id)
     metadata.check_etag(current, etag)
     if fields := body.get("schema", {}).get("fields"):
+        names.fields(fields)
         if _lookup(project_id, dataset_id, table_id)[0] == "EMPTY":
             columns_sql = ", ".join(
                 types.column(TableFieldSchema.model_validate(f)) for f in fields

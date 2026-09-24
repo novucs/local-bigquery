@@ -6,11 +6,10 @@ import time
 import sqlglot
 from sqlglot import exp
 
-from local_bigquery.catalog import metadata, tables
+from local_bigquery.catalog import metadata, names, tables
 from local_bigquery.engine import database
 from local_bigquery.errors import BigQueryError
 
-DATASET_ID = re.compile(r"^[\w-]{1,1024}$")
 DECORATOR = re.compile(r"^(.+)@(-?\d+)$")
 DML = exp.Insert | exp.Update | exp.Delete | exp.Merge | exp.TruncateTable
 
@@ -50,13 +49,7 @@ def _not_found(project_id: str, dataset_id: str, table_id: str) -> BigQueryError
 
 def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
     project_id, dataset_id, table_id = table.catalog, table.db, table.name
-    if not DATASET_ID.match(dataset_id):
-        raise BigQueryError(
-            "invalid",
-            f'Invalid dataset ID "{dataset_id}". Dataset IDs must be alphanumeric '
-            "(plus underscores and dashes) and must be at most 1024 characters long.",
-            f"{dataset_id}.{table_id}",
-        )
+    names.dataset(dataset_id, f"{dataset_id}.{table_id}")
     if table.args.get("when"):
         return
     kind = tree.args.get("kind")
@@ -66,7 +59,7 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
         or kind not in (None, "TABLE", "VIEW")
     ):
         return
-    names = database.fetch(
+    existing = database.fetch(
         "SELECT table_name FROM duckdb_tables() WHERE database_name = ? "
         "AND schema_name = ? AND lower(table_name) = lower(?) "
         "UNION ALL SELECT view_name FROM duckdb_views() WHERE database_name = ? "
@@ -74,7 +67,7 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
         [project_id, dataset_id, table_id] * 2,
     )
     stored = metadata.load("tables", project_id, dataset_id, table_id) or {}
-    if table_id not in {name for (name,) in names} or tables.expired(stored):
+    if table_id not in {name for (name,) in existing} or tables.expired(stored):
         raise _not_found(project_id, dataset_id, table_id)
     if is_target and isinstance(tree, DML) and stored.get("type") == "SNAPSHOT":
         raise BigQueryError(

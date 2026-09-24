@@ -1,6 +1,6 @@
 import re
 
-from local_bigquery.catalog import metadata
+from local_bigquery.catalog import metadata, names
 from local_bigquery.engine import database
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import BigQueryError, already_exists, not_found
@@ -82,6 +82,7 @@ def create(project_id: str, body: dict) -> Dataset:
     dataset_id = body.get("datasetReference", {}).get("datasetId")
     if not dataset_id:
         raise BigQueryError("invalid", "Required parameter is missing: datasetId")
+    names.dataset(dataset_id)
     database.attach(project_id)
     if exists(project_id, dataset_id):
         raise already_exists("Dataset", f"{project_id}:{dataset_id}")
