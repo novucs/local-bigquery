@@ -8,8 +8,6 @@ def definition(tree: exp.Expression, context) -> exp.Expression:
     js.restore()
     if not isinstance(tree, exp.Create) or tree.args.get("kind") != "FUNCTION":
         return tree
-    if js.is_udf(tree):
-        return tree
     for param in tree.this.expressions:
         kind = param.kind if isinstance(param, exp.ColumnDef) else None
         if kind is None or not kind.is_type("variant", *exp.DataType.NESTED_TYPES):

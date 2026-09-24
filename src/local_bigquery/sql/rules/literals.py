@@ -1,5 +1,4 @@
 import codecs
-import re
 
 from sqlglot import exp
 
@@ -49,27 +48,4 @@ def byte_string(node: exp.Expression, context) -> exp.Expression:
     return node
 
 
-def _interval_values(text: str) -> list[str]:
-    values = []
-    for group in text.split():
-        sign = "-" if group.startswith("-") else ""
-        separator = "-" if re.fullmatch(r"-?\d+-\d+", group) else ":"
-        values += [sign + part for part in group.lstrip("-").split(separator)]
-    return values
-
-
-def interval_span(node: exp.Expression, context) -> exp.Expression:
-    span = node.args.get("unit") if isinstance(node, exp.Interval) else None
-    if not isinstance(span, exp.IntervalSpan) or not node.this.is_string:
-        return node
-    start, end = (
-        UNITS.index(part.name.upper()) for part in (span.this, span.expression)
-    )
-    values = _interval_values(node.this.this)
-    if len(values) != end - start + 1:
-        return node
-    text = " ".join(f"{value} {unit}" for value, unit in zip(values, UNITS[start:]))
-    return exp.cast(exp.Literal.string(text), exp.DataType.build("INTERVAL"))
-
-
-NODE_RULES = [float_literal, integer_literal, byte_string, interval_span]
+NODE_RULES = [float_literal, integer_literal, byte_string]

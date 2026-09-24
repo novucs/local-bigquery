@@ -4,7 +4,6 @@ import duckdb
 
 from local_bigquery.engine import types
 from local_bigquery.engine.database import quote
-from local_bigquery.models import TableFieldSchema
 
 DEFAULT_PAGE_SIZE = 100_000
 
@@ -75,11 +74,6 @@ def materialise(
         writer.execute(f"{statement} SELECT {typed} FROM result")
     finally:
         writer.unregister("result")
-
-
-def schema(cur: duckdb.DuckDBPyConnection, source: str) -> list[TableFieldSchema]:
-    relation = cur.sql(f"SELECT * FROM {source} LIMIT 0")
-    return [types.field(n, t) for n, t in zip(relation.columns, relation.types)]
 
 
 def page(

@@ -40,15 +40,7 @@ FORMAT_ELEMENTS = re.compile(r"(%E(?:\d|\*)S|%E4Y|%Ez|%Q|%s|%z|%Z|%R|%Y)")
 
 
 def call(name: str, *args) -> exp.Anonymous:
-    return exp.Anonymous(this=name, expressions=[_node(arg) for arg in args])
-
-
-def _node(value) -> exp.Expression:
-    if isinstance(value, exp.Expression):
-        return value
-    if isinstance(value, str):
-        return exp.Literal.string(value)
-    return exp.Literal.number(value)
+    return exp.Anonymous(this=name, expressions=[exp.convert(arg) for arg in args])
 
 
 def _around(node: exp.Expression, build) -> None:
@@ -86,12 +78,12 @@ def from_local(local: exp.Expression, zone: exp.Expression | None) -> exp.Expres
 def _extract(node: exp.Extract) -> exp.Expression | None:
     part, value = node.this, node.expression
     if isinstance(part, exp.WeekStart):
-        return macro("_week", value, _node(WEEKDAYS.index(part.name.upper())))
+        return macro("_week", value, exp.convert(WEEKDAYS.index(part.name.upper())))
     match part.name.upper():
         case "DAYOFWEEK":
-            return exp.Add(this=call("dayofweek", value), expression=_node(1))
+            return exp.Add(this=call("dayofweek", value), expression=exp.convert(1))
         case "WEEK":
-            return macro("_week", value, _node(0))
+            return macro("_week", value, exp.convert(0))
         case "ISOWEEK":
             return call("week", value)
         case "ISOYEAR":
@@ -104,10 +96,12 @@ def _extract(node: exp.Extract) -> exp.Expression | None:
 def _date_trunc(node: exp.DateTrunc) -> exp.Expression:
     unit, value = node.args["unit"], node.this
     if isinstance(unit, exp.WeekStart):
-        return macro("_week_start", value, _node(WEEKDAYS.index(unit.name.upper())))
+        return macro(
+            "_week_start", value, exp.convert(WEEKDAYS.index(unit.name.upper()))
+        )
     name = unit.name.upper()
     if name == "WEEK":
-        return macro("_week_start", value, _node(0))
+        return macro("_week_start", value, exp.convert(0))
     part = "week" if name == "ISOWEEK" else name.lower()
     return exp.cast(call("date_trunc", part, value), "DATE")
 
@@ -123,7 +117,7 @@ def _format(node: exp.TimeToStr) -> exp.Expression | None:
         local = to_local(instant, zone)
     elif isinstance(value, exp.TsOrDsToTime):
         local = exp.Add(
-            this=exp.cast(_node("1970-01-01"), "DATE"),
+            this=exp.cast(exp.convert("1970-01-01"), "DATE"),
             expression=exp.cast(value.this, "TIME"),
         )
     elif isinstance(value, exp.TsOrDsToDate):
@@ -143,7 +137,7 @@ def _format(node: exp.TimeToStr) -> exp.Expression | None:
 
 def _offset_seconds(local: exp.Expression, instant: exp.Expression | None):
     if instant is None:
-        return _node(0)
+        return exp.convert(0)
     seconds = exp.Sub(
         this=call("epoch", local.copy()), expression=call("epoch", instant.copy())
     )
@@ -160,21 +154,23 @@ def _element(piece: str, local, instant: exp.Expression | None, zone):
         case "%E4Y":
             return call("lpad", exp.cast(call("year", local.copy()), "VARCHAR"), 4, "0")
         case "%Ez":
-            return macro("_offset", offset, _node(":"), exp.true())
+            return macro("_offset", offset, exp.convert(":"), exp.true())
         case "%z":
-            return macro("_offset", offset, _node(""), exp.true())
+            return macro("_offset", offset, exp.convert(""), exp.true())
         case "%Z" if instant is not None:
             return call("_zone_name", call("epoch", instant.copy()), zone or "UTC")
         case "%s":
             source = instant if instant is not None else local
             return exp.cast(exp.cast(call("epoch", source.copy()), "BIGINT"), "VARCHAR")
         case "%R":
-            return exp.TimeToStr(this=local.copy(), format=_node("%H:%M"))
+            return exp.TimeToStr(this=local.copy(), format=exp.convert("%H:%M"))
     if match := re.fullmatch(r"%E(\d|\*)S", piece):
         return macro(
-            "_seconds", local.copy(), _node(6 if match[1] == "*" else int(match[1]))
+            "_seconds",
+            local.copy(),
+            exp.convert(6 if match[1] == "*" else int(match[1])),
         )
-    return exp.TimeToStr(this=local.copy(), format=_node(piece))
+    return exp.TimeToStr(this=local.copy(), format=exp.convert(piece))
 
 
 def _concat(pieces: list[exp.Expression]) -> exp.Expression:
@@ -189,7 +185,7 @@ def _parse_timestamp(node: exp.StrToTime) -> exp.Expression:
     node.set("zone", None)
     template = node.args.get("format")
     if isinstance(template, exp.Literal) and "%Ez" in template.this:
-        template.replace(_node(template.this.replace("%Ez", "%z")))
+        template.replace(exp.convert(template.this.replace("%Ez", "%z")))
     template = node.args.get("format")
     if isinstance(template, exp.Literal) and "%Z" in template.this:
         node.set("this", call("_zone_checked", template.copy(), node.this))
@@ -218,7 +214,7 @@ def _interval(node: exp.Interval) -> exp.Expression | None:
         )
         values += [sign * float(part) for part in token.lstrip("-+").split(separator)]
     text = " ".join(f"{value:g} {field}" for value, field in zip(values, fields))
-    return exp.Interval(this=_node(text))
+    return exp.Interval(this=exp.convert(text))
 
 
 def _is_interval(node: exp.Expression) -> bool:
@@ -300,7 +296,7 @@ def _rewrite(node: exp.Expression) -> exp.Expression | None:
         case exp.DateTrunc():
             return _date_trunc(node)
         case exp.TimeTrunc():
-            epoch = exp.cast(_node("1970-01-01"), "DATE")
+            epoch = exp.cast(exp.convert("1970-01-01"), "DATE")
             local = exp.Add(this=epoch, expression=node.this)
             return exp.cast(
                 call("date_trunc", node.text("unit").lower(), local), "TIME"
@@ -311,7 +307,7 @@ def _rewrite(node: exp.Expression) -> exp.Expression | None:
             return _parse_timestamp(node)
         case exp.UnixSeconds():
             micros = exp.Div(
-                this=call("epoch_us", node.this), expression=_node(1000000)
+                this=call("epoch_us", node.this), expression=exp.convert(1000000)
             )
             return exp.cast(call("floor", micros), "BIGINT")
         case exp.UnixToTime() if node.args.get("scale") is not None:
@@ -343,7 +339,7 @@ def _rewrite(node: exp.Expression) -> exp.Expression | None:
 def _model_element(token: str, local: exp.Expression, offset: exp.Expression):
     element = token.upper()
     if token.startswith('"'):
-        return _node(token[1:-1])
+        return exp.convert(token[1:-1])
     if element in FORMAT_MODEL_ELEMENTS:
         text = call("strftime", local.copy(), FORMAT_MODEL_ELEMENTS[element])
         if element in NAMED_ELEMENTS and token.isupper():
@@ -352,7 +348,9 @@ def _model_element(token: str, local: exp.Expression, offset: exp.Expression):
             return call("lower", text)
         return text
     if element == "D":
-        weekday = exp.Add(this=call("dayofweek", local.copy()), expression=_node(1))
+        weekday = exp.Add(
+            this=call("dayofweek", local.copy()), expression=exp.convert(1)
+        )
         return exp.cast(weekday, "VARCHAR")
     if element == "SSSSS":
         seconds = exp.cast(call("epoch", exp.cast(local.copy(), "TIME")), "BIGINT")
@@ -361,23 +359,23 @@ def _model_element(token: str, local: exp.Expression, offset: exp.Expression):
         return call("rpad", call("strftime", local.copy(), "%f"), int(element[2]), "0")
     if element == "TZH":
         sign = exp.If(
-            this=exp.LT(this=offset.copy(), expression=_node(0)),
-            true=_node("-"),
-            false=_node("+"),
+            this=exp.LT(this=offset.copy(), expression=exp.convert(0)),
+            true=exp.convert("-"),
+            false=exp.convert("+"),
         )
         return call(
             "printf",
             "%s%02d",
             sign,
-            exp.IntDiv(this=call("abs", offset.copy()), expression=_node(3600)),
+            exp.IntDiv(this=call("abs", offset.copy()), expression=exp.convert(3600)),
         )
     if element == "TZM":
         minutes = exp.IntDiv(
-            this=exp.Mod(this=call("abs", offset.copy()), expression=_node(3600)),
-            expression=_node(60),
+            this=exp.Mod(this=call("abs", offset.copy()), expression=exp.convert(3600)),
+            expression=exp.convert(60),
         )
         return call("printf", "%02d", minutes)
-    return _node(token)
+    return exp.convert(token)
 
 
 def format_cast(node: exp.Expression, context) -> exp.Expression:
@@ -393,7 +391,7 @@ def format_cast(node: exp.Expression, context) -> exp.Expression:
         local = to_local(instant, zone)
     elif kind == Type.TIME:
         local = exp.Add(
-            this=exp.cast(_node("1970-01-01"), "DATE"),
+            this=exp.cast(exp.convert("1970-01-01"), "DATE"),
             expression=exp.cast(node.this, "TIME"),
         )
     elif kind in (Type.DATE, Type.TIMESTAMP):
@@ -414,7 +412,7 @@ def format_cast(node: exp.Expression, context) -> exp.Expression:
         raise BigQueryError(
             "invalidQuery", f"{name} does not support '{text[position]}'"
         )
-    return exp.cast(_concat(pieces), "VARCHAR") if pieces else _node("")
+    return exp.cast(_concat(pieces), "VARCHAR") if pieces else exp.convert("")
 
 
 STATEMENT_RULES = [datetime]

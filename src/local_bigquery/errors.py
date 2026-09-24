@@ -270,13 +270,6 @@ def from_exception(error: Exception) -> BigQueryError:
             return not_implemented(message)
         case duckdb.Error():
             return from_duckdb(error)
-        case sqlglot.errors.ParseError() if error.errors:
-            detail = error.errors[0]
-            return BigQueryError(
-                "invalidQuery",
-                f"Syntax error: {detail['description']} "
-                f"at [{detail['line']}:{detail['col']}]",
-            )
         case sqlglot.errors.SqlglotError():
             return BigQueryError("invalidQuery", f"Syntax error: {message}")
     return BigQueryError("dontRetry", f"Internal error: {error!r}")

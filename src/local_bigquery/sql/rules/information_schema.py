@@ -567,16 +567,12 @@ VIEWS = {
 }
 
 
-def _literal(value) -> exp.Expression:
-    return value if isinstance(value, exp.Expression) else exp.convert(value)
-
-
 def _values(columns: list[str], rows: list[list]) -> exp.Expression:
     specs = [column.partition(" ") for column in columns]
     names = [name for name, _, _ in specs]
     source = (
         exp.values(
-            [tuple(map(_literal, row)) for row in rows], alias="v", columns=names
+            [tuple(map(exp.convert, row)) for row in rows], alias="v", columns=names
         )
         if rows
         else exp.select(*(exp.alias_(exp.null(), name) for name in names))
