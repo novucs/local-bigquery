@@ -1,6 +1,5 @@
 .github
 .venv
-examples
 tests
 .pre-commit-config.yaml
 *.db

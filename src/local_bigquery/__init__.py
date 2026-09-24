@@ -1,3 +1,3 @@
-from local_bigquery.main import app
+from local_bigquery.app import app
 
 __all__ = ["app"]
