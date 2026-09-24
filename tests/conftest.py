@@ -22,12 +22,37 @@ def pytest_configure(config):
     os.environ["TZ"] = "America/Los_Angeles"
     time.tzset()
     config.addinivalue_line("markers", "emulator(reason): emulator-only behaviour")
+    if config.getoption("--endpoint") == "google":
+        config.option.timeout = 300
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--endpoint") != "google":
+        return
+    for item in items:
+        item.own_markers = [m for m in item.own_markers if m.name != "xfail"]
 
 
 def pytest_runtest_setup(item):
     marker = item.get_closest_marker("emulator")
     if marker and item.config.getoption("--endpoint") == "google":
         pytest.skip(marker.args[0])
+
+
+class Client(bigquery.Client):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.created = []
+
+    def create_dataset(self, dataset, *args, **kwargs):
+        created = super().create_dataset(dataset, *args, **kwargs)
+        self.created.append(created.reference)
+        return created
+
+    def close(self):
+        for reference in self.created:
+            self.delete_dataset(reference, delete_contents=True, not_found_ok=True)
+        super().close()
 
 
 def pytest_addoption(parser):
@@ -67,9 +92,9 @@ def endpoint(request, tmp_path_factory):
 @pytest.fixture(scope="session")
 def bq(endpoint, project):
     if endpoint == "google":
-        client = bigquery.Client(project=project)
+        client = Client(project=project)
     else:
-        client = bigquery.Client(
+        client = Client(
             project=project,
             credentials=AnonymousCredentials(),
             client_options=ClientOptions(api_endpoint=endpoint),

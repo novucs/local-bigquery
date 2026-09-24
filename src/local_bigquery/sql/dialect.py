@@ -51,6 +51,16 @@ def table_body(tree: exp.Expression) -> exp.Query | None:
     return None
 
 
+UNAVAILABLE = {
+    "ARRAY_FILTER": "Function not found: {name} at [{position}]",
+    "ARRAY_TRANSFORM": "Function not found: {name} at [{position}]",
+    "DOT_PRODUCT": "Function not found: {name} at [{position}]",
+    "ARRAY_INCLUDES": "Function {name} is not yet implemented.",
+    "ARRAY_INCLUDES_ANY": "Function {name} is not yet implemented.",
+    "ARRAY_INCLUDES_ALL": "Function {name} is not yet implemented.",
+}
+
+
 class BigQueryDialect(BaseBigQuery):
     INVERSE_TIME_MAPPING = BaseBigQuery.INVERSE_TIME_MAPPING
 
@@ -79,6 +89,15 @@ class BigQueryDialect(BaseBigQuery):
 
         def _parse_cast(self, *args, **kwargs):
             cast = super()._parse_cast(*args, **kwargs)
+            if (
+                isinstance(cast, exp.Cast)
+                and cast.to.expressions
+                and not cast.to.is_type(*exp.DataType.NESTED_TYPES)
+            ):
+                raise BigQueryError(
+                    "invalidQuery",
+                    "Parameterized types are not allowed in CAST expressions.",
+                )
             local = (exp.DataType.Type.TIMESTAMP, exp.DataType.Type.TIME)
             if isinstance(cast, exp.StrToTime) and self._type.is_type(*local):
                 return exp.cast(exp.cast(cast, "TIMESTAMP"), self._type)
@@ -89,6 +108,7 @@ class BigQueryDialect(BaseBigQuery):
                 qualified = self._prev and self._prev.token_type == TokenType.DOT
                 prefix = f"{self._tokens[self._index - 2].text}." if qualified else ""
                 raise not_implemented(f"{prefix}{self._curr.text}".upper())
+            self._unavailable()
             self._calls.append(self._curr)
             try:
                 return super()._parse_function_call(*args, **kwargs)
@@ -96,6 +116,23 @@ class BigQueryDialect(BaseBigQuery):
                 raise self._signature([None]) from error
             finally:
                 self._calls.pop()
+
+        def _unavailable(self):
+            token, following = self._curr, self._next
+            template = UNAVAILABLE.get(token.text.upper())
+            if (
+                not template
+                or not following
+                or following.token_type != TokenType.L_PAREN
+            ):
+                return
+            if self._prev and self._prev.token_type == TokenType.DOT:
+                return
+            position = f"{token.line}:{token.col - len(token.text) + 1}"
+            raise BigQueryError(
+                "invalidQuery",
+                template.format(name=token.text.upper(), position=position),
+            )
 
         def _model_call(self) -> bool:
             tokens = self._tokens[self._index + 1 : self._index + 4]

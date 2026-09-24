@@ -1,3 +1,4 @@
+import re
 import datetime
 import time
 
@@ -498,7 +499,7 @@ def test_parameterized_types(bq, table):
     run(
         bq,
         f"CREATE TABLE {table} "
-        "(s STRING(10), b BYTES(4), n NUMERIC(10, 2), bn BIGNUMERIC(50, 10))",
+        "(s STRING(10), b BYTES(4), n NUMERIC(10, 2), bn BIGNUMERIC(40, 10))",
     )
     fields = [
         (f.name, type_name(f), f.max_length, f.precision, f.scale)
@@ -508,12 +509,25 @@ def test_parameterized_types(bq, table):
         ("s", "STRING", 10, None, None),
         ("b", "BYTES", 4, None, None),
         ("n", "NUMERIC", None, 10, 2),
-        ("bn", "BIGNUMERIC", None, 50, 10),
+        ("bn", "BIGNUMERIC", None, 40, 10),
     ]
     run(bq, f"INSERT {table} (s, n) VALUES ('short', 1.235)")
     assert rows(bq, f"SELECT s, CAST(n AS STRING) FROM {table}") == [("short", "1.24")]
     with fails(BadRequest, "invalidQuery"):
         run(bq, f"INSERT {table} (n) VALUES (123456789)")
+
+
+@pytest.mark.parametrize(
+    "column, message",
+    [
+        ("BIGNUMERIC(50, 10)", r"In BIGNUMERIC\(P, 10\), P must be between 10 and 48"),
+        ("NUMERIC(5, 6)", r"In NUMERIC\(P, 6\), P must be between 6 and 35"),
+    ],
+)
+def test_numeric_parameters_are_validated(bq, table, column, message):
+    with fails(BadRequest, "invalidQuery") as info:
+        run(bq, f"CREATE TABLE {table} (n {column})")
+    assert re.search(message, info.value.message)
 
 
 @pytest.mark.xfail(strict=True, reason="STRING/BYTES lengths are not enforced on write")

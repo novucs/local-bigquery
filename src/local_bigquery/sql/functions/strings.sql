@@ -60,18 +60,6 @@ CREATE MACRO from_base32(s) AS _from_base32(s);
 CREATE MACRO code_points_to_bytes(points) AS
     unhex(array_to_string(list_transform(points, p -> lpad(to_hex(p), 2, '0')), ''));
 
-CREATE MACRO _max_length(value, size) AS CASE
-    WHEN length(value) > size
-    THEN _raise('Value length ' || length(value) || ' exceeds the maximum length ' || size)
-    ELSE value
-END;
-
-CREATE MACRO _max_byte_length(value, size) AS CASE
-    WHEN octet_length(value) > size
-    THEN _raise('Value length ' || octet_length(value) || ' exceeds the maximum length ' || size)
-    ELSE value
-END;
-
 CREATE MACRO _search_tokens(s) AS list_filter(
     regexp_split_to_array(lower(s), '[\s\[\]<>(){}|!;,''"`*&?+/:=@.\-$%\\_]+'), t -> t <> ''
 );

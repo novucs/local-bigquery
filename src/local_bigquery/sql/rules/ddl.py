@@ -4,7 +4,7 @@ import sqlglot
 from sqlglot import exp
 
 from local_bigquery.errors import BigQueryError
-from local_bigquery.sql.dialect import AlterColumnOptions, BigQueryDialect, macro
+from local_bigquery.sql.dialect import AlterColumnOptions, BigQueryDialect
 
 SNAPSHOT = re.compile(
     r"^(CREATE|DROP)\s+SNAPSHOT\s+TABLE\s+(.*)$", re.IGNORECASE | re.DOTALL
@@ -12,10 +12,8 @@ SNAPSHOT = re.compile(
 ALTER_SCHEMA = re.compile(r"^ALTER\s+SCHEMA\s+(.*)$", re.IGNORECASE | re.DOTALL)
 KEYS = (exp.PrimaryKey, exp.PrimaryKeyColumnConstraint, exp.Reference)
 CONSTRAINTS = (*KEYS, exp.Constraint, exp.ForeignKey)
-LENGTHS = {
-    exp.DataType.Type.TEXT: "_max_length",
-    exp.DataType.Type.BINARY: "_max_byte_length",
-}
+LENGTHS = (exp.DataType.Type.TEXT, exp.DataType.Type.BINARY)
+DECIMALS = {exp.DataType.Type.DECIMAL: 29, exp.DataType.Type.BIGDECIMAL: 38}
 
 
 def _schema_path(tree: exp.Expression) -> exp.Expression:
@@ -104,18 +102,26 @@ def _alter(tree: exp.Alter, action: exp.Expression) -> exp.Alter:
     return single
 
 
-def max_length(node: exp.Expression, context) -> exp.Expression:
-    target = node.args.get("to") if isinstance(node, exp.Cast) else node
-    if not (
-        isinstance(target, exp.DataType)
-        and target.this in LENGTHS
-        and target.expressions
-        and not (target is node and isinstance(node.parent, exp.Cast))
-    ):
-        return node
-    size = target.expressions[0].this
-    target.set("expressions", None)
-    return node if target is node else macro(LENGTHS[target.this], node, size)
+def parameterized_types(tree: exp.Expression, context) -> exp.Expression:
+    for datatype in tree.find_all(exp.DataType):
+        if datatype.this not in DECIMALS or not datatype.expressions:
+            continue
+        parameters = [*datatype.expressions, exp.Literal.number(0)][:2]
+        precision, scale = (int(parameter.name) for parameter in parameters)
+        name = "NUMERIC" if datatype.this == exp.DataType.Type.DECIMAL else "BIGNUMERIC"
+        low, high = max(1, scale), scale + DECIMALS[datatype.this]
+        if not low <= precision <= high:
+            raise BigQueryError(
+                "invalidQuery",
+                f"In {name}(P, {scale}), P must be between {low} and {high}",
+            )
+    return tree
+
+
+def unsized(node: exp.Expression, context) -> exp.Expression:
+    if isinstance(node, exp.DataType) and node.this in LENGTHS and node.expressions:
+        node.set("expressions", None)
+    return node
 
 
 def table_constraints(tree: exp.Expression, context) -> exp.Expression:
@@ -132,5 +138,5 @@ def materialized_drop(tree: exp.Expression, context) -> exp.Expression:
     return tree
 
 
-STATEMENT_RULES = [materialized_drop, table_constraints]
-NODE_RULES = [max_length]
+STATEMENT_RULES = [parameterized_types, materialized_drop, table_constraints]
+NODE_RULES = [unsized]

@@ -4,6 +4,10 @@ from google.cloud import bigquery
 from tests.cases import q, run, unique
 
 CASES = [
+    q(
+        "SELECT INT64_ARRAY(JSON '[1]')",
+        error=r"Function not found: INT64_ARRAY at \[1:8\]",
+    ),
     q("""SELECT JSON '{"a": 1}'""", {"a": 1}, types="JSON"),
     q("""SELECT PARSE_JSON('[1, "x", null]')""", [1, "x", None], types="JSON"),
     q(
@@ -79,14 +83,6 @@ CASES = [
         """SELECT INT64(JSON '"1"')""",
         error="invalidQuery",
     ),
-    q(
-        """SELECT INT64_ARRAY(JSON '[1, 2]'), FLOAT64_ARRAY(JSON '[1.5, 2]'), """
-        """BOOL_ARRAY(JSON '[true]'), STRING_ARRAY(JSON '["a", "b"]')""",
-        rows=[([1, 2], [1.5, 2.0], [True], ["a", "b"])],
-        types=("ARRAY<INT64>", "ARRAY<FLOAT64>", "ARRAY<BOOL>", "ARRAY<STRING>"),
-    ),
-    q("""SELECT INT64_ARRAY(JSON '1')""", error="not an array"),
-    q("""SELECT STRING_ARRAY(JSON '[1]')""", error="not a string"),
     q("""SELECT JSON '{"a": {"b": 1}}'.a.b, JSON '{"a": 1}'.a""", rows=[(1, 1)]),
     q(
         """SELECT JSON_FLATTEN(JSON '[1, [2, 3], [[{"a": [4]}]]]')""",

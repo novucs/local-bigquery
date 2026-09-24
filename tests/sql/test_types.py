@@ -167,15 +167,14 @@ CASES = [
     ),
     q("SELECT CAST('123' AS INT64)", 123),
     q("SELECT CAST('abc' AS INT64)", error="invalidQuery"),
-    q("SELECT CAST('ab' AS STRING(2)), CAST(b'ab' AS BYTES(3))", rows=[("ab", b"ab")]),
-    q("SELECT CAST('abc' AS STRING(2))", error="invalidQuery"),
-    q("SELECT CAST(b'abc' AS BYTES(2))", error="invalidQuery"),
+    q(
+        "SELECT CAST('ab' AS STRING(2))",
+        error="Parameterized types are not allowed in CAST expressions",
+    ),
     q(
         "SELECT CAST(1.235 AS NUMERIC(3, 2))",
-        Decimal("1.24"),
-        types="NUMERIC",
+        error="Parameterized types are not allowed in CAST expressions",
     ),
-    q("SELECT CAST(12.3 AS NUMERIC(3, 2))", error="invalidQuery"),
     q(
         "DECLARE x NUMERIC(5, 2) DEFAULT 1.234; SELECT CAST(x AS STRING)",
         "1.23",
@@ -214,11 +213,6 @@ CASES = [
     q(
         "SELECT CAST('1.0000000005' AS NUMERIC)",
         Decimal("1.000000001"),
-    ),
-    q(
-        "SELECT CAST('1.005' AS NUMERIC(10, 2))",
-        Decimal("1.01"),
-        types="NUMERIC",
     ),
     q("SELECT CAST('1e30' AS NUMERIC)", error="invalidQuery"),
     q(

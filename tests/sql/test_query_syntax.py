@@ -18,6 +18,8 @@ def tables(bq, dataset):
 
 
 CASES = [
+    q("SELECT IFERROR(1, 2)", error=r"Function not found: IFERROR"),
+    q("SELECT NULLIFZERO(0)", error=r"Function not found: NULLIFZERO at \[1:8\]"),
     q("SELECT x, y FROM l JOIN r ON l.id = r.id", rows=[("a", "A")]),
     q(
         "SELECT x, y FROM l LEFT JOIN r ON l.id = r.id ORDER BY x",
@@ -144,27 +146,10 @@ CASES = [
         rows=[("y", "d", 3)],
     ),
     q("SELECT NULLIF(1, 1), NULLIF(1, 2)", rows=[(None, 1)]),
-    q("SELECT NULLIFZERO(0), NULLIFZERO(2), ZEROIFNULL(NULL)", rows=[(None, 2, 0)]),
-    q("SELECT ZEROIFNULL(1.5), ZEROIFNULL(CAST(NULL AS FLOAT64))", rows=[(1.5, 0.0)]),
     q(
-        "SELECT IFERROR(ERROR('a'), 'b'), IFERROR('a', 'b'), IFERROR(1 / 0, -1.0), "
-        "IFERROR(NULL, 0)",
-        rows=[("b", "a", -1.0, None)],
+        "SELECT SAFE.ARRAY_FIRST(ARRAY<INT64>[])",
+        error="SAFE with function array_first is not supported",
     ),
-    q(
-        "SELECT IFERROR(v / (v - 1), 0) FROM UNNEST([1, 2]) AS v ORDER BY v",
-        rows=[(0.0,), (2.0,)],
-    ),
-    q(
-        "SELECT ISERROR('a'), ISERROR(2 / 0), ISERROR(ERROR('x')), ISERROR(NULL)",
-        rows=[(False, True, True, False)],
-    ),
-    q(
-        "SELECT NULLIFERROR(ERROR('a')), NULLIFERROR('a'), NULLIFERROR([1][OFFSET(3)])",
-        rows=[(None, "a", None)],
-    ),
-    q("SELECT SAFE.ARRAY_FIRST(ARRAY<INT64>[])", None),
-    q("SELECT IFERROR(ERROR('a'), ERROR('b'))", error="b"),
     q("""SELECT ERROR("it's 'quoted'!")""", error="it's 'quoted'!$"),
     q("SELECT 2 BETWEEN 1 AND 3, NULL BETWEEN 1 AND 3", rows=[(True, None)]),
     q(

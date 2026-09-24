@@ -1,10 +1,19 @@
 from sqlglot import exp
 
+from local_bigquery.errors import BigQueryError
+
+UNSUPPORTED = {"array_first", "array_last"}
+
 
 def safe_function(node: exp.Expression, context) -> exp.Expression:
     if not isinstance(node, exp.SafeFunc):
         return node
     function = node.this
+    name = function.name if isinstance(function, exp.Anonymous) else function.sql_name()
+    if (name := name.lower().rsplit(".", 1)[-1]) in UNSUPPORTED:
+        raise BigQueryError(
+            "invalidQuery", f"SAFE with function {name} is not supported."
+        )
     arguments = [
         argument
         for argument in function.iter_expressions()
