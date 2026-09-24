@@ -101,7 +101,8 @@ def page(
     projection = ", ".join(quote(name) for name, _ in columns) or "NULL"
     rows = cur.sql(
         f"SELECT {types.row(columns, int64_timestamps)} "
-        f"FROM (SELECT {projection} FROM {source} LIMIT {limit} OFFSET {start})"
+        f"FROM (SELECT {projection} FROM {source} ORDER BY rowid "
+        f"LIMIT {limit} OFFSET {start})"
     ).fetchall()
     end = start + len(rows)
     return Page([row for (row,) in rows], total, str(end) if end < total else None)

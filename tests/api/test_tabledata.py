@@ -246,3 +246,12 @@ def test_floats_round_trip_exactly(bq, dataset):
     path = f"{table.project}.{table.dataset_id}.{table.table_id}"
     [row] = run(bq, f"SELECT f, {value!r} FROM `{path}`")
     assert tuple(row.values()) == (value, value)
+
+
+def test_list_rows_keep_insertion_order_across_writes(bq, dataset):
+    table = create(bq, dataset)
+    path = f"{table.project}.{table.dataset_id}.{table.table_id}"
+    for x in range(6):
+        run(bq, f"INSERT `{path}` (x) VALUES ({x})")
+    rows = bq.list_rows(path, start_index=2, max_results=3)
+    assert [row["x"] for row in rows] == [2, 3, 4]
