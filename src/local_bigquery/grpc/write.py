@@ -118,7 +118,7 @@ def _value(schema: TableFieldSchema, value):
     if value is None:
         return None
     if schema.mode == "REPEATED":
-        element = schema.model_copy(update={"mode": "NULLABLE"})
+        element = schema.replace(mode="NULLABLE")
         return [_value(element, item) for item in value]
     if schema.type == "RECORD":
         return _row(schema.fields or [], value)

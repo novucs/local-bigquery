@@ -1,30 +1,30 @@
 import json
 
 from local_bigquery.engine.database import execute, fetch
+from local_bigquery.models import Job
 
 
-def save(job: dict) -> dict:
-    reference = job["jobReference"]
+def save(job: Job) -> Job:
     execute(
         "INSERT OR REPLACE INTO emulator.jobs VALUES (?, ?, ?, ?, ?, ?)",
         [
-            reference["projectId"],
-            reference["jobId"],
-            job["statistics"].get("parentJobId"),
-            job["status"]["state"],
-            int(job["statistics"]["creationTime"]),
-            json.dumps(job),
+            job.jobReference.projectId,
+            job.jobReference.jobId,
+            job.statistics.parentJobId,
+            job.status.state,
+            int(job.statistics.creationTime),
+            json.dumps(job.dump()),
         ],
     )
     return job
 
 
-def load(project_id: str, job_id: str) -> dict | None:
+def load(project_id: str, job_id: str) -> Job | None:
     rows = fetch(
         "SELECT resource FROM emulator.jobs WHERE project_id = ? AND job_id = ?",
         [project_id, job_id],
     )
-    return json.loads(rows[0][0]) if rows else None
+    return Job.model_validate_json(rows[0][0]) if rows else None
 
 
 def list_(
@@ -33,7 +33,7 @@ def list_(
     parent_job_id: str | None = None,
     min_creation_time: int | None = None,
     max_creation_time: int | None = None,
-) -> list[dict]:
+) -> list[Job]:
     rows = fetch(
         "SELECT resource FROM emulator.jobs WHERE project_id = ? "
         "AND parent_job_id IS NOT DISTINCT FROM ? "
@@ -50,7 +50,7 @@ def list_(
             max_creation_time,
         ],
     )
-    return [json.loads(resource) for (resource,) in rows]
+    return [Job.model_validate_json(resource) for (resource,) in rows]
 
 
 def delete(project_id: str, job_id: str):

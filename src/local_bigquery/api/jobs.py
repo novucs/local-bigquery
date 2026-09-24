@@ -8,47 +8,45 @@ from local_bigquery.jobs import runner, store
 from local_bigquery.models import (
     Job,
     JobCancelResponse,
+    JobConfiguration,
     JobList,
     JobListJobsItem,
     QueryRequest,
+    TableSchema,
 )
 
 router = Router(tags=["jobs"])
 LIST_FIELDS = set(JobListJobsItem.model_fields)
 QUERY_CONFIGURATION = ("dryRun", "labels", "jobTimeoutMs", "jobCreationMode")
+QUERY_ONLY = ("kind", "formatOptions", "timeoutMs")
 
 
 def results(
-    job: dict, max_results: int | None, start: int, int64_timestamps: bool
+    job: Job, max_results: int | None, start: int, int64_timestamps: bool
 ) -> tuple[dict, list[str]]:
-    payload = {"jobReference": job["jobReference"], "jobComplete": False}
-    if job["status"]["state"] != "DONE":
+    payload = {"jobReference": job.jobReference, "jobComplete": False}
+    if job.status.state != "DONE":
         return payload, []
     if error := runner.error(job):
         raise error
-    statistics = job["statistics"]["query"]
+    statistics = job.statistics.query
     payload |= {
         "jobComplete": True,
         "cacheHit": False,
         "totalBytesProcessed": "0",
-        "statementType": statistics.get("statementType"),
-        "numDmlAffectedRows": statistics.get("numDmlAffectedRows"),
-        "dmlStats": statistics.get("dmlStats"),
+        "statementType": statistics.statementType,
+        "numDmlAffectedRows": statistics.numDmlAffectedRows,
+        "dmlStats": statistics.dmlStats,
         "totalRows": "0",
     }
-    destination = job["configuration"]["query"].get("destinationTable")
+    destination = job.configuration.query.destinationTable
     if not destination:
-        return payload | {"schema": statistics.get("schema")}, []
-    reference = (
-        destination["projectId"],
-        destination["datasetId"],
-        destination["tableId"],
-    )
+        return payload | {"schema": statistics.schema_}, []
     page, schema = tabledata.list_rows(
-        *reference, max_results, start, None, int64_timestamps
+        *tables.reference(destination), max_results, start, None, int64_timestamps
     )
     payload |= {
-        "schema": {"fields": [field.model_dump(exclude_none=True) for field in schema]},
+        "schema": TableSchema(fields=schema),
         "totalRows": str(page.total),
         "pageToken": page.next_token,
     }
@@ -67,11 +65,10 @@ def list_jobs(
 ) -> JobList:
     states = [state.upper() for state in stateFilter] if stateFilter else None
     jobs = [
-        {key: value for key, value in job.items() if key in LIST_FIELDS}
-        | {
-            "state": job["status"]["state"],
-            "errorResult": job["status"].get("errorResult"),
-        }
+        JobListJobsItem.model_validate(
+            job.model_dump(include=LIST_FIELDS, exclude_none=True)
+            | {"state": job.status.state, "errorResult": job.status.errorResult}
+        )
         for job in store.list_(
             project_id, states, parentJobId, minCreationTime, maxCreationTime
         )
@@ -83,9 +80,8 @@ def list_jobs(
 @router.post("/projects/{project_id}/jobs")
 def insert_job(project_id: str, body: Job) -> Job:
     job_id = (body.jobReference and body.jobReference.jobId) or str(uuid.uuid4())
-    configuration = body.configuration.given() if body.configuration else {}
-    job = runner.submit(project_id, job_id, configuration)
-    if job["jobReference"].get("jobId") is None:
+    job = runner.submit(project_id, job_id, body.configuration or JobConfiguration())
+    if job.jobReference.jobId is None:
         return job
     return runner.submitted(project_id, job_id)
 
@@ -104,8 +100,9 @@ def cancel_job(project_id: str, job_id: str) -> JobCancelResponse:
 @router.delete("/projects/{project_id}/jobs/{job_id}/delete")
 def delete_job(project_id: str, job_id: str) -> dict:
     job = runner.get(project_id, job_id)
-    destination = job["configuration"].get("query", {}).get("destinationTable")
-    if destination and destination["datasetId"] == tables.RESULTS:
+    config = job.configuration.query
+    destination = config and config.destinationTable
+    if destination and destination.datasetId == tables.RESULTS:
         tables.delete(project_id, tables.RESULTS, job_id)
     store.delete(project_id, job_id)
     return {}
@@ -114,27 +111,28 @@ def delete_job(project_id: str, job_id: str) -> dict:
 @router.post("/projects/{project_id}/queries")
 def run_query(project_id: str, body: QueryRequest):
     request = body.given()
-    configuration = {
-        key: request[key] for key in QUERY_CONFIGURATION if key in request
-    } | {
-        "query": {
-            key: value
-            for key, value in request.items()
-            if key not in (*QUERY_CONFIGURATION, "kind", "formatOptions", "timeoutMs")
+    configuration = JobConfiguration.model_validate(
+        {key: request[key] for key in QUERY_CONFIGURATION if key in request}
+        | {
+            "query": {
+                key: value
+                for key, value in request.items()
+                if key not in (*QUERY_CONFIGURATION, *QUERY_ONLY)
+            }
         }
-    }
+    )
     job_id = body.requestId or str(uuid.uuid4())
     job = runner.submit(project_id, job_id, configuration)
-    if job["jobReference"].get("jobId") is None:
-        statistics = job["statistics"]["query"]
+    if job.jobReference.jobId is None:
+        statistics = job.statistics.query
         return with_rows(
             {
                 "kind": "bigquery#queryResponse",
-                "jobReference": job["jobReference"],
+                "jobReference": job.jobReference,
                 "jobComplete": True,
-                "schema": statistics.get("schema"),
+                "schema": statistics.schema_,
                 "totalBytesProcessed": "0",
-                "statementType": statistics.get("statementType"),
+                "statementType": statistics.statementType,
             },
             [],
         )
@@ -143,18 +141,18 @@ def run_query(project_id: str, body: QueryRequest):
         raise runner.synchronous(error)
     int64_timestamps = bool(body.formatOptions and body.formatOptions.useInt64Timestamp)
     payload, rows = results(job, body.maxResults, 0, int64_timestamps)
-    statistics = job["statistics"]
+    statistics = job.statistics
     return with_rows(
         {"kind": "bigquery#queryResponse"}
         | payload
         | {
             "queryId": job_id,
             "location": "US",
-            "creationTime": statistics["creationTime"],
-            "startTime": statistics.get("startTime"),
-            "endTime": statistics.get("endTime"),
-            "jobCreationReason": job["jobCreationReason"],
-            "sessionInfo": statistics.get("sessionInfo"),
+            "creationTime": statistics.creationTime,
+            "startTime": statistics.startTime,
+            "endTime": statistics.endTime,
+            "jobCreationReason": job.jobCreationReason,
+            "sessionInfo": statistics.sessionInfo,
             "totalBytesBilled": "0",
             "totalSlotMs": "0",
         },

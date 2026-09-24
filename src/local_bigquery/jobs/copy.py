@@ -3,6 +3,11 @@ from sqlglot import exp
 
 from local_bigquery.catalog import datasets, tables
 from local_bigquery.jobs import query
+from local_bigquery.models import (
+    JobConfigurationQuery,
+    JobConfigurationTableCopy,
+    JobStatistics5,
+)
 from local_bigquery.sql.rules.tables import decorated
 
 CLONES = {"SNAPSHOT": "CREATE SNAPSHOT TABLE", "CLONE": "CREATE TABLE"}
@@ -20,18 +25,22 @@ def _source(reference: tuple[str, str, str]) -> str:
     return tables.name(*reference)
 
 
-def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
-    sources = config.get("sourceTables") or [config["sourceTable"]]
+def run(
+    cur: duckdb.DuckDBPyConnection,
+    config: JobConfigurationTableCopy,
+    upload: str | None,
+) -> JobStatistics5:
+    sources = config.sourceTables or [config.sourceTable]
     references = [tables.reference(source) for source in sources]
-    destination = tables.reference(config["destinationTable"])
+    destination = tables.reference(config.destinationTable)
     datasets.get(*destination[:2])
     select = " UNION ALL BY NAME ".join(
         f"SELECT * FROM {_source(reference)}" for reference in references
     )
     (copied,) = cur.sql(f"SELECT count(*) FROM ({select})").fetchone()
-    if create := CLONES.get(config.get("operationType")):
+    if create := CLONES.get(config.operationType):
         statement = f"{create} {_name(destination)} CLONE {_name(references[0])}"
-        query.execute(cur, destination[0], None, {"query": statement})
+        query.execute(cur, destination[0], None, JobConfigurationQuery(query=statement))
     else:
         tables.write(cur, select, None, destination, config)
-    return {"copiedRows": str(copied), "copiedLogicalBytes": "0"}
+    return JobStatistics5(copiedRows=str(copied), copiedLogicalBytes="0")

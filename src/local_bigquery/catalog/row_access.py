@@ -4,7 +4,7 @@ import re
 from local_bigquery.catalog import metadata, names, tables
 from local_bigquery.engine.database import fetch
 from local_bigquery.errors import BigQueryError, already_exists, not_found
-from local_bigquery.models import RowAccessPolicy
+from local_bigquery.models import JobStatistics2, RowAccessPolicy
 from local_bigquery.settings import settings
 
 caller: contextvars.ContextVar[tuple[str, ...] | None] = contextvars.ContextVar(
@@ -118,7 +118,7 @@ def table(name: str, project_id: str, dataset_id: str | None) -> tuple[str, str,
 
 def ddl(
     command: str, keyword: str, project_id: str, dataset_id: str | None, dry_run: bool
-):
+) -> JobStatistics2 | None:
     if keyword == "CREATE" and (match := CREATE.match(command)):
         replace, if_not_exists, name, table_name, grantees, filter_predicate = (
             match.groups()
@@ -132,7 +132,7 @@ def ddl(
         exists = metadata.load(RowAccessPolicy, *keys, name)
         if not dry_run and not (exists and if_not_exists):
             save(*keys, body, replace=bool(replace))
-        return {"statementType": "CREATE_ROW_ACCESS_POLICY"}
+        return JobStatistics2(statementType="CREATE_ROW_ACCESS_POLICY")
     if keyword == "DROP" and (match := DROP.match(command)):
         drop_all, if_exists, name, table_name = match.groups()
         keys = table(table_name, project_id, dataset_id)
@@ -140,7 +140,7 @@ def ddl(
         if drop_all:
             if not dry_run:
                 delete(*keys)
-            return {"statementType": "DROP_ROW_ACCESS_POLICY"}
+            return JobStatistics2(statementType="DROP_ROW_ACCESS_POLICY")
         exists = metadata.load(RowAccessPolicy, *keys, name)
         if exists and len(list_(*keys)) == 1:
             raise BigQueryError(
@@ -151,5 +151,5 @@ def ddl(
             )
         if not dry_run and (exists or not if_exists):
             delete(*keys, name)
-        return {"statementType": "DROP_ROW_ACCESS_POLICY"}
+        return JobStatistics2(statementType="DROP_ROW_ACCESS_POLICY")
     return None

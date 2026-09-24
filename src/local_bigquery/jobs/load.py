@@ -12,7 +12,12 @@ from local_bigquery.engine import types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import DUCKDB_PREFIX, BigQueryError
 from local_bigquery.jobs.storage import literal, paths
-from local_bigquery.models import Table, TableFieldSchema
+from local_bigquery.models import (
+    JobConfigurationLoad,
+    JobStatistics3,
+    Table,
+    TableFieldSchema,
+)
 
 ENCODINGS = {"UTF-8": "utf-8", "ISO-8859-1": "latin-1", "UTF-16LE": "utf-16"}
 HIVE_KEY = re.compile(r"\{(\w+):(\w+)\}")
@@ -61,15 +66,15 @@ def _arrow_type(avro, logical: bool) -> pa.DataType:
     return _arrow_type(avro["type"], logical)
 
 
-def _avro(data: bytes, config: dict) -> pa.Table:
+def _avro(data: bytes, config: JobConfigurationLoad) -> pa.Table:
     reader = fastavro.reader(io.BytesIO(data))
     schema = reader.writer_schema
     table = pa.Table.from_pylist(list(reader), pa.schema(_arrow_type(schema, True)))
-    logical = bool(config.get("useAvroLogicalTypes"))
+    logical = bool(config.useAvroLogicalTypes)
     return table.cast(pa.schema(_arrow_type(schema, logical)))
 
 
-def _orc(data: bytes, config: dict) -> pa.Table:
+def _orc(data: bytes, config: JobConfigurationLoad) -> pa.Table:
     return pyarrow.orc.read_table(pa.BufferReader(data))
 
 
@@ -77,8 +82,8 @@ ARROW_READERS = {"AVRO": _avro, "ORC": _orc}
 FORMATS = {"CSV", "NEWLINE_DELIMITED_JSON", "PARQUET", *ARROW_READERS}
 
 
-def validate(config: dict):
-    kind = config.get("sourceFormat") or "CSV"
+def validate(config: JobConfigurationLoad):
+    kind = config.sourceFormat or "CSV"
     if kind not in FORMATS:
         raise BigQueryError("invalid", f"Invalid source format {kind}")
 
@@ -92,15 +97,15 @@ def _struct(fields: list[TableFieldSchema], type_of) -> str:
     return "{" + ", ".join(pairs) + "}"
 
 
-def _hive(config: dict) -> dict:
-    options = config.get("hivePartitioningOptions")
+def _hive(config: JobConfigurationLoad) -> dict:
+    options = config.hivePartitioningOptions
     if not options:
         return {}
-    mode = options.get("mode") or "AUTO"
+    mode = options.mode or "AUTO"
     if mode == "STRINGS":
         return {"hive_partitioning": "true", "hive_types_autocast": "false"}
     if mode == "CUSTOM":
-        keys = HIVE_KEY.findall(options.get("sourceUriPrefix") or "")
+        keys = HIVE_KEY.findall(options.sourceUriPrefix or "")
         fields = [TableFieldSchema(name=key, type=kind) for key, kind in keys]
         return {
             "hive_partitioning": "true",
@@ -109,16 +114,16 @@ def _hive(config: dict) -> dict:
     return {"hive_partitioning": "true"}
 
 
-def _csv(config: dict, fields: list[TableFieldSchema]) -> dict:
-    encoding = config.get("encoding") or "UTF-8"
+def _csv(config: JobConfigurationLoad, fields: list[TableFieldSchema]) -> dict:
+    encoding = config.encoding or "UTF-8"
     if encoding not in ENCODINGS:
         raise BigQueryError("invalid", f"Unsupported encoding: {encoding}")
-    skip = int(config.get("skipLeadingRows") or 0)
+    skip = config.skipLeadingRows or 0
     options = {
-        "delim": literal(config.get("fieldDelimiter") or ","),
-        "quote": literal(config.get("quote", '"')),
-        "nullstr": literal(config.get("nullMarker") or ""),
-        "null_padding": str(bool(config.get("allowJaggedRows"))).lower(),
+        "delim": literal(config.fieldDelimiter or ","),
+        "quote": literal('"' if config.quote is None else config.quote),
+        "nullstr": literal(config.nullMarker or ""),
+        "null_padding": str(bool(config.allowJaggedRows)).lower(),
         "encoding": literal(ENCODINGS[encoding]),
     }
     if fields:
@@ -133,8 +138,10 @@ def _csv(config: dict, fields: list[TableFieldSchema]) -> dict:
     return options
 
 
-def _reader(cur, files: str, config: dict, fields: list[TableFieldSchema]) -> str:
-    kind = config.get("sourceFormat") or "CSV"
+def _reader(
+    cur, files: str, config: JobConfigurationLoad, fields: list[TableFieldSchema]
+) -> str:
+    kind = config.sourceFormat or "CSV"
     if reader := ARROW_READERS.get(kind):
         blobs = cur.sql(f"SELECT content FROM read_blob({files})").fetchall()
         loaded = [reader(content, config) for (content,) in blobs]
@@ -155,15 +162,15 @@ def _reader(cur, files: str, config: dict, fields: list[TableFieldSchema]) -> st
 
 def _textual(field: TableFieldSchema) -> TableFieldSchema:
     if field.type == "BYTES":
-        return field.model_copy(update={"type": "STRING"})
+        return field.replace(type="STRING")
     if field.fields:
-        return field.model_copy(update={"fields": list(map(_textual, field.fields))})
+        return field.replace(fields=list(map(_textual, field.fields)))
     return field
 
 
 def _decoded(expression: str, field: TableFieldSchema, depth: int = 0) -> str:
     if field.mode == "REPEATED":
-        element = field.model_copy(update={"mode": "NULLABLE"})
+        element = field.replace(mode="NULLABLE")
         inner = _decoded(f"e{depth}", element, depth + 1)
         if inner == f"e{depth}":
             return expression
@@ -181,11 +188,11 @@ def _decoded(expression: str, field: TableFieldSchema, depth: int = 0) -> str:
 
 
 def _projection(
-    config: dict, fields: list[TableFieldSchema], columns: list[str]
+    config: JobConfigurationLoad, fields: list[TableFieldSchema], columns: list[str]
 ) -> tuple[str, str]:
     if not fields:
         return "*", "false"
-    typed = (config.get("sourceFormat") or "CSV") != "CSV"
+    typed = (config.sourceFormat or "CSV") != "CSV"
     casts, bad = [], []
     for field in fields:
         column, target = quote(field.name), types.duckdb_type(field)
@@ -196,7 +203,7 @@ def _projection(
         casts.append(f"{cast} AS {column}")
         if not typed:
             bad.append(f"({column} IS NOT NULL AND {cast} IS NULL)")
-    if config.get("hivePartitioningOptions"):
+    if config.hivePartitioningOptions:
         declared = {field.name.casefold() for field in fields}
         casts += [quote(c) for c in columns if c.casefold() not in declared]
     return ", ".join(casts), " OR ".join(bad) or "false"
@@ -217,19 +224,18 @@ def _reading(locations: dict[str, str | None]):
         ) from None
 
 
-def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
-    reference = tables.reference(config["destinationTable"])
+def run(
+    cur: duckdb.DuckDBPyConnection, config: JobConfigurationLoad, upload: str | None
+) -> JobStatistics3:
+    reference = tables.reference(config.destinationTable)
     datasets.get(*reference[:2])
-    uris = config.get("sourceUris") or []
+    uris = config.sourceUris or []
     locations = (
         {upload: None} if upload else {p: uri for uri in uris for p in paths(cur, uri)}
     )
     sources = list(locations)
     files = f"[{', '.join(map(literal, sources))}]"
-    fields = [
-        TableFieldSchema.model_validate(field)
-        for field in (config.get("schema") or {}).get("fields", [])
-    ]
+    fields = (config.schema_ and config.schema_.fields) or []
     with _reading(locations):
         reader = _reader(cur, files, config, fields)
         columns = cur.sql(f"SELECT * FROM {reader} LIMIT 0").columns
@@ -237,7 +243,7 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
         total, rejected = cur.sql(
             f"SELECT count(*), count(*) FILTER ({bad}) FROM {reader}"
         ).fetchone()
-    if rejected > int(config.get("maxBadRecords") or 0):
+    if rejected > (config.maxBadRecords or 0):
         raise BigQueryError(
             "invalid",
             "Error while reading data, error message: too many errors, giving up. "
@@ -250,16 +256,15 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
             cur, query, None, reference, config, "WRITE_APPEND", prefix
         )
     if created and fields:
-        tables.annotate(reference, Table(schema=config["schema"]))
+        tables.annotate(reference, Table(schema=config.schema_))
     count, size = cur.sql(
         f"SELECT count(*), coalesce(sum(size), 0) FROM read_blob({files})"
     ).fetchone()
-    return {
-        "inputFiles": str(count),
-        "inputFileBytes": str(size),
-        "outputRows": str(total - rejected),
-        "outputBytes": str(
-            tables.logical_bytes(total - rejected, len(tables.columns(*reference)))
-        ),
-        "badRecords": str(rejected),
-    }
+    output = tables.logical_bytes(total - rejected, len(tables.columns(*reference)))
+    return JobStatistics3(
+        inputFiles=str(count),
+        inputFileBytes=str(size),
+        outputRows=str(total - rejected),
+        outputBytes=str(output),
+        badRecords=str(rejected),
+    )

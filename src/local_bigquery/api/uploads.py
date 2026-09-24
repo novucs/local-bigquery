@@ -11,7 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from local_bigquery.api import Router
 from local_bigquery.errors import BigQueryError, invalid_payload
 from local_bigquery.jobs import runner
-from local_bigquery.models import Job
+from local_bigquery.models import Job, JobConfiguration
 from local_bigquery.settings import settings
 
 router = Router(tags=["jobs"])
@@ -34,9 +34,8 @@ def _job(payload: bytes) -> Job:
 
 def _start(project_id: str, body: Job, upload: str) -> JSONResponse:
     job_id = (body.jobReference and body.jobReference.jobId) or str(uuid.uuid4())
-    configuration = body.configuration.given() if body.configuration else {}
-    runner.submit(project_id, job_id, configuration, upload)
-    return JSONResponse(runner.submitted(project_id, job_id))
+    runner.submit(project_id, job_id, body.configuration or JobConfiguration(), upload)
+    return JSONResponse(runner.submitted(project_id, job_id).dump())
 
 
 def _parts(content_type: str, payload: bytes) -> tuple[Job, bytes]:

@@ -18,7 +18,13 @@ from local_bigquery.engine import database, sessions, types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import from_duckdb
 from local_bigquery.jobs import extract, merge
-from local_bigquery.models import TableFieldSchema
+from local_bigquery.models import (
+    DatasetReference,
+    JobConfigurationQuery,
+    JobStatistics2,
+    TableFieldSchema,
+    TableReference,
+)
 from local_bigquery.sql import js, params, script
 from local_bigquery.sql.dialect import DuckDBDialect
 from local_bigquery.sql.rules import ddl
@@ -72,7 +78,7 @@ def _temporary_function(tree: exp.Expression) -> bool:
     )
 
 
-def _ddl(tree: exp.Expression, context: Context) -> dict:
+def _ddl(tree: exp.Expression, context: Context) -> JobStatistics2:
     catalog_ddl.check_references(tree, context.project_id, context.dataset_id)
     kind = (tree.args.get("kind") or "").upper()
     target = tree.find(exp.Table)
@@ -87,7 +93,7 @@ def _ddl(tree: exp.Expression, context: Context) -> dict:
     elif kind in ("TABLE", "VIEW") and target is not None:
         ids = names.reference(target, context.project_id, context.dataset_id)
         reference = dict(zip(("projectId", "datasetId", "tableId"), ids))
-        found = tables.exists(*tables.reference(reference))
+        found = tables.exists(*ids)
         key = "ddlTargetTable"
     elif kind == "FUNCTION" and target is not None:
         ids = names.reference(target, context.project_id, context.dataset_id)
@@ -101,7 +107,7 @@ def _ddl(tree: exp.Expression, context: Context) -> dict:
         )
         key = "ddlTargetRoutine"
     else:
-        return {}
+        return JobStatistics2()
     if isinstance(tree, exp.Drop) and not found and tree.args.get("exists"):
         operation = "SKIP"
     elif isinstance(tree, exp.Drop):
@@ -116,7 +122,9 @@ def _ddl(tree: exp.Expression, context: Context) -> dict:
         operation = "REPLACE"
     else:
         operation = "CREATE"
-    return {"ddlOperationPerformed": operation, key: reference}
+    return JobStatistics2.model_validate(
+        {"ddlOperationPerformed": operation, key: reference}
+    )
 
 
 def _target(tree: exp.Expression, context: Context) -> tuple[str, ...]:
@@ -126,10 +134,16 @@ def _target(tree: exp.Expression, context: Context) -> tuple[str, ...]:
     return names.reference(table, context.project_id, context.dataset_id or "")
 
 
-def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated: bool):
-    tables.write(
-        cur, sql, bound, tables.reference(destination), config, isolated=isolated
-    )
+def _write(
+    cur,
+    sql: str,
+    bound: dict,
+    destination: TableReference,
+    config: JobConfigurationQuery,
+    isolated: bool,
+):
+    reference = tables.reference(destination)
+    tables.write(cur, sql, bound, reference, config, isolated=isolated)
 
 
 def _fields(
@@ -163,13 +177,13 @@ def _declared_schema(
 
 
 def _result_schema(
-    cur, tree, context, statistics: dict, dry_run: bool
+    cur, tree, context, statistics: JobStatistics2, dry_run: bool
 ) -> list[TableFieldSchema] | None:
-    target = statistics.get("ddlTargetTable")
+    target = statistics.ddlTargetTable
     if tree.find(exp.TemporaryProperty):
         return None
     if isinstance(tree, exp.Create) and target:
-        if dry_run or statistics.get("ddlOperationPerformed") == "SKIP":
+        if dry_run or statistics.ddlOperationPerformed == "SKIP":
             return _declared_schema(cur, tree, context)
         return tables.fields(tables.load(*tables.reference(target)))
     if dry_run and type(tree) in DML_COUNTS:
@@ -191,11 +205,11 @@ def _statement(
     cur: duckdb.DuckDBPyConnection,
     tree: exp.Expression,
     context: Context,
-    destination: dict | None,
-    config: dict,
+    destination: TableReference | None,
+    config: JobConfigurationQuery,
     dry_run: bool,
     isolated: bool,
-) -> dict:
+) -> JobStatistics2:
     tree = ddl.normalise(tree)
     context.referenced.clear()
     try:
@@ -206,10 +220,10 @@ def _statement(
         dict(zip(("projectId", "datasetId", "tableId"), reference))
         for reference in sorted(context.referenced)
     ]
-    return statistics | ({"referencedTables": referenced} if referenced else {})
+    return statistics.replace(referencedTables=referenced) if referenced else statistics
 
 
-def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
+def _run(cur, tree, context, destination, config, dry_run, isolated) -> JobStatistics2:
     if isinstance(tree, exp.Command):
         command = (
             tree.text("expression").strip(),
@@ -220,9 +234,8 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
         )
         if statistics := row_access.ddl(*command) or indexes.ddl(*command):
             return statistics
-    statistics = {"statementType": statement_type(tree)}
-    if isinstance(tree, DDL):
-        statistics |= _ddl(tree, context)
+    statistics = _ddl(tree, context) if isinstance(tree, DDL) else JobStatistics2()
+    statistics = statistics.replace(statementType=statement_type(tree))
     if tree.args.get("kind") == "MODEL":
         fields = isinstance(tree, exp.Create) and _declared_schema(cur, tree, context)
         models.apply(
@@ -236,16 +249,17 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
         return statistics
     if isinstance(tree, exp.Merge) and not dry_run:
         with database.writing(*_target(tree, context)):
-            return statistics | merge.run(cur, tree, context)
+            merged = merge.run(cur, tree, context)
+            return merged.replace(statementType=statistics.statementType)
     if isinstance(tree, exp.Export):
         sql, bound = translate(tree.this, context)
         if not dry_run:
             rows = extract.write(cur, sql, bound, extract.export_config(tree))
-            statistics["exportDataStatistics"] = {
-                "fileCount": "1",
-                "rowCount": str(rows),
-            }
-            statistics |= {"transferredBytes": "0", "totalPartitionsProcessed": "0"}
+            statistics = statistics.replace(
+                exportDataStatistics={"fileCount": "1", "rowCount": str(rows)},
+                transferredBytes="0",
+                totalPartitionsProcessed="0",
+            )
         return statistics
     parts = ddl.split(tree)
     if dry_run:
@@ -260,7 +274,7 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
         return _with_schema(
             statistics, _result_schema(cur, tree, context, statistics, True)
         )
-    if statistics.get("ddlOperationPerformed") == "SKIP":
+    if statistics.ddlOperationPerformed == "SKIP":
         schema = _result_schema(cur, tree, context, statistics, False)
         return _with_schema(statistics, schema)
     for part in parts:
@@ -270,9 +284,9 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
         elif type(part) in STATEMENT_TYPES:
             with database.writing(*_target(part, context)):
                 (count,) = cur.execute(sql, bound).fetchone()
-            statistics["numDmlAffectedRows"] = str(count)
+            statistics = statistics.replace(numDmlAffectedRows=str(count))
             if key := DML_COUNTS.get(type(part)):
-                statistics["dmlStats"] = {key: str(count)}
+                statistics = statistics.replace(dmlStats={key: str(count)})
         else:
             cur.execute(sql, bound)
     if isinstance(tree, DDL):
@@ -283,21 +297,23 @@ def _run(cur, tree, context, destination, config, dry_run, isolated) -> dict:
     )
 
 
-def _with_schema(statistics: dict, fields: list[TableFieldSchema] | None) -> dict:
+def _with_schema(
+    statistics: JobStatistics2, fields: list[TableFieldSchema] | None
+) -> JobStatistics2:
     if fields is None:
         return statistics
-    return statistics | {"schema": {"fields": [field.dump() for field in fields]}}
+    return statistics.replace(schema={"fields": fields})
 
 
 def execute(
     cur: duckdb.DuckDBPyConnection,
     project_id: str,
     job_id: str | None,
-    config: dict,
+    config: JobConfigurationQuery,
     dry_run: bool = False,
     session: sessions.Session | None = None,
-) -> tuple[dict, list[dict], dict | None]:
-    default = config.get("defaultDataset") or {}
+) -> tuple[JobStatistics2, list[JobStatistics2], TableReference | None]:
+    default = config.defaultDataset or DatasetReference()
     settings = session.settings if session else {}
     attachments = []
 
@@ -311,9 +327,9 @@ def execute(
 
     temporary = cur.sql("SELECT table_name FROM duckdb_tables() WHERE temporary")
     context = Context(
-        settings.get("project_id") or default.get("projectId") or project_id,
-        settings.get("dataset_id") or default.get("datasetId"),
-        *params.bind(config.get("queryParameters") or []),
+        settings.get("project_id") or default.projectId or project_id,
+        settings.get("dataset_id") or default.datasetId,
+        *params.bind(config.queryParameters or []),
         temporary={name.casefold() for (name,) in temporary.fetchall()},
         attach_postgres=attach_postgres,
         variables=session.variables if session else {},
@@ -334,7 +350,7 @@ def execute(
         f"USE {quote(context.project_id, context.dataset_id if found else 'main')}"
     )
     try:
-        statements = script.parse_script(config.get("query") or "")
+        statements = script.parse_script(config.query or "")
         return _execute(
             cur, project_id, job_id, config, dry_run, bool(session), context, statements
         )
@@ -347,41 +363,39 @@ def _execute(
     cur: duckdb.DuckDBPyConnection,
     project_id: str,
     job_id: str | None,
-    config: dict,
+    config: JobConfigurationQuery,
     dry_run: bool,
     isolated: bool,
     context: Context,
     statements: list[script.Statement],
-) -> tuple[dict, list[dict], dict | None]:
+) -> tuple[JobStatistics2, list[JobStatistics2], TableReference | None]:
     scripted = script.is_script([s for s in statements if s.kind != "TEMP_FUNCTION"])
     if not scripted:
         context.system["script.job_id"] = None
     kinds = {statement.kind for statement in statements}
     if dry_run and (scripted or kinds - {"SQL"}):
         kind = "SCRIPT" if scripted else DRY_STATEMENT_TYPES[kinds.pop()]
-        return {"statementType": kind}, [], None
+        return JobStatistics2(statementType=kind), [], None
     destination = None
     if job_id:
-        destination = {
-            "projectId": project_id,
-            "datasetId": tables.RESULTS,
-            "tableId": job_id,
-        }
+        destination = TableReference(
+            projectId=project_id, datasetId=tables.RESULTS, tableId=job_id
+        )
         if not scripted:
-            destination = config.get("destinationTable") or destination
+            destination = config.destinationTable or destination
     if scripted:
-        config = config | {"writeDisposition": "WRITE_TRUNCATE"}
+        config = config.replace(writeDisposition="WRITE_TRUNCATE")
     children, produced = [], []
 
-    def report(statistics: dict):
+    def report(statistics: JobStatistics2):
         children.append(statistics)
         produced.append(None)
 
-    def run_sql(tree: exp.Expression) -> dict | None:
+    def run_sql(tree: exp.Expression) -> JobStatistics2 | None:
         if js.is_udf(tree) and _temporary_function(tree):
             return js.bind(cur, tree, context)
         if js.is_udf(tree):
-            statistics = {"statementType": statement_type(tree)} | _ddl(tree, context)
+            statistics = _ddl(tree, context).replace(statementType=statement_type(tree))
             if not dry_run:
                 js.bind(cur, tree, context)
                 routines.record(tree, context.project_id, context.dataset_id)
@@ -401,8 +415,8 @@ def _execute(
     script.Interpreter(cur, context, run_sql, report).run(statements)
     result = destination if produced and produced[-1] else None
     if not scripted:
-        return (children[0] if children else {}), [], result
-    return {"statementType": "SCRIPT"}, children, result
+        return (children[0] if children else JobStatistics2()), [], result
+    return JobStatistics2(statementType="SCRIPT"), children, result
 
 
 def translate_view(project_id: str, dataset_id: str, sql: str) -> str:
@@ -411,4 +425,4 @@ def translate_view(project_id: str, dataset_id: str, sql: str) -> str:
 
 def run_ddl(project_id: str, sql: str):
     with database.cursor() as cur:
-        execute(cur, project_id, None, {"query": sql})
+        execute(cur, project_id, None, JobConfigurationQuery(query=sql))

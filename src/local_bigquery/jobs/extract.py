@@ -5,6 +5,7 @@ from sqlglot import exp
 from local_bigquery.catalog import tables
 from local_bigquery.errors import BigQueryError
 from local_bigquery.jobs.storage import literal, written
+from local_bigquery.models import JobConfigurationExtract, JobStatistics4
 
 FORMATS = {
     "CSV": "csv",
@@ -32,24 +33,26 @@ def _recode(target: str, codec: str):
 
 
 def write(
-    cur: duckdb.DuckDBPyConnection, query: str, params: dict, config: dict
+    cur: duckdb.DuckDBPyConnection,
+    query: str,
+    params: dict,
+    config: JobConfigurationExtract,
 ) -> int:
-    kind = (config.get("destinationFormat") or "CSV").upper()
+    kind = (config.destinationFormat or "CSV").upper()
     if kind not in FORMATS:
         raise BigQueryError("invalid", f"Unsupported destination format: {kind}")
     options = [f"FORMAT {FORMATS[kind]}"]
     if kind == "CSV":
         options += [
-            f"HEADER {str(config.get('printHeader', True)).lower()}",
-            f"DELIMITER {literal(config.get('fieldDelimiter') or ',')}",
+            f"HEADER {str(config.printHeader is not False).lower()}",
+            f"DELIMITER {literal(config.fieldDelimiter or ',')}",
         ]
-    compression = (config.get("compression") or "NONE").upper()
+    compression = (config.compression or "NONE").upper()
     codec = AVRO_CODECS.get(compression) if kind == "AVRO" else None
     if compression != "NONE" and kind != "AVRO":
         options.append(f"COMPRESSION {compression.lower()}")
-    uris = config.get("destinationUris") or [config.get("destinationUri")]
     rows = 0
-    for uri in uris:
+    for uri in _uris(config):
         with written(uri.replace("*", "000000000000")) as target:
             (rows,) = cur.execute(
                 f"COPY ({query}) TO {literal(target)} ({', '.join(options)})", params
@@ -59,16 +62,21 @@ def write(
     return rows
 
 
-def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
-    source = config["sourceTable"]
-    reference = (source["projectId"], source["datasetId"], source["tableId"])
+def _uris(config: JobConfigurationExtract) -> list[str]:
+    return config.destinationUris or [config.destinationUri]
+
+
+def run(
+    cur: duckdb.DuckDBPyConnection, config: JobConfigurationExtract, upload: str | None
+) -> JobStatistics4:
+    reference = tables.reference(config.sourceTable)
     tables.load(*reference)
     write(cur, f"SELECT * FROM {tables.name(*reference)}", {}, config)
-    uris = config.get("destinationUris") or [config.get("destinationUri")]
-    return {"destinationUriFileCounts": ["1" for _ in uris], "inputBytes": "0"}
+    counts = ["1" for _ in _uris(config)]
+    return JobStatistics4(destinationUriFileCounts=counts, inputBytes="0")
 
 
-def export_config(tree: exp.Export) -> dict:
+def export_config(tree: exp.Export) -> JobConfigurationExtract:
     config = {}
     for option in tree.args["options"].expressions:
         if isinstance(option, exp.FileFormatProperty):
@@ -84,4 +92,4 @@ def export_config(tree: exp.Export) -> dict:
             "invalidQuery",
             f"'{kind}' is not a valid value; failed to set 'format' in EXPORT DATA OPTIONS",
         )
-    return config
+    return JobConfigurationExtract.model_validate(config)

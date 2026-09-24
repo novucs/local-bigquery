@@ -3,6 +3,7 @@ import sqlglot
 from sqlglot import exp
 
 from local_bigquery.errors import BigQueryError
+from local_bigquery.models import JobStatistics2
 from local_bigquery.sql.dialect import BigQueryDialect
 from local_bigquery.sql.translate import Context, translate
 
@@ -34,7 +35,9 @@ def _clause(whens: list[exp.When]) -> str:
     return f"CASE {cases} END"
 
 
-def run(cur: duckdb.DuckDBPyConnection, tree: exp.Merge, context: Context) -> dict:
+def run(
+    cur: duckdb.DuckDBPyConnection, tree: exp.Merge, context: Context
+) -> JobStatistics2:
     def execute(sql: str) -> int:
         translated, bound = translate(
             sqlglot.parse_one(sql, dialect=BigQueryDialect), context
@@ -130,7 +133,7 @@ def run(cur: duckdb.DuckDBPyConnection, tree: exp.Merge, context: Context) -> di
         if owned:
             cur.execute("ROLLBACK")
         raise
-    return {
-        "numDmlAffectedRows": str(sum(counts.values())),
-        "dmlStats": {key: str(value) for key, value in counts.items()},
-    }
+    return JobStatistics2(
+        numDmlAffectedRows=str(sum(counts.values())),
+        dmlStats={key: str(value) for key, value in counts.items()},
+    )

@@ -10,7 +10,7 @@ from sqlglot.tokens import TokenType
 
 from local_bigquery.catalog import metadata, names, routines, tables
 from local_bigquery.errors import BigQueryError, from_exception, syntax_error
-from local_bigquery.models import Argument, Routine
+from local_bigquery.models import Argument, JobStatistics2, Routine
 from local_bigquery.sql.dialect import BigQueryDialect
 from local_bigquery.sql.rules.parameters import VALUE, read
 from local_bigquery.sql.translate import Context, parse, translate
@@ -334,8 +334,8 @@ class Interpreter:
         self,
         cursor: duckdb.DuckDBPyConnection,
         context: Context,
-        run_sql: Callable[[exp.Expression], dict | None],
-        report: Callable[[dict], None],
+        run_sql: Callable[[exp.Expression], JobStatistics2 | None],
+        report: Callable[[JobStatistics2], None],
     ):
         self.cursor = cursor
         self.context = context
@@ -427,9 +427,9 @@ class Interpreter:
     def sql(self, statement: Statement):
         for tree in parse(statement.text):
             tree.meta["table_function"] = statement.kind == "TABLE_FUNCTION"
-            statistics = self.run_sql(tree) or {}
-            if "numDmlAffectedRows" in statistics:
-                self.context.system["row_count"] = int(statistics["numDmlAffectedRows"])
+            statistics = self.run_sql(tree)
+            if statistics and statistics.numDmlAffectedRows is not None:
+                self.context.system["row_count"] = int(statistics.numDmlAffectedRows)
 
     def declare(self, statement: Statement):
         tree = sqlglot.parse_one(statement.text, dialect=BigQueryDialect)
@@ -617,11 +617,11 @@ class Interpreter:
     def ddl(self, verb: str, operation: str, reference: tuple[str, str, str]):
         target = dict(zip(("projectId", "datasetId", "routineId"), reference))
         self.report(
-            {
-                "statementType": f"{verb}_PROCEDURE",
-                "ddlOperationPerformed": operation,
-                "ddlTargetRoutine": target,
-            }
+            JobStatistics2(
+                statementType=f"{verb}_PROCEDURE",
+                ddlOperationPerformed=operation,
+                ddlTargetRoutine=target,
+            )
         )
 
     def procedure(self, statement: Statement):

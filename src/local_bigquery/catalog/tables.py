@@ -12,10 +12,16 @@ from local_bigquery.errors import (
 )
 from local_bigquery.models import (
     Dataset,
+    JobConfigurationLoad,
+    JobConfigurationQuery,
+    JobConfigurationTableCopy,
     MaterializedViewDefinition,
     Table,
     TableFieldSchema,
+    TableReference,
 )
+
+Destination = JobConfigurationQuery | JobConfigurationLoad | JobConfigurationTableCopy
 
 STORAGE_STATS = (
     "numRows",
@@ -32,13 +38,12 @@ INGESTION_TIME = "_PARTITIONTIME"
 LAYOUT = ("timePartitioning", "rangePartitioning", "clustering")
 
 
-def reference(table: dict) -> tuple[str, str, str]:
-    try:
-        return table["projectId"], table["datasetId"], table["tableId"]
-    except KeyError as error:
-        raise BigQueryError(
-            "invalid", f"Required parameter is missing: {error.args[0]}"
-        ) from None
+def reference(table: TableReference | None) -> tuple[str, str, str]:
+    ids = table.dump() if table else {}
+    for key in ("projectId", "datasetId", "tableId"):
+        if key not in ids:
+            raise BigQueryError("invalid", f"Required parameter is missing: {key}")
+    return ids["projectId"], ids["datasetId"], ids["tableId"]
 
 
 def physical(project_id: str, dataset_id: str, table_id: str) -> tuple[str, str, str]:
@@ -340,25 +345,25 @@ def evolve(
         )
 
 
-def layout(columns: list[str], config: dict, write: str) -> dict:
-    layout = {key: config[key] for key in LAYOUT if config.get(key)}
-    names = {name.casefold() for name in columns}
-    partitioning = (
-        layout.get("timePartitioning") or layout.get("rangePartitioning") or {}
+def layout(columns: list[str], config: Destination, write: str) -> Table:
+    layout = Table.model_validate(
+        config.model_dump(include=set(LAYOUT), exclude_none=True)
     )
-    if (field := partitioning.get("field")) and field.casefold() not in names:
+    names = {name.casefold() for name in columns}
+    partitioning = layout.timePartitioning or layout.rangePartitioning
+    if (field := partitioning and partitioning.field) and field.casefold() not in names:
         raise BigQueryError(
             "invalid",
             "The field specified for partitioning cannot be found in the schema.",
         )
-    for field in (layout.get("clustering") or {}).get("fields") or []:
+    for field in (layout.clustering and layout.clustering.fields) or []:
         if field.casefold() not in names:
             raise BigQueryError(
                 "invalid",
                 "The field specified for clustering cannot be found in the schema. "
                 f"Invalid field: {field}",
             )
-    if config.get("schemaUpdateOptions") and write != "WRITE_APPEND":
+    if getattr(config, "schemaUpdateOptions", None) and write != "WRITE_APPEND":
         raise BigQueryError(
             "invalid",
             "Schema update options should only be specified with WRITE_APPEND "
@@ -386,12 +391,12 @@ def write(
     query: str,
     params: dict | None,
     reference: tuple[str, str, str],
-    config: dict,
+    config: Destination,
     default: str = "WRITE_EMPTY",
     prefix: str = "Invalid schema update. ",
     isolated: bool = False,
 ) -> bool:
-    disposition = config.get("writeDisposition") or default
+    disposition = config.writeDisposition or default
     relation = cur.sql(query, params=params)
     changes = layout(relation.columns, config, disposition)
     table, label = name(*reference), names.label(*reference)
@@ -400,19 +405,19 @@ def write(
         database.cursor() if isolated else contextlib.nullcontext(cur) as writer,
     ):
         found = exists(*reference)
-        if not found and config.get("createDisposition") == "CREATE_NEVER":
+        if not found and config.createDisposition == "CREATE_NEVER":
             raise not_found("Table", label)
         if found and disposition == "WRITE_EMPTY":
             if cur.sql(f"SELECT 1 FROM {table} LIMIT 1").fetchone():
                 raise already_exists("Table", label)
         append = found and disposition == "WRITE_APPEND"
         if append:
-            options = config.get("schemaUpdateOptions")
+            options = getattr(config, "schemaUpdateOptions", None)
             evolve(writer, reference, relation, options, prefix)
         results.materialise(
             cur, query, table, params, append, writer if isolated else None
         )
-    annotate(reference, Table.model_validate(changes))
+    annotate(reference, changes)
     return not found
 
 

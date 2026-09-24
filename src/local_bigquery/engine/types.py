@@ -126,7 +126,7 @@ def _children(t: DuckDBPyType) -> list[tuple[str, DuckDBPyType]]:
 
 def field(name: str, t: DuckDBPyType, required: bool = False) -> TableFieldSchema:
     if element := _element(t):
-        return field(name, element).model_copy(update={"mode": "REPEATED"})
+        return field(name, element).replace(mode="REPEATED")
     mode = "REQUIRED" if required else "NULLABLE"
     if element := _range(t):
         return TableFieldSchema(

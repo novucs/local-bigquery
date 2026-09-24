@@ -2,6 +2,8 @@ import json
 
 from fastapi import APIRouter, Response
 
+from local_bigquery.resource import Resource
+
 
 class Router(APIRouter):
     def add_api_route(self, path, endpoint, **kwargs):
@@ -20,7 +22,8 @@ def paginate(
 
 def with_rows(payload: dict, rows: list[str]) -> Response:
     body = json.dumps(
-        {key: value for key, value in payload.items() if value is not None}
+        {key: value for key, value in payload.items() if value is not None},
+        default=Resource.dump,
     )
     if rows:
         body = f'{body[:-1]}, "rows": [{",".join(rows)}]}}'

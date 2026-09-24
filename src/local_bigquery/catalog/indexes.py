@@ -2,6 +2,7 @@ import re
 
 from local_bigquery.catalog import metadata, names, row_access, tables
 from local_bigquery.errors import BigQueryError
+from local_bigquery.models import JobStatistics2
 
 INDEX = re.compile(
     r"^(OR\s+REPLACE\s+)?(SEARCH|VECTOR)\s+INDEX\s+(IF\s+(?:NOT\s+)?EXISTS\s+)?(\S+)"
@@ -21,7 +22,7 @@ def list_(
 
 def ddl(
     command: str, keyword: str, project_id: str, dataset_id: str | None, dry_run: bool
-) -> dict | None:
+) -> JobStatistics2 | None:
     match = INDEX.match(command)
     if keyword not in ("CREATE", "DROP") or not match:
         return None
@@ -55,4 +56,4 @@ def ddl(
             kind=kind, name=name, ddl=f"CREATE {command}", creationTime=metadata.now()
         )
         metadata.save(index, *keys)
-    return {"statementType": f"{keyword}_{kind}_INDEX"}
+    return JobStatistics2(statementType=f"{keyword}_{kind}_INDEX")
