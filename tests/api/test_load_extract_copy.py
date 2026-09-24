@@ -638,3 +638,29 @@ def test_load_gcs_wildcard_matches_across_directories(bq, dataset, bucket):
     assert select(bq, table) == [(1,), (1,), (1,)]
     assert (job.input_files, job.input_file_bytes, job.output_rows) == (3, 6, 3)
     assert job.output_bytes > 0
+
+
+def test_load_errors_do_not_expose_local_paths(bq, dataset):
+    with fails(BadRequest, "invalid") as info:
+        load_file(
+            bq,
+            table_id(dataset),
+            b'{"x": "not a number"}\n',
+            schema=X,
+            source_format="NEWLINE_DELIMITED_JSON",
+        )
+    message = info.value.message
+    assert "Error while reading data, error message: JSON transform error" in message
+    assert "/uploads/" not in message and "Invalid Input Error" not in message
+
+
+def test_load_errors_name_the_source_uri(bq, dataset, bucket):
+    bucket.mkdir(parents=True)
+    (bucket / "bad.json").write_text('{"x": "not a number"}\n')
+    config = bigquery.LoadJobConfig(schema=X, source_format="NEWLINE_DELIMITED_JSON")
+    with fails(BadRequest, "invalid") as info:
+        bq.load_table_from_uri(
+            f"gs://{bucket.name}/bad.json", table_id(dataset), job_config=config
+        ).result()
+    assert f"gs://{bucket.name}/bad.json" in info.value.message
+    assert str(bucket) not in info.value.message

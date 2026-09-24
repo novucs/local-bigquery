@@ -639,3 +639,18 @@ def test_dataset_default_table_expiration(bq):
     table = bq.get_table(f"{dataset.dataset_id}.t")
     assert table.expires - table.created == datetime.timedelta(hours=1)
     bq.delete_dataset(dataset, delete_contents=True)
+
+
+@pytest.mark.parametrize(
+    "statement, message",
+    [
+        ("CREATE TABLE {ds}.`bad;name` (x INT64)", 'Invalid table ID "bad;name"'),
+        ('CREATE TABLE {ds}.ok (`a"b` INT64)', 'Invalid field name "a"b"'),
+        ("ALTER TABLE {ds}.t ADD COLUMN `c;d` INT64", 'Invalid field name "c;d"'),
+        ("CREATE SCHEMA `has-dash`", 'Invalid dataset ID "has-dash"'),
+    ],
+)
+def test_ddl_names_are_validated(bq, dataset, statement, message):
+    with fails(BadRequest, "invalid") as info:
+        run(bq, statement.format(ds=dataset.dataset_id))
+    assert message in info.value.message

@@ -3,7 +3,7 @@ import unicodedata
 
 from local_bigquery.errors import BigQueryError
 
-DATASET_ID = re.compile(r"^[\w-]{1,1024}$")
+DATASET_ID = re.compile(r"^[A-Za-z0-9_]{1,1024}$")
 TABLE_CATEGORIES = {"Pc", "Pd", "Zs"}
 FIELD_FORBIDDEN = set('!"$()*,./;?@[\\]^`{}~')
 

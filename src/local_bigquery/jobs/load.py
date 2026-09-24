@@ -1,3 +1,4 @@
+import contextlib
 import io
 import re
 
@@ -9,7 +10,7 @@ import pyarrow.orc
 from local_bigquery.catalog import datasets, tables
 from local_bigquery.engine import types
 from local_bigquery.engine.database import quote
-from local_bigquery.errors import BigQueryError
+from local_bigquery.errors import DUCKDB_PREFIX, BigQueryError
 from local_bigquery.jobs.storage import literal, paths
 from local_bigquery.models import TableFieldSchema
 
@@ -201,28 +202,41 @@ def _projection(
     return ", ".join(casts), " OR ".join(bad) or "false"
 
 
+@contextlib.contextmanager
+def _reading(locations: dict[str, str | None]):
+    try:
+        yield
+    except (duckdb.Error, pa.ArrowException, ValueError) as error:
+        message = DUCKDB_PREFIX.sub("", str(error).split("\n")[0])
+        for local, uri in locations.items():
+            message = message.replace(
+                f' in file "{local}"', f" in file {uri}" if uri else ""
+            )
+        raise BigQueryError(
+            "invalid", f"Error while reading data, error message: {message}"
+        ) from None
+
+
 def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dict:
     reference = tables.reference(config["destinationTable"])
     datasets.load(*reference[:2])
     uris = config.get("sourceUris") or []
-    sources = [upload] if upload else [p for uri in uris for p in paths(cur, uri)]
+    locations = (
+        {upload: None} if upload else {p: uri for uri in uris for p in paths(cur, uri)}
+    )
+    sources = list(locations)
     files = f"[{', '.join(map(literal, sources))}]"
     fields = [
         TableFieldSchema.model_validate(field)
         for field in (config.get("schema") or {}).get("fields", [])
     ]
-    try:
+    with _reading(locations):
         reader = _reader(cur, files, config, fields)
         columns = cur.sql(f"SELECT * FROM {reader} LIMIT 0").columns
         projection, bad = _projection(config, fields, columns)
         total, rejected = cur.sql(
             f"SELECT count(*), count(*) FILTER ({bad}) FROM {reader}"
         ).fetchone()
-    except (duckdb.Error, pa.ArrowException, ValueError) as error:
-        message = str(error).split("\n")[0]
-        raise BigQueryError(
-            "invalid", f"Error while reading data, error message: {message}"
-        )
     if rejected > int(config.get("maxBadRecords") or 0):
         raise BigQueryError(
             "invalid",
@@ -242,7 +256,9 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
             config.get("schemaUpdateOptions"),
             "Provided Schema does not match Table {}:{}.{}. ".format(*reference),
         )
-    tables.write(cur, query, None, reference, write, config.get("createDisposition"))
+    with _reading(locations):
+        create = config.get("createDisposition")
+        tables.write(cur, query, None, reference, write, create)
     schema = {"schema": config["schema"]} if created and fields else {}
     tables.annotate(reference, schema | layout)
     count, size = cur.sql(

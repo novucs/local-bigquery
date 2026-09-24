@@ -3,6 +3,7 @@ import re
 import sqlglot
 from sqlglot import exp
 
+from local_bigquery.catalog import names
 from local_bigquery.errors import BigQueryError
 from local_bigquery.sql.dialect import AlterColumnOptions, BigQueryDialect
 
@@ -42,9 +43,21 @@ def _unenforced(tree: exp.Expression):
             )
 
 
+def _names(tree: exp.Expression):
+    target = tree.find(exp.Table)
+    kind = tree.args.get("kind")
+    if isinstance(tree, exp.Create) and target is not None:
+        if kind == "SCHEMA":
+            names.dataset(target.db.rsplit(".", 1)[-1])
+        elif kind in ("TABLE", "VIEW"):
+            names.table(target.name)
+    names.fields([{"name": column.name} for column in tree.find_all(exp.ColumnDef)])
+
+
 def normalise(tree: exp.Expression) -> exp.Expression:
     if isinstance(tree, exp.Create | exp.Alter):
         _unenforced(tree)
+        _names(tree)
     if isinstance(tree, exp.Create | exp.Drop) and tree.args.get("kind") == "SCHEMA":
         return _schema_path(tree)
     if not isinstance(tree, exp.Command):

@@ -295,7 +295,7 @@ def test_delete_missing(bq, dataset):
 
 @pytest.mark.parametrize(
     "dataset_id",
-    ['bad"; DROP SCHEMA main; --', "has space", "a.b"],
+    ['bad"; DROP SCHEMA main; --', "has space", "a.b", "has-dash"],
 )
 def test_invalid_dataset_ids_are_rejected(bq, dataset_id):
     with fails(BadRequest, "invalid") as info:
