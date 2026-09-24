@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from google.api_core.exceptions import GoogleAPICallError
 from google.cloud import bigquery
+from google.cloud.bigquery.retry import DEFAULT_JOB_RETRY
 
 STANDARD_TYPES = {
     "INTEGER": "INT64",
@@ -16,6 +17,7 @@ STANDARD_TYPES = {
     "RECORD": "STRUCT",
 }
 FAST_RETRY = bigquery.DEFAULT_RETRY.with_timeout(5)
+RATE_LIMITED = DEFAULT_JOB_RETRY.with_timeout(120)
 _UNSET = object()
 
 
@@ -48,7 +50,9 @@ class Query:
 
 
 def run(bq: bigquery.Client, sql: str, config=None):
-    return bq.query_and_wait(sql, job_config=config, retry=FAST_RETRY, job_retry=None)
+    return bq.query_and_wait(
+        sql, job_config=config, retry=FAST_RETRY, job_retry=RATE_LIMITED
+    )
 
 
 def rows(bq: bigquery.Client, sql: str) -> list[tuple]:
@@ -64,7 +68,7 @@ def run_job(bq: bigquery.Client, sql: str, **config) -> bigquery.QueryJob:
         sql,
         job_config=bigquery.QueryJobConfig(**config),
         retry=FAST_RETRY,
-        job_retry=None,
+        job_retry=RATE_LIMITED,
     )
     job.result(retry=FAST_RETRY)
     return job

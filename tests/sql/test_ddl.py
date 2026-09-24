@@ -589,7 +589,7 @@ def test_search_and_vector_indexes(bq, dataset, table):
         bq,
         f"SELECT index_name, table_name, index_status "
         f"FROM {ds}.INFORMATION_SCHEMA.SEARCH_INDEXES WHERE table_name = '{name}'",
-    ) == [("si", name, "ACTIVE")]
+    ) == [("si", name, "TEMPORARILY DISABLED")]
     assert rows(
         bq,
         f"SELECT index_name, table_name, index_status "

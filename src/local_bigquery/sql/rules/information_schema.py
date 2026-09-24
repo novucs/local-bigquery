@@ -17,6 +17,7 @@ TABLE_TYPES = {
 }
 IDENTITY = ("table_catalog", "table_schema", "table_name")
 STANDARD_TYPES = {"INTEGER": "INT64", "FLOAT": "FLOAT64", "BOOLEAN": "BOOL"}
+SEARCH_INDEX_MINIMUM_BYTES = 10 * 1024**3
 PARTITION_FORMATS = {"HOUR": "%Y%m%d%H", "DAY": "%Y%m%d", "MONTH": "%Y%m", "YEAR": "%Y"}
 JOBS = """
 SELECT
@@ -440,6 +441,11 @@ def routines(project_id: str, dataset_id: str | None):
     return columns, rows
 
 
+def _index_status(kind: str, table: dict) -> str:
+    small = int(table["numBytes"]) < SEARCH_INDEX_MINIMUM_BYTES
+    return "TEMPORARILY DISABLED" if kind == "SEARCH" and small else "ACTIVE"
+
+
 def _indexes(kind: str):
     def view(project_id: str, dataset_id: str | None):
         columns = [
@@ -456,7 +462,7 @@ def _indexes(kind: str):
         ]
         rows = [
             _identity(t)
-            + [index["name"], index["ddl"], "ACTIVE", 100, 0]
+            + [index["name"], index["ddl"], _index_status(kind, t), 100, 0]
             + [_timestamp(index["creationTime"])] * 2
             for t in _tables(project_id, dataset_id)
             for index in indexes.list_(*_identity(t), kind)
