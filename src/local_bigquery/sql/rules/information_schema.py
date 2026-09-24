@@ -1,11 +1,11 @@
 import datetime
-import json
 
 import sqlglot
 from sqlglot import exp
 
 from local_bigquery.catalog import datasets, indexes, metadata, tables
 from local_bigquery.catalog import routines as catalog_routines
+from local_bigquery.catalog.options import DATASET_OPTIONS, TABLE_OPTIONS, rendered
 from local_bigquery.engine import database
 from local_bigquery.engine.database import quote
 from local_bigquery.engine.types import bigquery_type
@@ -190,40 +190,12 @@ def views(project_id: str, dataset_id: str | None):
     return columns, rows
 
 
-def _options(resource: dict) -> list[tuple[str, str, str]]:
-    options = []
-    if "description" in resource:
-        options.append(("description", "STRING", json.dumps(resource["description"])))
-    if "friendlyName" in resource:
-        options.append(
-            ("friendly_name", "STRING", json.dumps(resource["friendlyName"]))
-        )
-    if "defaultTableExpirationMs" in resource:
-        days = int(resource["defaultTableExpirationMs"]) / 86_400_000
-        options.append(("default_table_expiration_days", "FLOAT64", str(days)))
-    if labels := resource.get("labels"):
-        pairs = ", ".join(
-            f"STRUCT({json.dumps(k)}, {json.dumps(v)})" for k, v in labels.items()
-        )
-        options.append(("labels", "ARRAY<STRUCT<STRING, STRING>>", f"[{pairs}]"))
-    if "expirationTime" in resource:
-        moment = datetime.datetime.fromtimestamp(
-            int(resource["expirationTime"]) / 1000, datetime.UTC
-        )
-        options.append(
-            ("expiration_timestamp", "TIMESTAMP", f'TIMESTAMP "{moment.isoformat()}"')
-        )
-    if resource.get("requirePartitionFilter"):
-        options.append(("require_partition_filter", "BOOL", "true"))
-    return options
-
-
 def table_options(project_id: str, dataset_id: str | None):
     columns = [*IDENTITY, "option_name", "option_type", "option_value"]
     rows = [
         _identity(t) + list(option)
         for t in _tables(project_id, dataset_id)
-        for option in _options(t)
+        for option in rendered(t, TABLE_OPTIONS)
     ]
     return columns, rows
 
@@ -239,8 +211,7 @@ def schemata_options(project_id: str, dataset_id: str | None):
     rows = [
         [project_id, d.datasetReference.datasetId, *option]
         for d in datasets.list_(project_id, all=True)
-        for option in _options(d.model_dump(exclude_none=True))
-        + [("location", "STRING", json.dumps(d.location.lower()))]
+        for option in rendered(d.model_dump(exclude_none=True), DATASET_OPTIONS)
     ]
     return columns, rows
 
@@ -509,7 +480,7 @@ def routine_options(project_id: str, dataset_id: str | None):
     rows = [
         _routine_identity(r) + list(option)
         for r in catalog_routines.list_(project_id, dataset_id)
-        for option in _options(r)
+        for option in rendered(r, TABLE_OPTIONS)
     ]
     return columns, rows
 

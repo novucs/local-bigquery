@@ -1,57 +1,25 @@
 import datetime
-from collections.abc import Callable
 
 from sqlglot import exp
 
 from local_bigquery.catalog import datasets, metadata, names, tables
+from local_bigquery.catalog.options import (
+    COLUMN_OPTIONS,
+    DATASET_OPTIONS,
+    TABLE_OPTIONS,
+    Evaluate,
+    options,
+)
 from local_bigquery.errors import BigQueryError
 from local_bigquery.sql.dialect import AlterColumnOptions
 from local_bigquery.sql.rules.ddl import drops_primary_key
 
-TABLE_OPTIONS = {
-    "description": "description",
-    "friendly_name": "friendlyName",
-    "labels": "labels",
-    "expiration_timestamp": "expirationTime",
-    "require_partition_filter": "requirePartitionFilter",
-}
-DATASET_OPTIONS = {
-    "description": "description",
-    "friendly_name": "friendlyName",
-    "labels": "labels",
-    "location": "location",
-    "default_table_expiration_days": "defaultTableExpirationMs",
-}
 PARAMETERS = {
     exp.DataType.Type.TEXT: ("maxLength",),
     exp.DataType.Type.BINARY: ("maxLength",),
     exp.DataType.Type.DECIMAL: ("precision", "scale"),
     exp.DataType.Type.BIGDECIMAL: ("precision", "scale"),
 }
-Evaluate = Callable[[exp.Expression], object]
-
-
-def _convert(key: str, node: exp.Expression, evaluate: Evaluate):
-    if key == "labels":
-        return {
-            k.name: v.name for k, v in (pair.expressions for pair in node.expressions)
-        }
-    value = evaluate(node)
-    match key:
-        case "expirationTime":
-            moment = datetime.datetime.fromisoformat(value)
-            return str(int(moment.timestamp() * 1000))
-        case "defaultTableExpirationMs":
-            return str(int(float(value) * 86_400_000))
-    return value
-
-
-def options(node: exp.Expression | None, mapping: dict, evaluate: Evaluate) -> dict:
-    resource = {}
-    for prop in node.find_all(exp.Property) if node else []:
-        if (key := mapping.get(prop.name.lower())) is not None:
-            resource[key] = _convert(key, prop.args["value"], evaluate)
-    return resource
 
 
 def _partitioning(node: exp.PartitionedByProperty) -> dict:
@@ -82,7 +50,7 @@ def _fields(schema: exp.Expression, evaluate: Evaluate) -> list[dict]:
     fields = []
     for column in schema.expressions if isinstance(schema, exp.Schema) else []:
         extras = options(
-            column.find(exp.Properties), {"description": "description"}, evaluate
+            column.find(exp.Properties), COLUMN_OPTIONS, evaluate
         ) | _parameters(column.args.get("kind"))
         if extras:
             fields.append({"name": column.name} | extras)
@@ -141,7 +109,7 @@ def _alteration(
     if isinstance(action, exp.AlterSet):
         return options(action, TABLE_OPTIONS, evaluate)
     if isinstance(action, AlterColumnOptions):
-        extras = options(action, {"description": "description"}, evaluate)
+        extras = options(action, COLUMN_OPTIONS, evaluate)
         fields = [
             field | extras
             if field["name"].casefold() == action.name.casefold()

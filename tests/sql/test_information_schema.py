@@ -133,6 +133,26 @@ def test_table_options(bq, dataset):
     ]
 
 
+def test_more_table_options(bq, dataset):
+    ds, table = dataset.dataset_id, unique("options")
+    run(
+        bq,
+        f"CREATE TABLE {ds}.{table} (d DATE) PARTITION BY d OPTIONS ("
+        "friendly_name = 'nice', expiration_timestamp = TIMESTAMP '2099-01-01 00:00:00+00', "
+        "require_partition_filter = true)",
+    )
+    assert rows(
+        bq,
+        "SELECT option_name, option_type, option_value "
+        f"FROM {ds}.INFORMATION_SCHEMA.TABLE_OPTIONS "
+        f"WHERE table_name = '{table}' ORDER BY option_name",
+    ) == [
+        ("expiration_timestamp", "TIMESTAMP", 'TIMESTAMP "2099-01-01T00:00:00+00:00"'),
+        ("friendly_name", "STRING", '"nice"'),
+        ("require_partition_filter", "BOOL", "true"),
+    ]
+
+
 def test_partitions(bq, dataset):
     ds = dataset.dataset_id
     table = unique("partitioned")
@@ -305,6 +325,7 @@ def test_schemata_options(bq, dataset):
     created = bigquery.Dataset(f"{bq.project}.{ds}")
     created.description = "about"
     created.labels = {"k": "v"}
+    created.default_table_expiration_ms = 86_400_000
     bq.create_dataset(created)
     assert rows(
         bq,
@@ -312,6 +333,7 @@ def test_schemata_options(bq, dataset):
         "FROM `region-us`.INFORMATION_SCHEMA.SCHEMATA_OPTIONS "
         f"WHERE schema_name = '{ds}' ORDER BY option_name",
     ) == [
+        ("default_table_expiration_days", "FLOAT64", "1.0"),
         ("description", "STRING", '"about"'),
         ("labels", "ARRAY<STRUCT<STRING, STRING>>", '[STRUCT("k", "v")]'),
         ("location", "STRING", '"us"'),

@@ -1,15 +1,15 @@
 from sqlglot import exp
 
 from local_bigquery.catalog import datasets, metadata, names, routines
-from local_bigquery.catalog.ddl import TABLE_OPTIONS, Evaluate, options
+from local_bigquery.catalog.options import TABLE_OPTIONS, Evaluate, Option, options
 from local_bigquery.engine import types
 from local_bigquery.errors import BigQueryError, not_found
 from local_bigquery.models import TableFieldSchema
 from local_bigquery.sql.dialect import BigQueryDialect
 
 OPTIONS = TABLE_OPTIONS | {
-    "model_type": "modelType",
-    "input_label_cols": "inputLabelCols",
+    "model_type": Option("modelType"),
+    "input_label_cols": Option("inputLabelCols"),
 }
 
 
