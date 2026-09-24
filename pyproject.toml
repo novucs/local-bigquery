@@ -1,7 +1,10 @@
 [project]
-name = "local_bigquery"
+name = "local-bigquery"
 version = "0.3.0"
-description = "Run BigQuery locally"
+description = "A BigQuery emulator for local development and tests"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "duckdb>=1.5.5",
@@ -18,6 +21,10 @@ dependencies = [
     "uvicorn>=0.35",
 ]
 
+[project.urls]
+Repository = "https://github.com/novucs/local-bigquery"
+Issues = "https://github.com/novucs/local-bigquery/issues"
+
 [project.scripts]
 local-bigquery = "local_bigquery.cli:main"
 
@@ -27,6 +34,9 @@ local_bigquery = "local_bigquery.pytest_plugin"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = ["src"]
 
 [dependency-groups]
 dev = [

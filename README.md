@@ -67,7 +67,7 @@ const [rows] = await bigquery.query("SELECT 1 AS x");
 ## Testing with pytest
 
 ```bash
-pip install git+https://github.com/novucs/local-bigquery
+pip install local-bigquery
 ```
 
 This adds pytest fixtures that run the emulator inside the test process. There's no
