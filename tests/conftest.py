@@ -1,11 +1,9 @@
 import os
-import threading
 import time
 
 import grpc
 import pytest
 import requests
-import uvicorn
 from google.api_core.client_options import ClientOptions
 from google.auth.credentials import AnonymousCredentials
 from google.cloud import bigquery, bigquery_storage_v1
@@ -75,23 +73,10 @@ def project(request) -> str:
 
 
 @pytest.fixture(scope="session")
-def endpoint(request, tmp_path_factory):
+def endpoint(request):
     if endpoint := request.config.getoption("--endpoint"):
-        yield endpoint
-        return
-    from local_bigquery import app
-    from local_bigquery.settings import settings
-
-    settings.data_dir = tmp_path_factory.mktemp("data")
-    server = uvicorn.Server(uvicorn.Config(app, port=0, log_level="warning"))
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    while not server.started:
-        thread.join(0.01)
-    port = server.servers[0].sockets[0].getsockname()[1]
-    yield f"http://127.0.0.1:{port}"
-    server.should_exit = True
-    thread.join()
+        return endpoint
+    return request.getfixturevalue("bigquery_emulator").rest_url
 
 
 @pytest.fixture(scope="session")
@@ -123,15 +108,11 @@ def bq(endpoint, project):
 def storage_channel(request, endpoint):
     option = request.config.getoption("--endpoint")
     if option == "google":
-        yield None
-        return
+        return None
     if option:
         pytest.skip("Storage API tests need the in-process emulator or real BigQuery")
-    from local_bigquery.grpc import server
-
-    grpc_server, port = server.start("127.0.0.1", 0)
-    yield grpc.insecure_channel(f"127.0.0.1:{port}")
-    grpc_server.stop(None)
+    address = request.getfixturevalue("bigquery_emulator").grpc_address
+    return grpc.insecure_channel(address)
 
 
 @pytest.fixture(scope="session")

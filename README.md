@@ -66,37 +66,24 @@ const [rows] = await bigquery.query("SELECT 1 AS x");
 
 ## Testing with pytest
 
-One emulator per test run, one dataset per test:
+```bash
+pip install git+https://github.com/novucs/local-bigquery
+```
+
+This adds pytest fixtures that run the emulator inside the test process. There's no
+Docker, and it starts in under a second:
+
+- `bigquery_client`: a client connected to an emulator shared by the whole test run.
+- `bigquery_dataset`: a new dataset for each test, deleted afterwards.
+- `bigquery_emulator`: the emulator's `rest_url`, `grpc_address` and `project_id`.
 
 ```python
-# conftest.py
-import uuid
-
-import pytest
-from google.auth.credentials import AnonymousCredentials
-from google.cloud import bigquery
-from testcontainers.core.container import DockerContainer
-from testcontainers.core.waiting_utils import wait_for_logs
-
-
-@pytest.fixture(scope="session")
-def bq():
-    image = "ghcr.io/novucs/local-bigquery:latest"
-    with DockerContainer(image).with_exposed_ports(9050) as container:
-        wait_for_logs(container, "Uvicorn running")
-        host, port = container.get_container_host_ip(), container.get_exposed_port(9050)
-        yield bigquery.Client(
-            project="local",
-            credentials=AnonymousCredentials(),
-            client_options={"api_endpoint": f"http://{host}:{port}"},
-        )
-
-
-@pytest.fixture
-def dataset(bq):
-    dataset = bq.create_dataset(f"test_{uuid.uuid4().hex}")
-    yield dataset.dataset_id
-    bq.delete_dataset(dataset, delete_contents=True)
+def test_totals(bigquery_client, bigquery_dataset):
+    table = f"{bigquery_dataset.dataset_id}.orders"
+    bigquery_client.query_and_wait(f"CREATE TABLE {table} (customer STRING, amount INT64)")
+    bigquery_client.insert_rows_json(table, [{"customer": "a", "amount": 2}] * 3)
+    rows = bigquery_client.query_and_wait(f"SELECT SUM(amount) AS total FROM {table}")
+    assert [row.total for row in rows] == [6]
 ```
 
 ## Features
