@@ -1,7 +1,7 @@
 import contextvars
 import re
 
-from local_bigquery.catalog import metadata, tables
+from local_bigquery.catalog import metadata, names, tables
 from local_bigquery.engine.database import fetch
 from local_bigquery.errors import BigQueryError, already_exists, not_found
 from local_bigquery.settings import settings
@@ -39,10 +39,6 @@ def _grants(grantee: str, identity: tuple[str, ...]) -> bool:
     return grantee.startswith("domain:") and identity[0].endswith(f"@{domain}")
 
 
-def _label(project_id: str, dataset_id: str, table_id: str, policy_id: str) -> str:
-    return f"{project_id}:{dataset_id}.{table_id}.{policy_id}"
-
-
 def secured() -> frozenset[tuple[str, str, str]]:
     rows = fetch(
         "SELECT DISTINCT project_id, dataset_id, table_id FROM emulator.row_access_policies"
@@ -60,7 +56,7 @@ def get(project_id: str, dataset_id: str, table_id: str, policy_id: str) -> dict
         "row_access_policies", project_id, dataset_id, table_id, policy_id
     )
     if policy is None:
-        label = _label(project_id, dataset_id, table_id, policy_id)
+        label = names.label(project_id, dataset_id, table_id, policy_id)
         raise not_found("Row access policy", label)
     return policy
 
@@ -75,7 +71,7 @@ def save(
     keys = (project_id, dataset_id, table_id, policy_id)
     current = metadata.load("row_access_policies", *keys)
     if current and not replace:
-        raise already_exists("Row access policy", _label(*keys))
+        raise already_exists("Row access policy", names.label(*keys))
     now = metadata.now()
     reference = dict(zip(("projectId", "datasetId", "tableId", "policyId"), keys))
     resource = body | {

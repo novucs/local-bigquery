@@ -7,6 +7,7 @@ import sqlglot
 from sqlglot import exp
 
 from local_bigquery.catalog import (
+    names,
     datasets,
     models,
     indexes,
@@ -88,19 +89,13 @@ def _ddl(tree: exp.Expression, context: Context) -> dict:
         key = "ddlTargetDataset"
         database.attach(reference["projectId"])
     elif kind in ("TABLE", "VIEW") and target is not None:
-        reference = {
-            "projectId": target.catalog or context.project_id,
-            "datasetId": target.db or context.dataset_id,
-            "tableId": target.name,
-        }
+        ids = names.reference(target, context.project_id, context.dataset_id)
+        reference = dict(zip(("projectId", "datasetId", "tableId"), ids))
         found = tables.exists(*tables.reference(reference))
         key = "ddlTargetTable"
     elif kind == "FUNCTION" and target is not None:
-        reference = {
-            "projectId": target.catalog or context.project_id,
-            "datasetId": target.db or context.dataset_id,
-            "routineId": target.name,
-        }
+        ids = names.reference(target, context.project_id, context.dataset_id)
+        reference = dict(zip(("projectId", "datasetId", "routineId"), ids))
         found = bool(
             database.fetch(
                 "SELECT 1 FROM duckdb_functions() WHERE database_name = ? "
@@ -128,15 +123,11 @@ def _ddl(tree: exp.Expression, context: Context) -> dict:
     return {"ddlOperationPerformed": operation, key: reference}
 
 
-def _target(tree: exp.Expression, context: Context) -> tuple[str, str, str]:
+def _target(tree: exp.Expression, context: Context) -> tuple[str, ...]:
     table = tree.find(exp.Table)
     if table is None:
         return ("",)
-    return (
-        table.catalog or context.project_id,
-        table.db or context.dataset_id or "",
-        table.name,
-    )
+    return names.reference(table, context.project_id, context.dataset_id or "")
 
 
 def _write(cur, sql: str, bound: dict, destination: dict, config: dict, isolated: bool):
@@ -196,11 +187,7 @@ def _result_schema(cur, tree, context, statistics: dict, dry_run: bool) -> list 
         return tables.load(*tables.reference(target))["schema"]["fields"]
     if dry_run and type(tree) in DML_COUNTS:
         table = tree.find(exp.Table)
-        reference = (
-            table.catalog or context.project_id,
-            table.db or context.dataset_id,
-            table.name,
-        )
+        reference = names.reference(table, context.project_id, context.dataset_id)
         return tables.load(*reference)["schema"]["fields"]
     return None
 

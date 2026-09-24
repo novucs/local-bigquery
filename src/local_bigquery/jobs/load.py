@@ -7,7 +7,7 @@ import fastavro
 import pyarrow as pa
 import pyarrow.orc
 
-from local_bigquery.catalog import datasets, tables
+from local_bigquery.catalog import datasets, names, tables
 from local_bigquery.engine import types
 from local_bigquery.engine.database import quote
 from local_bigquery.errors import DUCKDB_PREFIX, BigQueryError
@@ -254,7 +254,7 @@ def run(cur: duckdb.DuckDBPyConnection, config: dict, upload: str | None) -> dic
             reference,
             relation,
             config.get("schemaUpdateOptions"),
-            "Provided Schema does not match Table {}:{}.{}. ".format(*reference),
+            f"Provided Schema does not match Table {names.label(*reference)}. ",
         )
     with _reading(locations):
         create = config.get("createDisposition")

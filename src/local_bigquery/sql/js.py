@@ -12,6 +12,7 @@ from duckdb.sqltypes import DuckDBPyType
 from py_mini_racer import JSEvalException, MiniRacer
 from sqlglot import exp
 
+from local_bigquery.catalog import names
 from local_bigquery.engine import database
 from local_bigquery.sql.dialect import BigQueryDialect, DuckDBDialect
 
@@ -147,11 +148,7 @@ def bind(cur: duckdb.DuckDBPyConnection, tree: exp.Expression, context):
         return
     qualified = ".".join(
         exp.to_identifier(part).sql(dialect=DuckDBDialect)
-        for part in (
-            target.catalog or context.project_id,
-            target.db or context.dataset_id,
-            target.name,
-        )
+        for part in names.reference(target, context.project_id, context.dataset_id)
     )
     params = ", ".join(p.name for p in _params(tree))
     create = "CREATE OR REPLACE MACRO" if tree.args.get("replace") else "CREATE MACRO"

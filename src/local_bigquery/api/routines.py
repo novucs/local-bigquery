@@ -1,7 +1,7 @@
 from fastapi import Body, Header
 
 from local_bigquery.api import Router, paginate
-from local_bigquery.catalog import datasets, metadata, routines
+from local_bigquery.catalog import datasets, metadata, names, routines
 from local_bigquery.errors import BigQueryError, already_exists
 from local_bigquery.jobs.query import run_ddl
 from local_bigquery.models import ListRoutinesResponse, Routine
@@ -49,7 +49,7 @@ def insert_routine(project_id: str, dataset_id: str, body: dict = Body()) -> Rou
     datasets.load(project_id, dataset_id)
     routine_id = (body.get("routineReference") or {}).get("routineId")
     if routines.load(project_id, dataset_id, routine_id) is not None:
-        raise already_exists("Routine", f"{project_id}:{dataset_id}.{routine_id}")
+        raise already_exists("Routine", names.label(project_id, dataset_id, routine_id))
     return define(project_id, dataset_id, routine_id, body, False)
 
 

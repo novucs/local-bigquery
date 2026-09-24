@@ -1,8 +1,11 @@
 import re
 import unicodedata
 
+from sqlglot import exp
+
 from local_bigquery.errors import BigQueryError
 
+DML = exp.Insert | exp.Update | exp.Delete | exp.Merge | exp.TruncateTable
 DATASET_ID = re.compile(r"^[A-Za-z0-9_]{1,1024}$")
 TABLE_CATEGORIES = {"Pc", "Pd", "Zs"}
 FIELD_FORBIDDEN = set('!"$()*,./;?@[\\]^`{}~')
@@ -43,3 +46,21 @@ def fields(schema: list[dict]):
                 "characters, and be at most 300 characters long.",
             )
         fields(field.get("fields") or [])
+
+
+def label(*parts: str) -> str:
+    return f"{parts[0]}:{'.'.join(parts[1:])}"
+
+
+def reference(
+    table: exp.Table, project_id: str, dataset_id: str | None
+) -> tuple[str, str, str]:
+    return table.catalog or project_id, table.db or dataset_id, table.name
+
+
+def target(tree: exp.Expression) -> exp.Table | None:
+    if not isinstance(tree, exp.Create | exp.Drop | exp.Alter | DML):
+        return None
+    node = tree.this if isinstance(tree.this, exp.Expression) else None
+    node = node.this if isinstance(node, exp.Schema) else node
+    return node if isinstance(node, exp.Table) else tree.find(exp.Table)

@@ -78,7 +78,7 @@ def defaults(project_id: str, dataset_id: str, table_id: str) -> dict:
         {"expirationTime": str(int(now) + int(expiration))} if expiration else {}
     ) | {
         "kind": "bigquery#table",
-        "id": f"{project_id}:{dataset_id}.{table_id}",
+        "id": names.label(project_id, dataset_id, table_id),
         "selfLink": f"/bigquery/v2/projects/{project_id}/datasets/{dataset_id}/tables/{table_id}",
         "tableReference": {
             "projectId": project_id,
@@ -130,7 +130,7 @@ def logical_bytes(rows: int, columns: int) -> int:
 def load(project_id: str, dataset_id: str, table_id: str) -> dict:
     found = _lookup(project_id, dataset_id, table_id)
     if not found:
-        raise not_found("Table", f"{project_id}:{dataset_id}.{table_id}")
+        raise not_found("Table", names.label(project_id, dataset_id, table_id))
     kind, num_rows = found
     stored = metadata.load("tables", project_id, dataset_id, table_id)
     resource = stored or defaults(project_id, dataset_id, table_id)
@@ -248,7 +248,7 @@ def create(project_id: str, dataset_id: str, body: dict, translate) -> Table:
     names.fields(body.get("schema", {}).get("fields", []))
     datasets.load(project_id, dataset_id)
     if _lookup(project_id, dataset_id, table_id):
-        raise already_exists("Table", f"{project_id}:{dataset_id}.{table_id}")
+        raise already_exists("Table", names.label(project_id, dataset_id, table_id))
     table = name(project_id, dataset_id, table_id)
     fields = [
         TableFieldSchema.model_validate(field)
@@ -272,7 +272,7 @@ def _alter(project_id: str, dataset_id: str, table_id: str, fields: list[dict]):
     if removed := [f.name for key, f in current.items() if key not in given]:
         raise BigQueryError(
             "invalid",
-            f"Provided Schema does not match Table {project_id}:{dataset_id}.{table_id}. "
+            f"Provided Schema does not match Table {names.label(project_id, dataset_id, table_id)}. "
             f"Cannot remove field: {removed[0]}",
         )
     for field in map(TableFieldSchema.model_validate, fields):
@@ -398,7 +398,7 @@ def write(
 ):
     table = name(*reference)
     found = exists(*reference)
-    label = "{}:{}.{}".format(*reference)
+    label = names.label(*reference)
     if not found and create_disposition == "CREATE_NEVER":
         raise not_found("Table", label)
     if found and write_disposition == "WRITE_EMPTY":
@@ -411,7 +411,7 @@ def write(
 def delete(project_id: str, dataset_id: str, table_id: str):
     kind, _ = _lookup(project_id, dataset_id, table_id) or (None, None)
     if kind is None:
-        raise not_found("Table", f"{project_id}:{dataset_id}.{table_id}")
+        raise not_found("Table", names.label(project_id, dataset_id, table_id))
     if kind != "EMPTY":
         database.execute(f"DROP {kind} {name(project_id, dataset_id, table_id)}")
     forget(project_id, dataset_id, table_id)

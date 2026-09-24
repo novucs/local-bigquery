@@ -3,33 +3,9 @@ import dataclasses
 import sqlglot
 from sqlglot import exp
 
-from local_bigquery.catalog import metadata, row_access
+from local_bigquery.catalog import metadata, names, row_access
 from local_bigquery.sql.dialect import BigQueryDialect
-
-WRITES = exp.Insert | exp.Update | exp.Delete | exp.Merge | exp.TruncateTable
-
-
-def _target(tree: exp.Expression) -> exp.Table | None:
-    target = tree.this if isinstance(tree, WRITES | exp.Create) else None
-    target = target.this if isinstance(target, exp.Schema) else target
-    return target if isinstance(target, exp.Table) else None
-
-
-def _reference(
-    table: exp.Table, context, ctes: set[str]
-) -> tuple[str, str, str] | None:
-    name = table.name.casefold()
-    if not isinstance(table.this, exp.Identifier) or name.endswith("*"):
-        return None
-    if not table.db and (name in ctes or name in context.temporary):
-        return None
-    if not (table.db or context.dataset_id):
-        return None
-    return (
-        table.catalog or context.project_id,
-        table.db or context.dataset_id,
-        table.name,
-    )
+from local_bigquery.sql.rules.tables import resolve
 
 
 def _filtered(
@@ -65,11 +41,11 @@ def _secure(tree: exp.Expression, context, depth: int = 0) -> exp.Expression:
     ):
         return tree
     ctes = {cte.alias_or_name.casefold() for cte in tree.find_all(exp.CTE)}
-    target = _target(tree)
+    target = names.target(tree)
     for table in list(tree.find_all(exp.Table)):
         if table is target or table.meta.get("secured"):
             continue
-        if (reference := _reference(table, context, ctes)) is None:
+        if (reference := resolve(table, context, ctes)) is None:
             continue
         replacement = _view(reference, context, depth) or _filtered(table, reference)
         if replacement is not None:

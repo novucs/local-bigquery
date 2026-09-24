@@ -11,23 +11,25 @@ from local_bigquery.engine import database
 from local_bigquery.errors import BigQueryError
 
 DECORATOR = re.compile(r"^(.+)@(-?\d+)$")
-DML = exp.Insert | exp.Update | exp.Delete | exp.Merge | exp.TruncateTable
 
 
 def _temporary(tree: exp.Expression) -> bool:
     return tree.find(exp.TemporaryProperty) is not None
 
 
-def _target(tree: exp.Expression) -> exp.Table | None:
-    if isinstance(tree, exp.Create | exp.Drop | exp.Alter | DML):
-        target = tree.this if isinstance(tree.this, exp.Expression) else None
-        target = target.this if isinstance(target, exp.Schema) else target
-        return target if isinstance(target, exp.Table) else tree.find(exp.Table)
-    return None
+def resolve(table: exp.Table, context, ctes: set[str]) -> tuple[str, str, str] | None:
+    name = table.name.casefold()
+    if not isinstance(table.this, exp.Identifier) or name.endswith("*"):
+        return None
+    if not table.db and (name in ctes or name in context.temporary):
+        return None
+    if not table.db and context.dataset_id is None:
+        return None
+    return names.reference(table, context.project_id, context.dataset_id)
 
 
 def _not_found(project_id: str, dataset_id: str, table_id: str) -> BigQueryError:
-    table = f"{project_id}:{dataset_id}.{table_id}"
+    table = names.label(project_id, dataset_id, table_id)
     if project_id not in database.projects():
         return BigQueryError(
             "accessDenied",
@@ -59,10 +61,10 @@ def _check(tree: exp.Expression, table: exp.Table, is_target: bool):
     stored = metadata.load("tables", project_id, dataset_id, table_id) or {}
     if not database.objects(project_id, dataset_id, table_id) or tables.expired(stored):
         raise _not_found(project_id, dataset_id, table_id)
-    if is_target and isinstance(tree, DML) and stored.get("type") == "SNAPSHOT":
+    if is_target and isinstance(tree, names.DML) and stored.get("type") == "SNAPSHOT":
         raise BigQueryError(
             "invalid",
-            f"Table {project_id}:{dataset_id}.{table_id} is a snapshot, "
+            f"Table {names.label(project_id, dataset_id, table_id)} is a snapshot, "
             "and snapshots are immutable.",
         )
     if stored.get("requirePartitionFilter") and not is_target:
@@ -126,21 +128,11 @@ def qualify(tree: exp.Expression, context) -> exp.Expression:
     if isinstance(tree, exp.Create) and _temporary(tree):
         context.temporary.add(tree.find(exp.Table).name.casefold())
     ctes = {cte.alias_or_name.casefold() for cte in tree.find_all(exp.CTE)}
-    target = _target(tree)
+    target = names.target(tree)
     for table in list(tree.find_all(exp.Table)):
-        name = table.name.casefold()
-        if not isinstance(table.this, exp.Identifier) or name.endswith("*"):
+        if (reference := resolve(table, context, ctes)) is None:
             continue
-        if not table.db and (name in ctes or name in context.temporary):
-            continue
-        if not table.db and context.dataset_id is None:
-            continue
-        reference = (
-            table.catalog or context.project_id,
-            table.db or context.dataset_id,
-            table.name,
-        )
-        if table is not target or isinstance(tree, DML):
+        if table is not target or isinstance(tree, names.DML):
             context.referenced.add(reference)
         path = tables.physical(*reference)
         for key, part in zip(("catalog", "db", "this"), path):
@@ -193,8 +185,9 @@ def wildcard_table(node: exp.Expression, context) -> exp.Expression:
     if not isinstance(node, exp.Table) or not node.name.endswith("*"):
         return node
     prefix = node.name.rstrip("*")
-    project_id = node.catalog or context.project_id
-    dataset_id = node.db or context.dataset_id
+    project_id, dataset_id, _ = names.reference(
+        node, context.project_id, context.dataset_id
+    )
     matches = [
         name
         for name, kind, _ in database.objects(project_id, dataset_id)
@@ -203,7 +196,7 @@ def wildcard_table(node: exp.Expression, context) -> exp.Expression:
     if not matches:
         raise BigQueryError(
             "invalid",
-            f"{project_id}:{dataset_id}.{node.name} does not match any table.",
+            f"{names.label(project_id, dataset_id, node.name)} does not match any table.",
         )
     selects = [
         sqlglot.select(

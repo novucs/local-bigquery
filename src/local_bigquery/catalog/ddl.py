@@ -3,7 +3,7 @@ from collections.abc import Callable
 
 from sqlglot import exp
 
-from local_bigquery.catalog import datasets, metadata, tables
+from local_bigquery.catalog import datasets, metadata, names, tables
 from local_bigquery.errors import BigQueryError
 from local_bigquery.sql.dialect import AlterColumnOptions
 from local_bigquery.sql.rules.ddl import drops_primary_key
@@ -96,7 +96,7 @@ def _foreign_key(reference: exp.Reference, table: tuple, position: int) -> dict:
         if isinstance(key, exp.ForeignKey)
         else [reference.find_ancestor(exp.ColumnDef).name]
     )
-    target = _reference(reference.this.this, *table[:2])
+    target = names.reference(reference.this.this, *table[:2])
     pairs = zip(columns, reference.this.expressions)
     constraint = key.parent if isinstance(key.parent, exp.Constraint) else None
     return {
@@ -111,7 +111,7 @@ def _foreign_key(reference: exp.Reference, table: tuple, position: int) -> dict:
 
 def check_references(tree: exp.Expression, project_id: str, dataset_id: str | None):
     for reference in tree.find_all(exp.Reference):
-        target = _reference(reference.this.this, project_id, dataset_id)
+        target = names.reference(reference.this.this, project_id, dataset_id)
         stored = metadata.load("tables", *target) or {}
         if not (stored.get("tableConstraints") or {}).get("primaryKey"):
             raise BigQueryError(
@@ -151,7 +151,7 @@ def _alteration(
         return {"schema": {"fields": fields}}
     keys = stored.get("tableConstraints") or {}
     foreign = keys.get("foreignKeys") or []
-    label = "{}:{}.{}".format(*reference)
+    label = names.label(*reference)
     if isinstance(action, exp.AddConstraint):
         added = _keys(action, reference, len(foreign))
         foreign = foreign + added.get("foreignKeys", [])
@@ -189,12 +189,6 @@ def _table(tree: exp.Create, reference: tuple, evaluate: Evaluate) -> dict:
     return resource
 
 
-def _reference(
-    table: exp.Table, project_id: str, dataset_id: str
-) -> tuple[str, str, str]:
-    return table.catalog or project_id, table.db or dataset_id, table.name
-
-
 def _definition(tree: exp.Create, project_id: str, dataset_id: str) -> dict:
     query = tree.expression
     if tree.args.get("kind") == "VIEW" and query is not None:
@@ -205,7 +199,7 @@ def _definition(tree: exp.Create, project_id: str, dataset_id: str) -> dict:
             }
         return {"view": {"query": query.sql("bigquery"), "useLegacySql": False}}
     if clone := tree.args.get("clone"):
-        source = _reference(clone.this, project_id, dataset_id)
+        source = names.reference(clone.this, project_id, dataset_id)
         base = dict(zip(("projectId", "datasetId", "tableId"), source))
         now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         if tree.meta.get("snapshot"):
@@ -234,7 +228,7 @@ def apply(tree: exp.Expression, project_id: str, dataset_id: str, evaluate: Eval
             changes = options(tree, DATASET_OPTIONS, evaluate)
             datasets.update(*reference, changes, None, replace=False)
         return
-    reference = _reference(target, project_id, dataset_id)
+    reference = names.reference(target, project_id, dataset_id)
     if isinstance(tree, exp.Create):
         resource = _table(tree, reference, evaluate) | _definition(
             tree, project_id, dataset_id

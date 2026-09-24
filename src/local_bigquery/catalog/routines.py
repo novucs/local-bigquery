@@ -2,7 +2,7 @@ import json
 
 from sqlglot import exp
 
-from local_bigquery.catalog import metadata
+from local_bigquery.catalog import metadata, names
 from local_bigquery.errors import not_found, not_implemented
 from local_bigquery.sql.dialect import BigQueryDialect, table_body
 
@@ -20,7 +20,7 @@ def load(project_id: str, dataset_id: str, routine_id: str) -> dict | None:
 
 def get(project_id: str, dataset_id: str, routine_id: str) -> dict:
     if (routine := load(project_id, dataset_id, routine_id)) is None:
-        raise not_found("Routine", f"{project_id}:{dataset_id}.{routine_id}")
+        raise not_found("Routine", names.label(project_id, dataset_id, routine_id))
     return routine
 
 
@@ -109,7 +109,7 @@ def record(tree: exp.Expression, project_id: str, dataset_id: str | None):
     if tree.args.get("kind") != "FUNCTION" or tree.find(exp.TemporaryProperty):
         return
     target = tree.find(exp.Table)
-    reference = (target.catalog or project_id, target.db or dataset_id, target.name)
+    reference = names.reference(target, project_id, dataset_id)
     if isinstance(tree, exp.Drop):
         return delete(*reference)
     if not isinstance(tree, exp.Create):

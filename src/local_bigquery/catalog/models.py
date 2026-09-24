@@ -1,6 +1,6 @@
 from sqlglot import exp
 
-from local_bigquery.catalog import datasets, metadata, routines
+from local_bigquery.catalog import datasets, metadata, names, routines
 from local_bigquery.catalog.ddl import TABLE_OPTIONS, Evaluate, options
 from local_bigquery.engine import types
 from local_bigquery.errors import BigQueryError, already_exists, not_found
@@ -16,7 +16,7 @@ OPTIONS = TABLE_OPTIONS | {
 def get(project_id: str, dataset_id: str, model_id: str) -> dict:
     datasets.load(project_id, dataset_id)
     if (model := metadata.load("models", project_id, dataset_id, model_id)) is None:
-        raise not_found("Model", f"{project_id}:{dataset_id}.{model_id}")
+        raise not_found("Model", names.label(project_id, dataset_id, model_id))
     return model
 
 
@@ -78,10 +78,10 @@ def apply(
     dry_run: bool,
 ):
     target = tree.find(exp.Table)
-    keys = (target.catalog or project_id, target.db or dataset_id, target.name)
+    keys = names.reference(target, project_id, dataset_id)
     datasets.load(*keys[:2])
     exists = metadata.load("models", *keys) is not None
-    label = "{}:{}.{}".format(*keys)
+    label = names.label(*keys)
     if isinstance(tree, exp.Drop):
         if not exists and not tree.args.get("exists"):
             raise not_found("Model", label)

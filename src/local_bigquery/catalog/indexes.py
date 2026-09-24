@@ -1,6 +1,6 @@
 import re
 
-from local_bigquery.catalog import metadata, row_access, tables
+from local_bigquery.catalog import metadata, names, row_access, tables
 from local_bigquery.errors import BigQueryError, already_exists, not_found
 
 INDEX = re.compile(
@@ -28,7 +28,7 @@ def ddl(
     keys = (*row_access.table(table, project_id, dataset_id), name)
     tables.load(*keys[:3])
     found = metadata.load("indexes", *keys)
-    label = "{}:{}.{}.{}".format(*keys)
+    label = names.label(*keys)
     if keyword == "DROP" and not (found or if_exists):
         raise not_found(f"{kind.title()} index", label)
     if keyword == "CREATE" and found and not (replace or if_exists):

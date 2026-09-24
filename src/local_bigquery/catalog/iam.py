@@ -2,7 +2,7 @@ import base64
 import hashlib
 import json
 
-from local_bigquery.catalog import row_access, routines, tables
+from local_bigquery.catalog import names, row_access, routines, tables
 from local_bigquery.engine.database import execute, fetch
 from local_bigquery.errors import BigQueryError
 
@@ -11,10 +11,10 @@ def _resolve(resource: str) -> str:
     match resource.split("/"):
         case ["projects", project_id, "datasets", dataset_id, "tables", table_id]:
             tables.load(project_id, dataset_id, table_id)
-            return f"Table {project_id}:{dataset_id}.{table_id}"
+            return f"Table {names.label(project_id, dataset_id, table_id)}"
         case ["projects", project_id, "datasets", dataset_id, "routines", routine_id]:
             routines.get(project_id, dataset_id, routine_id)
-            return f"Routine {project_id}:{dataset_id}.{routine_id}"
+            return f"Routine {names.label(project_id, dataset_id, routine_id)}"
         case [
             "projects",
             project_id,
@@ -26,7 +26,7 @@ def _resolve(resource: str) -> str:
             policy_id,
         ]:
             row_access.get(project_id, dataset_id, table_id, policy_id)
-            table = f"{project_id}:{dataset_id}.{table_id}"
+            table = names.label(project_id, dataset_id, table_id)
             return f"RowAccessPolicy {policy_id} on table {table}"
     raise BigQueryError("invalid", f"Invalid resource name: {resource}")
 

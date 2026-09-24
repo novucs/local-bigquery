@@ -8,7 +8,7 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.tokens import TokenType
 
-from local_bigquery.catalog import routines, tables
+from local_bigquery.catalog import names, routines, tables
 from local_bigquery.errors import BigQueryError, from_exception, syntax_error
 from local_bigquery.sql.dialect import BigQueryDialect
 from local_bigquery.sql.rules.parameters import VALUE, read
@@ -573,11 +573,7 @@ class Interpreter:
 
     def reference(self, name: str) -> tuple[str, str, str]:
         table = exp.to_table(name, dialect=BigQueryDialect)
-        return (
-            table.catalog or self.context.project_id,
-            table.db or self.context.dataset_id,
-            table.name,
-        )
+        return names.reference(table, self.context.project_id, self.context.dataset_id)
 
     def call(self, statement: Statement):
         if statement.text.upper() == "BQ.REFRESH_MATERIALIZED_VIEW":
@@ -631,7 +627,7 @@ class Interpreter:
         if exists and "REPLACE" not in words:
             raise BigQueryError(
                 "duplicate",
-                f"Already Exists: Routine {project_id}:{dataset_id}.{routine_id}",
+                f"Already Exists: Routine {names.label(project_id, dataset_id, routine_id)}",
             )
         self.ddl("CREATE", "REPLACE" if exists else "CREATE", reference)
         arguments = []
@@ -663,7 +659,7 @@ class Interpreter:
             if "EXISTS" in (word.upper() for word in words):
                 return self.ddl("DROP", "SKIP", reference)
             raise BigQueryError(
-                "notFound", "Not found: Routine {}:{}.{}".format(*reference)
+                "notFound", f"Not found: Routine {names.label(*reference)}"
             )
         routines.delete(*reference)
         self.ddl("DROP", "DROP", reference)
