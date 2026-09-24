@@ -32,12 +32,12 @@ def serve(data_dir):
         command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
     try:
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             try:
-                requests.get(f"http://127.0.0.1:{rest}/bigquery/v2/projects", timeout=1)
+                requests.get(f"http://127.0.0.1:{rest}/bigquery/v2/projects", timeout=5)
                 break
-            except requests.ConnectionError:
+            except requests.RequestException:
                 time.sleep(0.05)
         yield process, f"http://127.0.0.1:{rest}/bigquery/v2/projects/local", rpc
     finally:
@@ -56,6 +56,7 @@ def count(base: str) -> int:
     return int(query(base, "SELECT COUNT(*) FROM d.t")["rows"][0]["f"][0]["v"])
 
 
+@pytest.mark.timeout(120)
 def test_serve_starts_rest_and_grpc(local, tmp_path):
     with serve(tmp_path) as (_, base, rpc):
         projects = requests.get(base.rsplit("/", 1)[0]).json()
@@ -66,6 +67,7 @@ def test_serve_starts_rest_and_grpc(local, tmp_path):
         )
 
 
+@pytest.mark.timeout(120)
 def test_state_survives_a_kill_mid_write(local, tmp_path):
     with serve(tmp_path) as (process, base, _):
         requests.post(f"{base}/datasets", json={"datasetReference": {"datasetId": "d"}})

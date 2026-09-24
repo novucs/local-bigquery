@@ -4,6 +4,7 @@ import decimal
 
 from google.cloud import bigquery
 from google.cloud.bigquery_storage_v1 import types
+import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
@@ -87,6 +88,7 @@ def _rows(rows) -> list:
     return sorted(map(_canonical, (dict(row) for row in rows)), key=repr)
 
 
+@pytest.mark.timeout(300)
 @settings(deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(tables())
 def test_values_round_trip(bq, bqstorage, dataset, table):
