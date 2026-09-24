@@ -15,7 +15,7 @@ from google.cloud.bigquery_storage_v1.services.big_query_write.transports import
     BigQueryWriteGrpcTransport,
 )
 
-from tests.cases import Query, unique
+from tests.cases import Client, Query, unique
 
 settings.register_profile("default", max_examples=20)
 settings.register_profile("thorough", max_examples=500)
@@ -40,22 +40,6 @@ def pytest_runtest_setup(item):
     marker = item.get_closest_marker("emulator")
     if marker and item.config.getoption("--endpoint") == "google":
         pytest.skip(marker.args[0])
-
-
-class Client(bigquery.Client):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.created = []
-
-    def create_dataset(self, dataset, *args, **kwargs):
-        created = super().create_dataset(dataset, *args, **kwargs)
-        self.created.append(created.reference)
-        return created
-
-    def close(self):
-        for reference in self.created:
-            self.delete_dataset(reference, delete_contents=True, not_found_ok=True)
-        super().close()
 
 
 def pytest_addoption(parser):
@@ -96,6 +80,7 @@ def bq(endpoint, project):
         client = Client(project=project)
     else:
         client = Client(
+            retries=False,
             project=project,
             credentials=AnonymousCredentials(),
             client_options=ClientOptions(api_endpoint=endpoint),

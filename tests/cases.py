@@ -21,6 +21,26 @@ RATE_LIMITED = DEFAULT_JOB_RETRY.with_timeout(120)
 _UNSET = object()
 
 
+class Client(bigquery.Client):
+    def __init__(self, *args, retries: bool = True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.retries = retries
+        self.created = []
+
+    def _call_api(self, retry, *args, **kwargs):
+        return super()._call_api(retry if self.retries else None, *args, **kwargs)
+
+    def create_dataset(self, dataset, *args, **kwargs):
+        created = super().create_dataset(dataset, *args, **kwargs)
+        self.created.append(created.reference)
+        return created
+
+    def close(self):
+        for reference in self.created:
+            self.delete_dataset(reference, delete_contents=True, not_found_ok=True)
+        super().close()
+
+
 @dataclass(frozen=True)
 class Query:
     sql: str
@@ -49,9 +69,13 @@ class Query:
             assert same(rows, self.rows), f"{rows} != {self.rows}"
 
 
+def job_retry(bq: bigquery.Client):
+    return RATE_LIMITED if bq.retries else None
+
+
 def run(bq: bigquery.Client, sql: str, config=None):
     return bq.query_and_wait(
-        sql, job_config=config, retry=FAST_RETRY, job_retry=RATE_LIMITED
+        sql, job_config=config, retry=FAST_RETRY, job_retry=job_retry(bq)
     )
 
 
@@ -68,7 +92,7 @@ def run_job(bq: bigquery.Client, sql: str, **config) -> bigquery.QueryJob:
         sql,
         job_config=bigquery.QueryJobConfig(**config),
         retry=FAST_RETRY,
-        job_retry=RATE_LIMITED,
+        job_retry=job_retry(bq),
     )
     job.result(retry=FAST_RETRY)
     return job

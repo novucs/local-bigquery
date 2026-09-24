@@ -10,7 +10,7 @@ from google.cloud import bigquery
 from google.cloud.bigquery_storage_v1 import types
 from google.oauth2 import service_account
 
-from tests.cases import fails, run, run_job, unique
+from tests.cases import Client, fails, run, run_job, unique
 
 ALICE = "user:alice@example.com"
 TEAM = "group:team@example.com"
@@ -44,7 +44,8 @@ def caller(endpoint, project):
         pytest.skip("callers sign their own tokens, which only the emulator accepts")
 
     def caller(member: str) -> bigquery.Client:
-        return bigquery.Client(
+        return Client(
+            retries=False,
             project=project,
             credentials=credentials(member),
             client_options=ClientOptions(api_endpoint=endpoint),
