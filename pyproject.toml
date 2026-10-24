@@ -5,20 +5,20 @@ description = "A BigQuery emulator for local development and tests"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.13,<3.16"
 dependencies = [
-    "duckdb>=1.5.5",
+    "duckdb>=2.0.0",
     "fastapi>=0.139",
-    "fastavro>=1.12.2",
+    "fastavro>=1.13.1",
     "google-cloud-bigquery-storage>=2.41.0",
-    "grpcio>=1.83.0",
+    "grpcio>=1.84.1",
     "mini-racer>=0.12.4",
-    "numpy>=2.5.1",
+    "numpy>=2.5.4",
     "prompt-toolkit>=3.0.50",
-    "pyarrow>=25.0.1",
+    "pyarrow>=26.0.0",
     "pydantic-settings>=2.8.1",
     "pygments>=2.19.1",
-    "sqlglot>=30.19",
+    "sqlglot>=30.24",
     "uvicorn>=0.35",
 ]
 
@@ -52,7 +52,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
     "sqlalchemy-bigquery>=1.13.0",
-    "testcontainers>=4.10.0",
+    "testcontainers>=4.15.0",
 ]
 
 [tool.pytest.ini_options]
@@ -62,5 +62,7 @@ filterwarnings = [
     "error",
     "ignore:Retrieving Arrow record batches directly:PendingDeprecationWarning",
     "ignore:Loading pandas DataFrame into BigQuery will require pandas-gbq:FutureWarning",
+    "ignore:Retrieving DataFrames via google-cloud-bigquery:PendingDeprecationWarning",
+    "ignore:Loading DataFrames via google-cloud-bigquery:PendingDeprecationWarning",
 ]
 timeout = 30

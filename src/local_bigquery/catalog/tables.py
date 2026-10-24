@@ -413,7 +413,7 @@ def write(
         if not found and config.createDisposition == "CREATE_NEVER":
             raise not_found("Table", label)
         if found and disposition == "WRITE_EMPTY":
-            if cur.sql(f"SELECT 1 FROM {table} LIMIT 1").fetchone():
+            if cur.sql(f"SELECT 1 FROM {table} LIMIT 1").fetchall():
                 raise already_exists("Table", label)
         append = found and disposition == "WRITE_APPEND"
         if append:

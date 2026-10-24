@@ -1,16 +1,16 @@
-CREATE MACRO approx_quantiles(x, n) AS quantile_disc(x, list_transform(range(n + 1), i -> i / n));
+CREATE MACRO approx_quantiles(x, n) AS quantile_disc(x, list_transform(range(n + 1), lambda i: i / n));
 
 CREATE MACRO approx_top_count(x, n) AS list_transform(
-    list_slice(list_sort(list_transform(map_entries(histogram(x)), e -> {'c': -e.value, 'v': e.key})), 1, n),
-    e -> {'value': e.v, 'count': -e.c}
+    list_slice(list_sort(list_transform(map_entries(histogram(x)), lambda e: {'c': -CAST(e.value AS BIGINT), 'v': e.key})), 1, n),
+    lambda e: {'value': e.v, 'count': -e.c}
 );
 
 CREATE MACRO _top_sum(l, n) AS list_transform(
     list_slice(list_sort(list_transform(
-        list_distinct(list_transform(l, e -> e.v)),
-        v -> {'s': -list_sum(list_transform(list_filter(l, e -> e.v = v), e -> e.w)), 'v': v}
+        list_distinct(list_transform(l, lambda e: e.v)),
+        lambda v: {'s': -list_sum(list_transform(list_filter(l, lambda e: e.v = v), lambda e: e.w)), 'v': v}
     )), 1, n),
-    e -> {'value': e.v, 'sum': -e.s}
+    lambda e: {'value': e.v, 'sum': -e.s}
 );
 
 CREATE MACRO approx_top_sum(x, w, n) AS bq.main._top_sum(list({'v': x, 'w': w}), n);

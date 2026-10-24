@@ -58,10 +58,10 @@ CREATE MACRO to_base32(b) AS _to_base32(b);
 CREATE MACRO from_base32(s) AS _from_base32(s);
 
 CREATE MACRO code_points_to_bytes(points) AS
-    unhex(array_to_string(list_transform(points, p -> lpad(to_hex(p), 2, '0')), ''));
+    unhex(array_to_string(list_transform(points, lambda p: lpad(to_hex(p), 2, '0')), ''));
 
 CREATE MACRO _search_tokens(s) AS list_filter(
-    regexp_split_to_array(lower(s), '[\s\[\]<>(){}|!;,''"`*&?+/:=@.\-$%\\_]+'), t -> t <> ''
+    regexp_split_to_array(lower(s), '[\s\[\]<>(){}|!;,''"`*&?+/:=@.\-$%\\_]+'), lambda t: t <> ''
 );
 
 CREATE MACRO _search_text(s) AS ' ' || array_to_string(bq.main._search_tokens(s), ' ') || ' ';
@@ -71,7 +71,7 @@ CREATE MACRO _search_leaf(text, query) AS list_has_all(
     bq.main._search_tokens(regexp_replace(query, '`[^`]*`', ' ', 'g'))
 ) AND coalesce(list_bool_and(list_transform(
     regexp_extract_all(query, '`([^`]*)`', 1),
-    phrase -> contains(bq.main._search_text(text), bq.main._search_text(phrase))
+    lambda phrase: contains(bq.main._search_text(text), bq.main._search_text(phrase))
 )), true);
 
 CREATE MACRO search(data, query) AS coalesce((

@@ -182,7 +182,7 @@ def _decoded(expression: str, field: TableFieldSchema, depth: int = 0) -> str:
         inner = _decoded(f"e{depth}", element, depth + 1)
         if inner == f"e{depth}":
             return expression
-        return f"list_transform({expression}, e{depth} -> {inner})"
+        return f"list_transform({expression}, lambda e{depth}: {inner})"
     if field.type == "RECORD":
         parts = {
             f.name: _decoded(f"{expression}.{quote(f.name)}", f, depth)
@@ -248,9 +248,9 @@ def run(
         reader = _reader(cur, files, config, fields)
         columns = cur.sql(f"SELECT * FROM {reader} LIMIT 0").columns
         projection, bad = _projection(config, fields, columns)
-        total, rejected = cur.sql(
+        [(total, rejected)] = cur.sql(
             f"SELECT count(*), count(*) FILTER ({bad}) FROM {reader}"
-        ).fetchone()
+        ).fetchall()
     if rejected > (config.maxBadRecords or 0):
         kind = TEXT_FORMATS[config.sourceFormat or "CSV"]
         source = f" File: {uris[0]}" if len(uris) == 1 else ""
@@ -268,9 +268,9 @@ def run(
         )
     if created and fields:
         tables.annotate(reference, Table(schema=config.schema_))
-    count, size = cur.sql(
+    [(count, size)] = cur.sql(
         f"SELECT count(*), coalesce(sum(size), 0) FROM read_blob({files})"
-    ).fetchone()
+    ).fetchall()
     output = tables.logical_bytes(total - rejected, len(tables.columns(*reference)))
     return JobStatistics3(
         inputFiles=str(count),

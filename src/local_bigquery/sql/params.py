@@ -83,7 +83,7 @@ def _decode(expression: str, parameter_type: QueryParameterType) -> str:
             return _decode(expression, _range(parameter_type))
         case "ARRAY":
             element = _decode("e", parameter_type.arrayType)
-            return f"list_transform({expression}, e -> {element})"
+            return f"list_transform({expression}, lambda e: {element})"
         case "STRUCT":
             fields = ", ".join(
                 f"{quote(field.name)} := "

@@ -67,7 +67,7 @@ def _unconvertible(schema: dict, rows: list[dict]) -> list[list[str]]:
     )
     with database.cursor() as cur:
         found = cur.execute(
-            f"SELECT list_filter([{checks}], f -> f IS NOT NULL) "
+            f"SELECT list_filter([{checks}], lambda f: f IS NOT NULL) "
             "FROM (SELECT unnest(from_json($payload, $spec)) AS r)",
             {"payload": json.dumps(rows), "spec": spec},
         ).fetchall()

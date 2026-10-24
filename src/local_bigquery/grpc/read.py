@@ -137,7 +137,7 @@ def create_session(request: types.CreateReadSessionRequest) -> types.ReadSession
     query, fields = _query(session.table, session.read_options, data_format)
     with database.cursor() as cur:
         schema = cur.sql(f"SELECT * FROM ({query}) LIMIT 0").to_arrow_table().schema
-        (total,) = cur.sql(f"SELECT count(*) FROM ({query})").fetchone()
+        [(total,)] = cur.sql(f"SELECT count(*) FROM ({query})").fetchall()
     wanted = -(-total // STREAM_ROWS)
     count = min(request.max_stream_count or wanted, wanted)
     name = (

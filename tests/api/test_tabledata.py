@@ -209,6 +209,13 @@ def test_list_rows_empty_table(bq, dataset):
     assert rows.total_rows == 0
 
 
+@pytest.mark.xfail(reason="DuckDB cannot create a table from an unnamed struct")
+def test_list_rows_anonymous_struct(bq, dataset):
+    run(bq, f"CREATE TABLE {dataset.dataset_id}.t AS SELECT STRUCT(1, 'a') AS s")
+    rows = bq.list_rows(f"{dataset.project}.{dataset.dataset_id}.t")
+    assert [dict(row) for row in rows] == [{"s": {"_field_1": 1, "_field_2": "a"}}]
+
+
 def test_list_rows_to_dataframe(bq, dataset):
     table = ints(bq, create(bq, dataset), 3)
     frame = bq.list_rows(table).to_dataframe(create_bqstorage_client=False)

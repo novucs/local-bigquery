@@ -1,5 +1,3 @@
-import codecs
-
 from sqlglot import exp
 
 ARITHMETIC = (exp.Add, exp.Sub, exp.Mul, exp.Div, exp.IntDiv, exp.Mod)
@@ -43,7 +41,7 @@ def integer_literal(node: exp.Expression, context) -> exp.Expression:
 
 def byte_string(node: exp.Expression, context) -> exp.Expression:
     if isinstance(node, exp.ByteString):
-        value = codecs.escape_decode(node.this.encode())[0]
+        value = node.this.encode("latin-1")
         return exp.func("from_hex", exp.Literal.string(value.hex()))
     return node
 

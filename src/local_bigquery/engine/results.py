@@ -20,7 +20,7 @@ def _without_null_elements(expression: str, column: str, t) -> str:
         return expression
     message = f"Array cannot have a null element; error in writing field {column}"
     return (
-        f"CASE WHEN list_bool_or(list_transform({expression}, e -> e IS NULL)) "
+        f"CASE WHEN list_bool_or(list_transform({expression}, lambda e: e IS NULL)) "
         f"THEN error('{message.replace("'", "''")}') ELSE {expression} END"
     )
 
@@ -84,7 +84,7 @@ def page(
     fields: list[str] | None = None,
     int64_timestamps: bool = True,
 ) -> Page:
-    total = cur.sql(f"SELECT count(*) FROM {source}").fetchone()[0]
+    [(total,)] = cur.sql(f"SELECT count(*) FROM {source}").fetchall()
     limit = DEFAULT_PAGE_SIZE if max_results is None else max_results
     relation = cur.sql(f"SELECT * FROM {source} LIMIT 0")
     columns = [

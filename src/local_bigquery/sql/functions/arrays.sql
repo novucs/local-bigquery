@@ -7,10 +7,10 @@ CREATE MACRO array_last(a) AS
 CREATE MACRO array_slice(a, first, last) AS
     list_slice(a, CASE WHEN first < 0 THEN first ELSE first + 1 END, CASE WHEN last < 0 THEN last ELSE last + 1 END);
 
-CREATE MACRO generate_array(first, last) AS list_transform(range(0, last - first + 1), i -> first + i),
+CREATE MACRO generate_array(first, last) AS list_transform(range(0, last - first + 1), lambda i: first + i),
     (first, last, step) AS CASE
         WHEN step = 0 THEN _raise('Sequence step cannot be 0.')
-        ELSE list_transform(range(0, CAST(floor((last - first) / step) AS BIGINT) + 1), i -> first + i * step)
+        ELSE list_transform(range(0, CAST(floor((last - first) / step) AS BIGINT) + 1), lambda i: first + i * step)
     END;
 
 CREATE MACRO _array_at(a, i, base) AS CASE
@@ -20,4 +20,4 @@ CREATE MACRO _array_at(a, i, base) AS CASE
     ELSE a[i - base + 1]
 END;
 
-CREATE MACRO array_is_distinct(a) AS len(list_distinct(list_transform(a, e -> [e]))) = len(a);
+CREATE MACRO array_is_distinct(a) AS len(list_distinct(list_transform(a, lambda e: [e]))) = len(a);

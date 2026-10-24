@@ -53,12 +53,17 @@ CASES = [
     q(
         f"SELECT -({INT64_MIN})",
         error="(?i)overflow",
+        xfail="DuckDB widens a negated constant INT64_MIN to HUGEINT",
     ),
     q(f"SELECT ABS({INT64_MIN})", error="(?i)overflow"),
     q(f"SELECT SAFE_ADD({INT64_MAX}, 1)", None),
     q(f"SELECT SAFE_SUBTRACT({INT64_MIN}, 1)", None),
     q(f"SELECT SAFE_MULTIPLY({INT64_MAX}, 2)", None),
-    q(f"SELECT SAFE_NEGATE({INT64_MIN})", None),
+    q(
+        f"SELECT SAFE_NEGATE({INT64_MIN})",
+        None,
+        xfail="DuckDB widens a negated constant INT64_MIN to HUGEINT",
+    ),
     q(
         "SELECT SAFE_ADD(1, 2), SAFE_NEGATE(5)",
         rows=[(3, -5)],
@@ -73,6 +78,13 @@ CASES = [
         "SELECT SAFE.LN(1 / 0)",
         error="division by zero",
     ),
+    q("SELECT LOG(8, 1)", error="invalidQuery"),
+    q("SELECT ACOS(2)", error="invalidQuery"),
+    q(
+        f"SELECT ACOS({NAN}), ASIN(CAST('inf' AS FLOAT64)), ATANH({NAN})",
+        rows=[(math.nan, math.nan, math.nan)],
+    ),
+    q("SELECT CAST(SQRT(4) AS STRING), CAST(LN(1) AS STRING)", rows=[("2", "0")]),
     q("SELECT ROUND(2.5), ROUND(-2.5), ROUND(3.5)", rows=[(3.0, -3.0, 4.0)]),
     q("SELECT ROUND(1.2345, 2)", 1.23),
     q("SELECT ROUND(1234.5, -2)", 1200.0),

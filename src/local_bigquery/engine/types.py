@@ -46,6 +46,7 @@ SCALARS = {
         [
             *("tinyint", "smallint", "integer", "bigint", "hugeint"),
             *("utinyint", "usmallint", "uinteger", "ubigint", "uhugeint"),
+            "null",
         ],
         ("INTEGER", "BIGINT"),
     ),
@@ -135,7 +136,7 @@ def field(name: str, t: DuckDBPyType, required: bool = False) -> TableFieldSchem
             mode=mode,
             rangeElementType={"type": _scalar(element)[0]},
         )
-    if t.id == "struct":
+    if t.id in ("struct", "tuple"):
         fields = [field(child, child_type) for child, child_type in _children(t)]
         return TableFieldSchema(name=name, type="RECORD", mode=mode, fields=fields)
     return TableFieldSchema(name=name, type=_scalar(t)[0], mode=mode)
@@ -146,7 +147,7 @@ def normalised(t: DuckDBPyType) -> str:
         return f"{normalised(element)}[]"
     if element := _range(t):
         return range_type(normalised(element))
-    if t.id == "struct":
+    if t.id in ("struct", "tuple"):
         return f"STRUCT({', '.join(f'{quote(n)} {normalised(c)}' for n, c in _children(t))})"
     return _scalar(t)[1]
 
@@ -168,7 +169,9 @@ def _encode(x: str, t: DuckDBPyType, int64: bool, names: itertools.count) -> str
     if element := _element(t):
         var = f"e{next(names)}"
         cell = _encode(var, element, int64, names)
-        return f"coalesce(list_transform({x}, {var} -> {{'v': to_json({cell})}}), [])"
+        return (
+            f"coalesce(list_transform({x}, lambda {var}: {{'v': to_json({cell})}}), [])"
+        )
     if element := _range(t):
         start, end = (
             f"coalesce({_encode(f'{x}.{name}', element, int64, names)}, 'UNBOUNDED')"

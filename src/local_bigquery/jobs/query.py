@@ -196,7 +196,8 @@ def _result_schema(
 def _evaluator(cur: duckdb.DuckDBPyConnection):
     def evaluate(node: exp.Expression):
         query = exp.select(exp.func("to_json", node.copy())).sql(dialect=DuckDBDialect)
-        return json.loads(cur.sql(query).fetchone()[0])
+        [(value,)] = cur.sql(query).fetchall()
+        return json.loads(value)
 
     return evaluate
 

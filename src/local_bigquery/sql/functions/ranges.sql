@@ -37,9 +37,9 @@ END;
 CREATE MACRO _range_array(r, step, last) AS list_transform(
     list_filter(
         generate_series(r.__range_start, r.__range_end, step),
-        s -> s < r.__range_end AND (last OR s + step <= r.__range_end)
+        lambda s: s < r.__range_end AND (last OR s + step <= r.__range_end)
     ),
-    s -> {
+    lambda s: {
         '__range_start': cast_to_type(s, r.__range_start),
         '__range_end': cast_to_type(least(s + step, r.__range_end), r.__range_start)
     }

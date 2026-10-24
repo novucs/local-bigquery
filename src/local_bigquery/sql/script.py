@@ -412,7 +412,8 @@ class Interpreter:
     def evaluate(self, sql: str):
         select = _select(self.expression(sql))
         query, bound = translate(select, self.context)
-        return self.cursor.sql(query, params=bound).fetchone()[0]
+        [(value,)] = self.cursor.sql(query, params=bound).fetchall()
+        return value
 
     def test(self, condition: str) -> bool:
         return bool(self.evaluate(f"CAST(({condition}) AS BOOL)"))
@@ -511,7 +512,7 @@ class Interpreter:
             f"SELECT row_number() OVER () AS __n, q AS {VALUE} FROM ({query}) AS q",
             bound,
         )
-        (count,) = self.cursor.sql(f"SELECT count(*) FROM {rows}").fetchone()
+        [(count,)] = self.cursor.sql(f"SELECT count(*) FROM {rows}").fetchall()
         name = statement.names[0].lower()
         for index in range(1, count + 1):
             table = _temporary_table("variable")

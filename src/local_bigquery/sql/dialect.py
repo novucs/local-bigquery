@@ -234,8 +234,18 @@ class DuckDBDialect(BaseDuckDB):
         TRANSFORMS = {
             **BaseDuckDB.Generator.TRANSFORMS,
             TableMacro: lambda self, e: f"TABLE {self.sql(e, 'this')}",
+            exp.Ln: lambda self, e: self.func("bq.main._ln", e.this),
+            exp.Log: lambda self, e: self.func("bq.main._log", e.expression, e.this),
+            exp.Sqrt: lambda self, e: self.func("bq.main._sqrt", e.this),
+            exp.Acos: lambda self, e: self.func("bq.main._acos", e.this),
+            exp.Asin: lambda self, e: self.func("bq.main._asin", e.this),
+            exp.Atanh: lambda self, e: self.func("bq.main._atanh", e.this),
         }
         TYPE_MAPPING = {
             **BaseDuckDB.Generator.TYPE_MAPPING,
             exp.DataType.Type.GEOGRAPHY: "GEOMETRY",
         }
+
+        def lambda_sql(self, expression: exp.Lambda, *_) -> str:
+            arguments = self.expressions(expression, flat=True)
+            return f"LAMBDA {arguments}: {self.sql(expression, 'this')}"

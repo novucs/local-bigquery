@@ -37,7 +37,7 @@ def run(
     select = " UNION ALL BY NAME ".join(
         f"SELECT * FROM {_source(reference)}" for reference in references
     )
-    (copied,) = cur.sql(f"SELECT count(*) FROM ({select})").fetchone()
+    [(copied,)] = cur.sql(f"SELECT count(*) FROM ({select})").fetchall()
     if create := CLONES.get(config.operationType):
         statement = f"{create} {_name(destination)} CLONE {_name(references[0])}"
         query.execute(cur, destination[0], None, JobConfigurationQuery(query=statement))

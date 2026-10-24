@@ -19,7 +19,7 @@ CREATE MACRO _arc(a, b) AS
 
 CREATE MACRO _arcs(line) AS coalesce(list_sum(list_transform(
     range(1, system.main.ST_NPoints(line)),
-    i -> bq.main._arc(bq.main._point(line, i), bq.main._point(line, i + 1))
+    lambda i: bq.main._arc(bq.main._point(line, i), bq.main._point(line, i + 1))
 )), 0);
 
 CREATE MACRO _excess(a, b) AS 2 * atan2(
@@ -30,17 +30,17 @@ CREATE MACRO _excess(a, b) AS 2 * atan2(
 
 CREATE MACRO _ring_area(ring) AS abs(coalesce(list_sum(list_transform(
     range(1, system.main.ST_NPoints(ring)),
-    i -> bq.main._excess(bq.main._point(ring, i), bq.main._point(ring, i + 1))
+    lambda i: bq.main._excess(bq.main._point(ring, i), bq.main._point(ring, i + 1))
 )), 0));
 
 CREATE MACRO _holes(polygon) AS list_transform(
     range(1, system.main.ST_NumInteriorRings(polygon) + 1),
-    i -> system.main.ST_InteriorRingN(polygon, CAST(i AS INTEGER))
+    lambda i: system.main.ST_InteriorRingN(polygon, CAST(i AS INTEGER))
 );
 
 CREATE MACRO _parts(g, kind) AS list_transform(
-    list_filter(system.main.ST_Dump(g), part -> system.main.ST_GeometryType(part.geom) = kind),
-    part -> part.geom
+    list_filter(system.main.ST_Dump(g), lambda part: system.main.ST_GeometryType(part.geom) = kind),
+    lambda part: part.geom
 );
 
 CREATE MACRO st_geogpoint(longitude, latitude) AS CASE
@@ -99,28 +99,28 @@ CREATE MACRO st_distance(a, b) AS bq.main._radius() * bq.main._arc(
 
 CREATE MACRO st_maxdistance(a, b) AS bq.main._radius() * list_max(list_transform(
     system.main.ST_Dump(system.main.ST_Points(a)),
-    p -> list_max(list_transform(
+    lambda p: list_max(list_transform(
         system.main.ST_Dump(system.main.ST_Points(b)),
-        q -> bq.main._arc(p.geom, q.geom)
+        lambda q: bq.main._arc(p.geom, q.geom)
     ))
 ));
 
 CREATE MACRO st_dwithin(a, b, distance) AS bq.main.st_distance(a, b) <= distance;
 
 CREATE MACRO st_length(g) AS bq.main._radius() * coalesce(list_sum(list_transform(
-    bq.main._parts(g, 'LINESTRING'), line -> bq.main._arcs(line)
+    bq.main._parts(g, 'LINESTRING'), lambda line: bq.main._arcs(line)
 )), 0);
 
 CREATE MACRO st_perimeter(g) AS bq.main._radius() * coalesce(list_sum(list_transform(
     bq.main._parts(g, 'POLYGON'),
-    polygon -> bq.main._arcs(system.main.ST_ExteriorRing(polygon))
-        + coalesce(list_sum(list_transform(bq.main._holes(polygon), h -> bq.main._arcs(h))), 0)
+    lambda polygon: bq.main._arcs(system.main.ST_ExteriorRing(polygon))
+        + coalesce(list_sum(list_transform(bq.main._holes(polygon), lambda h: bq.main._arcs(h))), 0)
 )), 0);
 
 CREATE MACRO st_area(g) AS pow(bq.main._radius(), 2) * coalesce(list_sum(list_transform(
     bq.main._parts(g, 'POLYGON'),
-    polygon -> bq.main._ring_area(system.main.ST_ExteriorRing(polygon))
+    lambda polygon: bq.main._ring_area(system.main.ST_ExteriorRing(polygon))
         - coalesce(list_sum(list_transform(
-            bq.main._holes(polygon), h -> bq.main._ring_area(h)
+            bq.main._holes(polygon), lambda h: bq.main._ring_area(h)
         )), 0)
 )), 0);

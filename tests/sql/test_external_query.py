@@ -121,7 +121,7 @@ def postgres(request):
     except Exception:
         pytest.skip("docker is unavailable")
     from sqlalchemy import create_engine, text
-    from testcontainers.postgres import PostgresContainer
+    from testcontainers.community.postgres import PostgresContainer
 
     from local_bigquery.settings import settings
 

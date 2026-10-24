@@ -2,7 +2,7 @@
 set -euo pipefail
 dist=$(mktemp -d) env=$(mktemp -d) data=$(mktemp -d)
 uv build -q -o "$dist"
-uv venv -q -p 3.13 "$env"
+uv venv -q "$env"
 VIRTUAL_ENV="$env" uv pip install -q "$dist"/*.whl
 "$env/bin/local-bigquery" --port 9151 --grpc-port 9152 --data-dir "$data" &
 server=$!
